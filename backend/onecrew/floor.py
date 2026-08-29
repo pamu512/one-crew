@@ -249,6 +249,8 @@ FLOOR_HTML = """<!DOCTYPE html>
           </div>`).join("")}
         <p class="${packet.collision_disposition === "HOLD" ? "hold" : "note"}">${packet.collision_disposition || "HOLD"} ${packet.collision_hold_reason || ""}</p>
         <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
+        <div class="brand" style="margin:16px 0 8px">Research pack (always written · floor does not post it)</div>
+        <p class="script">${packet.research_pack || "Research pack missing."}</p>
         <div class="brand" style="margin:16px 0 8px">Cited sources</div>
         ${findings}
         <div class="brand" style="margin:16px 0 8px">Causal links</div>

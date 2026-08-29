@@ -6,7 +6,7 @@ Record unedited. Show the timed VO, the collision list, and the source stamps. D
 
 Talk over the floor with `oc-hormuz-decade` already open.
 
-> One Crew is a research companion for a one-person shop. Before you record you see a timed VO with citations, which lines already exist as someone else's media (collision yes / no / missing), and which sources are house organs, propaganda, fringe, or unsourced. You can see the risk on the page. We do not clear copyright. We do not give legal advice. A Parallel miss is not permission. Collision=missing means we did not get a search. The floor never posts.
+> One Crew is a research companion for a one-person shop. You leave with a citable thesis plus a script, not a sketch. Before you record you see a timed VO with citations, which lines already exist as someone else's media (collision yes / no / missing), and which sources are house organs, propaganda, fringe, or unsourced. The research pack is always on the page and lists what was left out. You can see the risk on the page. We do not clear copyright. We do not give legal advice. A Parallel miss is not permission. Collision=missing means we did not get a search. The floor never posts.
 
 ## 0:40–1:20 · VO, collisions, stamps
 

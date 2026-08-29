@@ -6,7 +6,7 @@ One Crew is a research companion for a one-person shop. Before you record, you s
 2. which lines already exist as someone else's media (`collision` yes / no / missing)
 3. which sources are house organs, propaganda, fringe, or unsourced
 
-The point is you can see the risk on the page. We do not clear copyright. We do not give legal advice. We do not license footage. A Parallel miss is not permission. `collision=missing` means we did not get a search, not that you are in the clear. The floor never posts, so we also do not publish the thing that would get you a claim.
+You leave with a citable thesis plus a script, not a sketch. The research pack is always written. The point is you can see the risk on the page. We do not clear copyright. We do not give legal advice. We do not license footage. A Parallel miss is not permission. `collision=missing` means we did not get a search, not that you are in the clear. The floor never posts, so we also do not publish the thing that would get you a claim. The thesis lists what was left out and why.
 
 **Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. License: Apache-2.0.**
 

@@ -9,6 +9,7 @@ from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt
 from onecrew.receipt import write_receipt
 from onecrew.script import write_script
 from onecrew.store import store
+from onecrew.pack import seed_exclusions, write_research_pack
 from onecrew.tell import SEED_TELL
 from onecrew.tone import SEED_TONE
 
@@ -124,6 +125,8 @@ def build_seed_packet() -> Packet:
     )
     packet = write_script(write_receipt(packet, receipt))
     hold_collisions(packet)
+    packet.exclusions = seed_exclusions()
+    write_research_pack(packet)
     packet.frames = apply_seed_placeholders(write_shot_list(packet))
     return packet
 

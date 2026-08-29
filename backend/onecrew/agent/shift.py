@@ -10,11 +10,12 @@ from onecrew.collision import stamp_collisions
 from onecrew.cut import size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
-from onecrew.models import Depth, Packet, Rails, Receipt, ShiftRecord, utcnow
+from onecrew.models import Depth, Exclusion, Packet, Rails, Receipt, ShiftRecord, utcnow
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
+from onecrew.pack import write_research_pack
 from onecrew.script import write_script
 from onecrew.seed import reset_floor
 from onecrew.store import store
@@ -166,6 +167,14 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         write_script(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
+        fresh.exclusions = [
+            Exclusion(
+                what="Live Parallel search",
+                reason="rails_down",
+                detail="Parallel rail down. No invented source.",
+            )
+        ]
+        write_research_pack(fresh)
         store.upsert_packet(fresh)
         return fresh
 
@@ -175,6 +184,15 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         write_script(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
+        if not fresh.exclusions:
+            fresh.exclusions = [
+                Exclusion(
+                    what="Live Parallel search",
+                    reason="rails_down" if not rails.parallel else "not_searched",
+                    detail=receipt.hold_reason or "Receipt HOLD. No invented source.",
+                )
+            ]
+        write_research_pack(fresh)
         store.upsert_packet(fresh)
         return fresh
 
@@ -184,6 +202,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
+    write_research_pack(fresh)
     store.upsert_packet(fresh)
     return fresh
 

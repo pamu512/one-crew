@@ -36,6 +36,8 @@ def test_floor_html_has_no_publish_button() -> None:
         assert "Question the decisions" in page.text
         assert "Personal take" in page.text
         assert "Grounded in the record" in page.text
+        assert "Research pack" in page.text
+        assert "floor does not post it" in page.text.lower() or "does not post" in page.text.lower()
         assert "grounded in reality" not in page.text.lower()
         assert "<textarea" in FLOOR_HTML
         assert "checked=" not in FLOOR_HTML

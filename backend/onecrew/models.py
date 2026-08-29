@@ -42,6 +42,16 @@ ScriptLean = Literal[
     "unhinged_fringe",
 ]
 LinkStamp = Literal["grounded", "missing"]
+ExclusionReason = Literal[
+    "parallel_miss",
+    "outside_depth",
+    "off_topic",
+    "duplicate",
+    "no_url",
+    "not_searched",
+    "rails_down",
+    "other",
+]
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
 ShiftStatus = Literal["running", "completed", "failed"]
@@ -52,6 +62,16 @@ PROPAGANDA = frozenset({"yes", "no", "missing"})
 COLLISIONS = frozenset({"yes", "no", "missing"})
 COLLISION_KINDS = frozenset({"same_script", "near_script", "missing"})
 FOOTAGES = frozenset({"sourced", "imagen", "missing"})
+EXCLUSION_REASONS = frozenset({
+    "parallel_miss",
+    "outside_depth",
+    "off_topic",
+    "duplicate",
+    "no_url",
+    "not_searched",
+    "rails_down",
+    "other",
+})
 DEPTHS = ("1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet")
 CUTS = (
     "tiktok-length",
@@ -179,6 +199,15 @@ class ScriptBeat(BaseModel):
     collision_kind: CollisionKind = MISSING
 
 
+class Exclusion(BaseModel):
+    """Something considered and left out of the findings list. Not an invented source."""
+
+    what: str
+    reason: ExclusionReason
+    detail: str = ""
+    url: str | None = None
+
+
 class CollisionRow(BaseModel):
     """Existing media whose script/narration matches a VO beat. Not a clearance."""
 
@@ -247,6 +276,8 @@ class Packet(BaseModel):
     collisions: list[CollisionRow] = Field(default_factory=list)
     collision_disposition: Disposition = "HOLD"
     collision_hold_reason: str | None = None
+    research_pack: str = ""
+    exclusions: list[Exclusion] = Field(default_factory=list)
 
 
 class ShiftRecord(BaseModel):
