@@ -60,7 +60,7 @@ FLOOR_HTML = """<!DOCTYPE html>
   <main>
     <section class="card">
       <div class="brand">First-open</div>
-      <p class="script">Seeded packet. GET does not spend Parallel or Imagen. There is no publish control on this floor.</p>
+      <p class="script">Seeded packet. GET does not spend Parallel or Imagen. The floor never posts.</p>
       <p class="script" id="health"></p>
     </section>
     <section class="card" id="packet">Loading oc-pickle-debt…</section>
