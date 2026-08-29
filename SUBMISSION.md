@@ -25,7 +25,7 @@ The researcher writes a timeline once and stamps each source. The floor writes a
 - Required picks: topic, platform, length, depth, script lean, tell (free text), tone (free text on news/doc)
 - Shot list cut from that VO; nonfiction uses archive tape for events; genAI is maps and infographics only; we do not license the tape
 - Script lean does not restamp sources or collisions
-- Write-once Parallel timeline
+- Write-once Parallel timeline via Search + Extract + Task (pro). Search satisfies the track. Extract and Task make the pack a thesis. No Monitor create.
 - GET never spends; POST is token-gated and pick-gated
 - Floor never posts
 - Gemini ADK crew on Vertex 3.5 Flash

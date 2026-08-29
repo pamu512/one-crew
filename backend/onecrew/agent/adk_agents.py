@@ -28,7 +28,12 @@ Centered_independent still shows missing when Parallel missed.
 Do not hide fringe or propaganda to match a centered ask.
 Do not invent a lobby to match a far-right or far-left ask.
 
-Call the official Parallel search tool. Write a write-once TIMELINE of events that led
+Call official Parallel Search first (timeline candidates). Then Extract on those URLs
+for thesis quotes and ownership/propaganda/independence text. Then one Task (pro)
+for the thesis spine — result.output.basis is cited structure. Do not use ultra.
+Entity Search only for a verified producer/lobby list from tell/topic. Never invent
+a family. Do not create Monitors (standing watch; floor never posts).
+Write a write-once TIMELINE of events that led
 up to the current situation, inside that depth window. Each event is a row.
 Causal links (this led to that) are their own stamps: grounded only if Parallel sourced
 the link. Otherwise the link is missing. Do not invent a 40-year chain.

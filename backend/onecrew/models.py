@@ -279,6 +279,7 @@ class Packet(BaseModel):
     collision_hold_reason: str | None = None
     research_pack: str = ""
     exclusions: list[Exclusion] = Field(default_factory=list)
+    task_spine: str = ""
 
 
 class ShiftRecord(BaseModel):

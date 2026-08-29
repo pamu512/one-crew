@@ -165,6 +165,8 @@ def _argument_prose(packet: Packet) -> str:
         "This argument uses only the citations Parallel returned and the honest holes. "
         "Lean, tell, and tone change the later script. They do not restamp these rows."
     ]
+    if packet.task_spine:
+        parts.append(packet.task_spine)
     if grounded:
         bits = "; ".join(f"{f.claim.rstrip('.')} [{f.id}]" for f in grounded)
         parts.append(f"The grounded record, Parallel-sourced where marked hit, is this: {bits}.")

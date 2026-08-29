@@ -48,9 +48,10 @@ Sample first-open: **oc-hormuz-decade** (youtube · one_time_short_episode · de
 
 1. First-open shows the required picks, the Hormuz VO, source stamps, collision fields (`missing` until a live search), and the shot list. GET never calls Parallel or Imagen.
 2. `POST /api/shifts` needs `SHIFT_TOKEN` + `X-Shift-Token` and the required picks. Unset token → 403. Any missing pick (including empty tell, or empty tone on news/doc) → 400. No spend.
-3. **Google ADK** crew on **Vertex Gemini 3.5 Flash**: picks → Parallel timeline → full script → collision search → shot list → archive tape or Imagen graphic.
-4. Parallel down, or a pre-1980 miss → fail-closed HOLD. Collision rail down → every collision field `missing`, never `collision=no`. Unhinged lean still cannot invent a source.
-5. The floor has no publish control. Nothing is posted.
+3. **Google ADK** crew on **Vertex Gemini 3.5 Flash**: picks → Parallel stack → full script → collision search → shot list → archive tape or Imagen graphic.
+4. **Parallel stack:** Search (first pass: timeline, collision VO, archive footage — this satisfies the Search track) + Extract (quotes / ownership / propaganda / independence from Search URLs) + Task (`pro`, not ultra) for the thesis spine (`result.output.basis`). Search is required at runtime. Extract and Task are why the pack is a thesis. Entity Search only for a verified producer/lobby list. Do not create Monitors (standing watch; burns money; floor never posts).
+5. Parallel down, or a pre-1980 miss → fail-closed HOLD. Collision rail down → every collision field `missing`, never `collision=no`. Unhinged lean still cannot invent a source. Gemini does not invent extract text or Task citations.
+6. The floor has no publish control. Nothing is posted.
 
 ## How to run locally
 

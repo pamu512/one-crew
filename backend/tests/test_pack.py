@@ -184,6 +184,16 @@ def test_live_extra_parallel_hit_is_excluded(monkeypatch) -> None:
         )
 
     monkeypatch.setattr("onecrew.agent.shift.search", research_search)
+    monkeypatch.setattr(
+        "onecrew.agent.shift.extract",
+        lambda **_k: SimpleNamespace(results=[], errors=[]),
+    )
+    monkeypatch.setattr(
+        "onecrew.agent.shift.run_task",
+        lambda **_k: SimpleNamespace(
+            output=SimpleNamespace(content="Task spine.", basis=[])
+        ),
+    )
     monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
     monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
     monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))

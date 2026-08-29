@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Any
 
 from onecrew import config
 from onecrew.agent.tools import findings_from_parallel_rows
@@ -11,7 +12,7 @@ from onecrew.cut import size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
 from onecrew.models import MISSING, Depth, Exclusion, Packet, Rails, Receipt, ShiftRecord, utcnow
-from onecrew.parallel_client import ParallelDownError, search
+from onecrew.parallel_client import ParallelDownError, entity_search, extract, run_task, search
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
@@ -19,6 +20,7 @@ from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.script import write_script
 from onecrew.seed import reset_floor
 from onecrew.store import store
+from onecrew.tell import invents_frame
 
 log = logging.getLogger("onecrew.shift")
 
@@ -70,15 +72,153 @@ def open_shift(
     return shift
 
 
+_ENRICH_SPEC = {
+    "output_schema": {
+        "type": "json",
+        "json_schema": {
+            "type": "object",
+            "properties": {
+                "vested_interest": {
+                    "type": "string",
+                    "description": "Who benefits if this source is believed. Parallel-cited only.",
+                },
+                "who_repeats": {
+                    "type": "string",
+                    "description": "Who repeats this line. Parallel-cited only.",
+                },
+                "propaganda_issuer": {
+                    "type": "string",
+                    "description": "Named campaign issuer if Parallel sourced one.",
+                },
+                "independent": {
+                    "type": "string",
+                    "description": "yes, no, or missing from Parallel ownership text.",
+                },
+            },
+            "required": ["vested_interest", "who_repeats", "propaganda_issuer", "independent"],
+            "additionalProperties": False,
+        },
+    }
+}
+
+
 def _row_urls(rows: list) -> list[str]:
     return [url for url in (getattr(row, "url", None) for row in rows) if url]
 
 
-def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list[Exclusion], list[str]]:
+def _wants_entities(packet: Packet) -> bool:
+    if invents_frame(cut=packet.cut, tell=packet.tell or ""):
+        return False
+    blob = f"{packet.topic or ''} {packet.tell or ''}".lower()
+    return any(token in blob for token in ("producer state", "producer states", "lobby", "opec"))
+
+
+def _cited_urls(field: Any) -> list[str]:
+    out: list[str] = []
+    for citation in getattr(field, "citations", None) or []:
+        url = getattr(citation, "url", None)
+        if url:
+            out.append(url)
+    return out
+
+
+def _spine_from_task(result: Any) -> str:
+    output = getattr(result, "output", None)
+    if not output:
+        return ""
+    parts: list[str] = []
+    content = getattr(output, "content", None)
+    if content:
+        parts.append(str(content).strip())
+    for field in getattr(output, "basis", None) or []:
+        name = getattr(field, "field", "field")
+        cites = _cited_urls(field)
+        if not cites:
+            parts.append(f"Task basis {name}: citation missing.")
+            continue
+        parts.append(f"Task basis {name}: {', '.join(cites)}.")
+    return " ".join(parts).strip()
+
+
+def _apply_extract(findings: list, extracted: Any) -> list[Exclusion]:
+    by_url = {f.parallel_url: f for f in findings if f.parallel_url}
+    leftover: list[Exclusion] = []
+    for item in getattr(extracted, "results", None) or []:
+        url = getattr(item, "url", None)
+        excerpts = [str(x) for x in (getattr(item, "excerpts", None) or []) if x]
+        title = (getattr(item, "title", None) or "").strip()
+        finding = by_url.get(url)
+        if finding and excerpts:
+            # ponytail: first excerpt only. Gemini does not invent extract text.
+            finding.note = f"{finding.note} Extract: {excerpts[0][:400]}".strip()
+            if title and (not finding.title or finding.title == MISSING):
+                finding.title = title
+    for err in getattr(extracted, "errors", None) or []:
+        url = getattr(err, "url", None)
+        if not url:
+            continue
+        leftover.append(
+            Exclusion(
+                what=url,
+                reason="other",
+                detail=f"Extract failed: {getattr(err, 'error_type', 'error')}. Not silently dropped.",
+                url=url,
+            )
+        )
+    return leftover
+
+
+def _hold_account_hits(hit_urls: list[str], leftover: list[Exclusion]) -> list[Exclusion]:
+    """A Search hit still has to appear when the later rail HOLDs."""
+    cited = {row.url for row in leftover if row.url}
+    for url in hit_urls:
+        if url and url not in cited:
+            leftover.append(
+                Exclusion(
+                    what=url,
+                    reason="rails_down",
+                    detail="Parallel down after Search. URL not silently dropped.",
+                    url=url,
+                )
+            )
+    return leftover
+
+
+def _apply_enrichment(findings: list, result: Any) -> None:
+    """Stamps only when Task basis carries a URL. Gemini does not invent Task citations."""
+    output = getattr(result, "output", None)
+    if not output:
+        return
+    content = getattr(output, "content", None) or {}
+    if not isinstance(content, dict):
+        return
+    cited = {
+        getattr(field, "field", ""): _cited_urls(field)
+        for field in (getattr(output, "basis", None) or [])
+    }
+    grounded = next((f for f in findings if f.stamp == "grounded" and f.parallel_url), None)
+    if grounded is None:
+        return
+    if cited.get("independent") and content.get("independent") in {"yes", "no", "missing"}:
+        grounded.independent = content["independent"]
+        grounded.independent_url = grounded.parallel_url
+    if cited.get("vested_interest") and content.get("vested_interest"):
+        grounded.vested_interest = content["vested_interest"]
+        grounded.vested_interest_url = grounded.parallel_url
+    if cited.get("who_repeats") and content.get("who_repeats"):
+        grounded.who_repeats = content["who_repeats"]
+        grounded.who_repeats_url = grounded.parallel_url
+    if cited.get("propaganda_issuer") and content.get("propaganda_issuer"):
+        grounded.propaganda = "yes"
+        grounded.propaganda_issuer = content["propaganda_issuer"]
+        grounded.propaganda_url = grounded.parallel_url
+
+
+def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list[Exclusion], list[str], str]:
     if not rails.parallel:
         held = hold_receipt(packet.id, rails)
         pre = pre1980_fail_closed(packet_id=packet.id, depth=depth, rails=rails, parallel_hits=0)
-        return (pre or held), [], []
+        return (pre or held), [], [], ""
     try:
         hit = search(
             objective=f"Timeline for {packet.topic or packet.hook} inside depth={depth}",
@@ -97,6 +237,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             or hold_receipt(packet.id, down),
             [],
             [],
+            "",
         )
     hit_rows = list(getattr(hit, "results", None) or [])
     miss_rows = list(getattr(miss, "results", None) or [])
@@ -116,7 +257,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             reason="outside_depth",
             detail="Outside the pre-1980 window that held. Not silently dropped.",
         )
-        return pre, leftover, hit_urls
+        return pre, leftover, hit_urls, ""
     if not hit_url:
         leftover = leftover_hit_exclusions(
             hit_rows + miss_rows,
@@ -124,7 +265,12 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             reason="no_url",
             detail="Parallel row without a usable URL. Not silently dropped.",
         )
-        return hold_receipt(packet.id, rails.model_copy(update={"parallel": False})), leftover, hit_urls
+        return (
+            hold_receipt(packet.id, rails.model_copy(update={"parallel": False})),
+            leftover,
+            hit_urls,
+            "",
+        )
     findings = findings_from_parallel_rows(
         hit_url=hit_url,
         hit_title=hit_title,
@@ -139,7 +285,12 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             reason="other",
             detail="Parallel hit did not become a finding. Not silently dropped.",
         )
-        return hold_receipt(packet.id, rails.model_copy(update={"parallel": False})), leftover, hit_urls
+        return (
+            hold_receipt(packet.id, rails.model_copy(update={"parallel": False})),
+            leftover,
+            hit_urls,
+            "",
+        )
     if packet.cut:
         findings = size_findings(findings, packet.cut, packet.platform)
     kept_urls = {f.parallel_url for f in findings if f.parallel_url}
@@ -154,6 +305,84 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         reason="other",
         detail="Returned on the fringe search; not added as a source.",
     )
+    try:
+        extracted = extract(
+            urls=hit_urls,
+            objective=(
+                f"Thesis quotes, ownership, propaganda, and independence text for "
+                f"{packet.topic or packet.hook}"
+            ),
+        )
+    except ParallelDownError:
+        leftover.append(
+            Exclusion(
+                what="Live Parallel extract",
+                reason="rails_down",
+                detail="Extract rail down. No invented extract text.",
+            )
+        )
+        down = rails.model_copy(update={"parallel": False})
+        return hold_receipt(packet.id, down), _hold_account_hits(hit_urls, leftover), hit_urls, ""
+    leftover.extend(_apply_extract(findings, extracted))
+    try:
+        task = run_task(
+            prompt=(
+                f"Write a citable thesis timeline for {packet.topic or packet.hook} "
+                f"inside depth={depth}. Use only sourced events. Name missing causal "
+                "links. Do not invent sources."
+            ),
+            processor="pro",
+        )
+    except ParallelDownError:
+        leftover.append(
+            Exclusion(
+                what="Live Parallel task",
+                reason="rails_down",
+                detail="Task rail down. No invented Task citations.",
+            )
+        )
+        down = rails.model_copy(update={"parallel": False})
+        return hold_receipt(packet.id, down), _hold_account_hits(hit_urls, leftover), hit_urls, ""
+    spine = _spine_from_task(task)
+    if getattr(extracted, "results", None):
+        try:
+            enrich = run_task(
+                prompt=f"Enrich the cited source at {hit_url} for {packet.topic or packet.hook}.",
+                processor="base",
+                task_spec=_ENRICH_SPEC,
+            )
+            _apply_enrichment(findings, enrich)
+        except ParallelDownError:
+            leftover.append(
+                Exclusion(
+                    what="Live Parallel enrichment task",
+                    reason="rails_down",
+                    detail="Enrichment Task down. Stamps stay missing. No invented citation.",
+                )
+            )
+    if _wants_entities(packet):
+        try:
+            ents = entity_search(
+                objective=f"Producer states or named lobby in {packet.topic or packet.hook}",
+                entity_type="companies",
+                match_limit=5,
+            )
+            names = []
+            for ent in getattr(ents, "entities", None) or []:
+                name = getattr(ent, "name", None)
+                url = getattr(ent, "url", None)
+                if name and url:
+                    names.append(f"{name} ({url})")
+            if names:
+                spine = f"{spine} Verified entities: {'; '.join(names)}.".strip()
+        except ParallelDownError:
+            leftover.append(
+                Exclusion(
+                    what="Entity search",
+                    reason="rails_down",
+                    detail="Entity search down. No invented lobby or family.",
+                )
+            )
     # ponytail: live causal_links stay empty unless Parallel sourced a this-led-to-that URL.
     # Seed shows one missing link; do not invent a 40-year chain here.
     return (
@@ -166,6 +395,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         ),
         leftover,
         hit_urls,
+        spine,
     )
 
 
@@ -224,7 +454,8 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         store.upsert_packet(fresh)
         return fresh
 
-    receipt, leftover, hit_urls = _research(fresh, rails, shift.depth)
+    receipt, leftover, hit_urls, spine = _research(fresh, rails, shift.depth)
+    fresh.task_spine = spine
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
         write_script(fresh)
