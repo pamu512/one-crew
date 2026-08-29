@@ -6,11 +6,11 @@ Record unedited. Show the script and the cited sources. Do not post.
 
 Talk over the floor with `oc-hormuz-decade` already open.
 
-> Pick platform, length, depth, then how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
+> Topic is pick 1. Then platform, length, depth, and how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
 
-## 0:40–1:20 · Four picks + script
+## 0:40–1:20 · Five picks + script
 
-1. Point at **youtube · one_time_short_episode · decade · centered_independent**. Platform list includes Instagram and other Meta surfaces (`instagram_reels`, `instagram_stories`, `instagram_feed`, `facebook_reels`, `facebook_feed`, `threads`). No pick is pre-selected. Any missing pick = no run. A Stories board is not a documentary board.
+1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent**. Platform list includes Instagram and other Meta surfaces. No pick is pre-selected. Empty topic = no run. Any missing pick = no run.
 2. Point at the **script** and the **storyboard** together — citations like `[jcpoa-2018]` point at source rows. One frame per beat, not a collage.
 3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
 4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.
@@ -43,7 +43,7 @@ Stop.
 
 ## Prep
 
-- [ ] First-open shows four picks + script + mixed source list
+- [ ] First-open shows five picks (topic first) + script + mixed source list
 - [ ] No pick defaults
 - [ ] No publish control
 - [ ] Tests green

@@ -1,8 +1,8 @@
 # One Crew
 
-Pick platform, length, depth, then how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
+Pick topic, platform, length, depth, then how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
 
-One Crew is a research companion. Four picks, then a write-once timeline, then a **script**, then a **storyboard** — one Imagen frame per beat, sized to the cut. Not a mood collage. The crew does not post.
+One Crew is a research companion. Five picks, then a write-once timeline, then a **script**, then a **storyboard** — one Imagen frame per beat, sized to the cut. Not a mood collage. The crew does not post.
 
 **Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. The floor never posts.**
 
@@ -12,10 +12,11 @@ One Crew is a research companion. Four picks, then a write-once timeline, then a
 
 Required picks, in this order, before any Parallel or Imagen spend. No defaults. Any missing pick = no run.
 
-1. **Platform** (TikTok, YouTube, Instagram / Meta, podcast — no free-text, no default) — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
-2. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`
-3. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
-4. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
+1. **Topic** (free text, required, no default) — e.g. "Explain what's going on with the Hormuz strait". Empty or whitespace = no run.
+2. **Platform** (TikTok, YouTube, Instagram / Meta, podcast — no free-text, no default) — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
+3. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`
+4. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
+5. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
 
 Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
 
@@ -33,8 +34,8 @@ A one-person shop that needs a script with receipts. Sample first-open packet: *
 
 ## How it works
 
-1. First-open shows the four picks, a script with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the storyboard cut from that script. GET never calls Parallel or Imagen.
-2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all four picks. Unset token → 403. Any missing pick → 400. No spend.
+1. First-open shows the five picks (topic first), a script with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the storyboard cut from that script. GET never calls Parallel or Imagen.
+2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all five picks. Unset token → 403. Empty, whitespace, or omitted topic → 400. Any missing pick → 400. No spend.
 3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**. Flow is picks → timeline + sources → script → storyboard.
 4. Write-once receipt. Script lean cannot change a source stamp.
 5. Missing Parallel — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed. Missing Imagen/Vertex → frames stay missing.
@@ -77,7 +78,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Tests lock: no run without all four picks; script lean cannot change a source stamp; unhinged lean still fail-closed on missing Parallel; first-open shows script + storyboard; Imagen down leaves frames missing.
+Tests lock: no run without all five picks (empty/whitespace/omitted topic is 400 and does not spend); script lean cannot change a source stamp; unhinged lean still fail-closed on missing Parallel; first-open shows script + storyboard; Imagen down leaves frames missing.
 
 ### ADK web (optional)
 

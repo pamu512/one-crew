@@ -73,8 +73,8 @@ FLOOR_HTML = """<!DOCTYPE html>
   <main>
     <section class="card">
       <div class="brand">Desk</div>
-      <p class="script">Platform, length, depth, then script lean. Any missing pick = no run. GET does not spend. The floor never posts.</p>
-      <label for="topic">Topic</label>
+      <p class="script">Topic first, then platform, length, depth, script lean. Any missing pick = no run. GET does not spend. The floor never posts.</p>
+      <label for="topic">Topic — pick 1, required</label>
       <textarea id="topic" rows="3" placeholder="Explain what's going on with the Hormuz strait"></textarea>
       <label>Platform — required</label>
       <div class="depths" id="platforms"></div>
@@ -135,20 +135,22 @@ FLOOR_HTML = """<!DOCTYPE html>
     }
 
     function syncDesk() {
+      const topic = document.getElementById("topic").value.trim();
       const platform = chosenRadio("platform");
       const cut = chosenRadio("cut");
       const depth = chosenRadio("depth");
       const lean = chosenRadio("script_lean");
       const btn = document.getElementById("research");
       const live = window.__shiftsOn === true;
-      btn.disabled = !platform || !cut || !depth || !lean || !live;
+      btn.disabled = !topic || !platform || !cut || !depth || !lean || !live;
       const msg = document.getElementById("desk-msg");
+      if (!topic) { msg.textContent = "No topic chosen = no run."; return; }
       if (!platform) { msg.textContent = "No platform chosen = no run."; return; }
       if (!cut) { msg.textContent = "No cut chosen = no run."; return; }
       if (!depth) { msg.textContent = "No depth chosen = no run."; return; }
       if (!lean) { msg.textContent = "No script lean chosen = no run."; return; }
       msg.textContent = live
-        ? "Four picks locked. Research spends Parallel only after this."
+        ? "Five picks locked. Research spends Parallel only after this."
         : "Live spend off. Token-gate still on spend.";
     }
 
@@ -259,18 +261,20 @@ FLOOR_HTML = """<!DOCTYPE html>
       const packet = (body.packets || [])[0];
       if (!packet) { document.getElementById("packet").textContent = "No packet."; return; }
       renderPacket(packet);
+      syncDesk();
     }
 
+    document.getElementById("topic").addEventListener("input", syncDesk);
     document.getElementById("research").addEventListener("click", async () => {
       const platform = chosenRadio("platform");
       const cut = chosenRadio("cut");
       const depth = chosenRadio("depth");
       const script_lean = chosenRadio("script_lean");
-      if (!platform || !cut || !depth || !script_lean) {
+      const topic = document.getElementById("topic").value.trim();
+      if (!topic || !platform || !cut || !depth || !script_lean) {
         document.getElementById("desk-msg").textContent = "Any missing pick = no run.";
         return;
       }
-      const topic = document.getElementById("topic").value.trim();
       const token = document.getElementById("token").value.trim();
       const res = await fetch("/api/shifts", {
         method: "POST",

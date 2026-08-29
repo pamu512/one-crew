@@ -63,7 +63,7 @@ def require_shift_token(x_shift_token: str | None = Header(default=None)) -> Non
 
 
 class ShiftRequest(BaseModel):
-    topic: str = Field(default="")
+    topic: str | None = Field(default=None)
     platform: str | None = Field(default=None)
     depth: str | None = Field(default=None)
     cut: str | None = Field(default=None)
@@ -170,14 +170,13 @@ async def start_shift(
 ) -> dict[str, Any]:
     require_shift_token(x_shift_token)
     try:
-        platform, cut, depth, script_lean = require_picks(
-            body.platform, body.cut, body.depth, body.script_lean
+        topic, platform, cut, depth, script_lean = require_picks(
+            body.topic, body.platform, body.cut, body.depth, body.script_lean
         )
     except PickError as exc:
         raise HTTPException(400, str(exc)) from exc
     from onecrew.agent.shift import open_shift, run_shift
 
-    topic = (body.topic or body.goal).strip()
     shift = open_shift(
         body.goal,
         packet_id=body.packet_id,
