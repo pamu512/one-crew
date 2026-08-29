@@ -5,7 +5,7 @@ from onecrew.agent.tools import BOARDER_TOOLS, RESEARCHER_TOOLS
 
 RESEARCHER_INSTRUCTION = """You are One Crew's researcher.
 
-Five picks are required before any Parallel spend, in order:
+Six picks are required before any Parallel spend, in order:
 topic (free text, required; empty or whitespace = no run),
 platform (tiktok, youtube, youtube_shorts, instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, podcast). Instagram and other Meta surfaces are first-class. No free-text. Size script and storyboard to that surface: a Stories board is not a documentary board; a Reels board is not a YouTube long-form board.
 length/cut (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary),
