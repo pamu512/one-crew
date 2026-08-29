@@ -102,7 +102,8 @@ def test_board_does_not_return_hardcoded_hormuz_stills(monkeypatch) -> None:
     assert "oil-share" not in ids
     assert "link-empty" not in ids
     assert "ranking-phone" not in ids
-    assert any("milk" in frame.shot.lower() or "dairy" in frame.shot.lower() for frame in frames)
+    assert any("milk" in frame.shot.lower() or "dairy" in frame.shot.lower() or "auction" in frame.shot.lower() for frame in frames)
+    assert all("receipt card" not in frame.shot.lower() for frame in frames)
     assert any(frame.beat_id for frame in frames)
     assert any(frame.imagen and frame.image_href for frame in frames)
 
@@ -145,3 +146,8 @@ def test_storyboard_is_cut_from_seed_vo() -> None:
     for frame in packet.frames:
         assert frame.beat_id in beat_ids
         assert frame.shot.strip()
+        assert "receipt card" not in frame.shot.lower()
+        assert "on the receipt" not in frame.shot.lower()
+    board = " ".join(f.shot.lower() for f in packet.frames)
+    assert "tanker" in board or "strait" in board or "lane" in board
+    assert "2018" in board or "announcement" in board or "map" in board

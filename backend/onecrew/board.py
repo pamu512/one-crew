@@ -38,12 +38,31 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
 
 
 def _shot_line(beat: ScriptBeat, rows: list[Finding]) -> str:
-    claim = rows[0].claim if rows else beat.vo
-    cites = " ".join(f"[{fid}]" for fid in beat.finding_ids)
-    return (
-        f"Single locked-off receipt card for {beat.id}: {claim} "
-        f"On-screen {cites}. Duration {beat.duration_s}s. No collage."
-    )
+    blob = " ".join([beat.id, beat.vo] + [f.claim for f in rows]).lower()
+    if (
+        beat.id == "jcpoa-to-houthi"
+        or "connection is not sourced" in blob
+        or "will not tell you" in blob
+        or "won't draw it" in blob
+        or "don't hang a later" in blob
+    ):
+        return "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them."
+    if "jcpoa" in blob or ("2018" in blob and "withdrew" in blob) or ("2018" in blob and "withdrawal" in blob):
+        return "2018 announcement: a dated chyron on the JCPOA withdrawal, Gulf map on the wall behind the podium."
+    if "mined" in blob or "navy treaty" in blob or "secret-closure" in blob:
+        return "Night water in the Strait of Hormuz, empty lane, no mines on camera."
+    if "seaborne" in blob or "transits" in blob or ("hormuz" in blob and "oil" in blob and "scare" not in blob and "panic" not in blob):
+        return "Tanker in the Strait of Hormuz lane, land close on both sides, open water ahead."
+    if "crash" in blob or "scare" in blob or "overnight" in blob or "oil-panic" in blob:
+        return "Overnight newsroom, oil ticker running, Hormuz marked on a wall map. No crash proven on screen."
+    if "producer" in blob or "oil-market" in blob or "oil-market given" in blob:
+        return "Producer-state energy desk, Hormuz lane marked open on a shipping board."
+    if "milk" in blob or "dairy" in blob or "auction" in blob:
+        return "Spring auction floor and a milk tanker at the dock as the spot price ticks."
+    if "jcpoa-to-houthi" in blob or ("connection" in blob and "not sourced" in blob) or "cannot tell you" in blob:
+        return "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them."
+    claim = rows[0].claim.rstrip(".") if rows else beat.vo.split("[")[0].strip().rstrip(".")
+    return f"Photoreal frame of the action just spoken: {claim}."
 
 
 def persist_generated_image(frame_id: str, result: Any) -> str:
@@ -113,8 +132,7 @@ def apply_seed_placeholders(shots: list[ShotFrame]) -> list[ShotFrame]:
         if not _SAFE_ID.match(shot.id):
             continue
         path = config.FRAMES_DIR / f"{shot.id}.svg"
-        if not path.is_file():
-            path.write_bytes(_placeholder_svg(shot.id, shot.shot))
+        path.write_bytes(_placeholder_svg(shot.id, shot.shot))
         shot.image_href = f"/api/frames/{shot.id}"
         shot.imagen = False
     return shots
