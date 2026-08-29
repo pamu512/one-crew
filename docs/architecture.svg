@@ -1,67 +1,69 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 640" width="1100" height="640" role="img" aria-label="One Crew architecture">
   <rect width="1100" height="640" fill="#16110d"/>
-  <text x="40" y="42" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="16" letter-spacing="3">ONE CREW</text>
-  <text x="40" y="66" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Timed VO, cited sources, shot list from that VO. Floor never posts.</text>
+  <text x="40" y="40" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="16" letter-spacing="3">ONE CREW</text>
+  <text x="40" y="64" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">See collisions, dirty sources, and holes before you record. Floor never posts.</text>
 
-  <rect x="40" y="100" width="240" height="120" rx="10" fill="#1e1712" stroke="#3a2d24"/>
-  <text x="56" y="128" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">ONE-PERSON SHOP</text>
-  <text x="56" y="154" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">TikTok, YouTube, Instagram/Meta.</text>
-  <text x="56" y="176" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">First-open: oc-hormuz-decade</text>
-  <text x="56" y="198" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">GET never spends</text>
+  <rect x="40" y="88" width="1020" height="86" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="56" y="114" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">REQUIRED PICKS</text>
+  <text x="56" y="138" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">topic · platform · cut · depth · script lean (fixed list) · tell (free text) · tone (free text on news/doc)</text>
+  <text x="56" y="158" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Empty tell, or empty tone on news/doc = no run. Feature skips tone. GET never spends.</text>
 
-  <rect x="320" y="100" width="250" height="120" rx="10" fill="#1e1712" stroke="#3a2d24"/>
-  <text x="336" y="128" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">FLOOR / FASTAPI</text>
-  <text x="336" y="154" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">GET /api/packets  (seeded)</text>
-  <text x="336" y="176" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">POST /api/shifts  (token + required picks)</text>
-  <text x="336" y="198" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">No publish control</text>
+  <rect x="40" y="194" width="190" height="100" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="56" y="222" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">1. TIMELINE</text>
+  <text x="56" y="246" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Parallel write-once</text>
+  <text x="56" y="268" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">hit AND miss on receipt</text>
 
-  <rect x="610" y="88" width="450" height="300" rx="10" fill="#1a1410" stroke="#f0c27a" stroke-opacity="0.5"/>
-  <text x="626" y="116" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">GEMINI ADK CREW  ·  VERTEX 3.5 FLASH</text>
-  <text x="626" y="140" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Missing Parallel, Vertex, or Imagen ’ HOLD</text>
+  <rect x="250" y="194" width="190" height="100" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="266" y="222" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">2. FULL SCRIPT</text>
+  <text x="266" y="246" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">scenes, action, VO</text>
+  <text x="266" y="268" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">not a 6-beat sketch</text>
 
-  <rect x="630" y="160" width="190" height="80" rx="8" fill="#241c16" stroke="#3a2d24"/>
-  <text x="646" y="188" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">1. Researcher</text>
-  <text x="646" y="210" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">parallel-web SDK</text>
+  <rect x="460" y="194" width="190" height="100" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="476" y="222" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">3. COLLISION</text>
+  <text x="476" y="246" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">match existing scripts</text>
+  <text x="476" y="268" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">yes / no / missing</text>
 
-  <rect x="846" y="160" width="190" height="80" rx="8" fill="#241c16" stroke="#3a2d24"/>
-  <text x="862" y="188" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">2. Write-once</text>
-  <text x="862" y="210" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">timeline + hit AND miss</text>
+  <rect x="670" y="194" width="190" height="100" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="686" y="222" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">4. SHOT LIST</text>
+  <text x="686" y="246" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">frame by frame</text>
+  <text x="686" y="268" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">sourced / imagen / missing</text>
 
-  <rect x="630" y="268" width="190" height="80" rx="8" fill="#241c16" stroke="#3a2d24"/>
-  <text x="646" y="296" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">3. Boarder</text>
-  <text x="646" y="318" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">shot list from the timed VO</text>
+  <rect x="880" y="194" width="180" height="100" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="896" y="222" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">5. PICTURE</text>
+  <text x="896" y="246" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">archive tape first</text>
+  <text x="896" y="268" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">or Imagen graphic</text>
 
-  <rect x="846" y="268" width="190" height="80" rx="8" fill="#241c16" stroke="#3a2d24"/>
-  <text x="862" y="296" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">4. Floor</text>
-  <text x="862" y="318" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">never posts</text>
+  <path d="M230 244 H250" stroke="#f0c27a" stroke-width="1.5" fill="none"/>
+  <path d="M440 244 H460" stroke="#f0c27a" stroke-width="1.5" fill="none"/>
+  <path d="M650 244 H670" stroke="#f0c27a" stroke-width="1.5" fill="none"/>
+  <path d="M860 244 H880" stroke="#f0c27a" stroke-width="1.5" fill="none"/>
 
-  <rect x="40" y="260" width="530" height="160" rx="10" fill="#1e1712" stroke="#3a2d24"/>
-  <text x="56" y="288" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">STAMPS  ·  ONE PER FINDING</text>
-  <rect x="56" y="308" width="150" height="88" rx="8" fill="#241c16" stroke="#3d4a2e"/>
-  <text x="72" y="340" fill="#c8e6a0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">grounded</text>
-  <text x="72" y="362" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Parallel URL on row</text>
-  <rect x="226" y="308" width="150" height="88" rx="8" fill="#241c16" stroke="#5a4630"/>
-  <text x="242" y="340" fill="#f0d48a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">mainstream</text>
-  <text x="242" y="362" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">not a source</text>
-  <rect x="396" y="308" width="150" height="88" rx="8" fill="#241c16" stroke="#5a3a30"/>
-  <text x="412" y="340" fill="#e8b4a0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">fringe</text>
-  <text x="412" y="362" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">never sold as fact</text>
+  <rect x="40" y="318" width="530" height="150" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="56" y="346" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">STAMPS  ·  ONE PER FINDING</text>
+  <rect x="56" y="364" width="150" height="80" rx="8" fill="#241c16" stroke="#3d4a2e"/>
+  <text x="72" y="396" fill="#c8e6a0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">grounded</text>
+  <text x="72" y="418" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Parallel URL on row</text>
+  <rect x="226" y="364" width="150" height="80" rx="8" fill="#241c16" stroke="#5a4630"/>
+  <text x="242" y="396" fill="#f0d48a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">mainstream</text>
+  <text x="242" y="418" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">not a source</text>
+  <rect x="396" y="364" width="150" height="80" rx="8" fill="#241c16" stroke="#5a3a30"/>
+  <text x="412" y="396" fill="#e8b4a0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">fringe</text>
+  <text x="412" y="418" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">never sold as fact</text>
 
-  <rect x="40" y="460" width="530" height="140" rx="10" fill="#201810" stroke="#6a4a2e"/>
-  <text x="56" y="492" fill="#f0c27a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">HOLD</text>
-  <text x="56" y="518" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Rails down, or pre-1980 Parallel miss.</text>
-  <text x="56" y="542" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">No invented source, stamp, lean, or causal chain.</text>
-  <text x="56" y="566" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">POST spend is 403 unless X-Shift-Token matches.</text>
+  <rect x="590" y="318" width="470" height="150" rx="10" fill="#1e1712" stroke="#3a2d24"/>
+  <text x="606" y="346" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">BOARDS</text>
+  <text x="606" y="374" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">News/doc: archive tape for events. Imagen only for maps and infographics.</text>
+  <text x="606" y="398" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Never a photoreal fake of the event. Sourced is a cited link, not a rip.</text>
+  <text x="606" y="422" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Fiction may Imagen invented rooms. We do not license the tape.</text>
+  <text x="606" y="446" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">Floor never posts.</text>
 
-  <rect x="610" y="460" width="450" height="140" rx="10" fill="#1a1810" stroke="#5a5030"/>
-  <text x="626" y="492" fill="#f0d48a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">READY packet</text>
-  <text x="626" y="518" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Same receipt: Parallel hit AND Parallel miss.</text>
-  <text x="626" y="542" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Shot list from the timed VO. Key frames only.</text>
-  <text x="626" y="566" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">GOOGLE_CLOUD_PROJECT from env only.</text>
+  <rect x="40" y="490" width="530" height="120" rx="10" fill="#201810" stroke="#6a4a2e"/>
+  <text x="56" y="520" fill="#f0c27a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">HOLD</text>
+  <text x="56" y="546" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Rails down, or pre-1980 Parallel miss. No invented source or stamp.</text>
+  <text x="56" y="570" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">POST spend is 403 unless X-Shift-Token matches.</text>
 
-  <path d="M280 160 H320" stroke="#f0c27a" stroke-width="1.5" fill="none"/>
-  <path d="M570 160 H610" stroke="#f0c27a" stroke-width="1.5" fill="none"/>
-  <path d="M445 220 V260" stroke="#9a8470" stroke-width="1.2" fill="none"/>
-  <path d="M835 388 V460" stroke="#9a8470" stroke-width="1.2" fill="none"/>
-  <path d="M305 420 V460" stroke="#9a8470" stroke-width="1.2" fill="none"/>
+  <rect x="590" y="490" width="470" height="120" rx="10" fill="#1a1810" stroke="#5a5030"/>
+  <text x="606" y="520" fill="#f0d48a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">READY packet</text>
+  <text x="606" y="546" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Same receipt: Parallel hit AND Parallel miss. Collision is not a clearance.</text>
+  <text x="606" y="570" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">GOOGLE_CLOUD_PROJECT from env only.</text>
 </svg>

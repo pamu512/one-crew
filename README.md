@@ -37,17 +37,17 @@ Pairing is the **cut**, not a parse of tell. `full_length_documentary` and `week
 
 Tone is not `script_lean` and does not restamp sources. A questioning tone still cannot invent a source or hide fringe. Do not name an example "grounded in reality". `feature_film` does not require tone.
 
-Then a write-once timeline (grounded / mainstream / fringe, house-organ, propaganda, causal links only when Parallel sourced them). Then a **full script you can record from** — scene headings, action/B-roll, host VO or screenplay dialogue — not one block per receipt row. Political `script_lean` changes the spoken argument, not the stamps and not the thickness. Then the collision search on factual VO lines. Then a **frame-by-frame shot list** (shot number, duration, camera, action, line). Each shot is `sourced` | `imagen` | `missing`. Prefer existing stills/clips from Parallel; genAI is the fallback. We do not license the tape we point at and we do not clear rights. TikTok / Shorts generate Imagen only for unsourced shots. Episode / documentary / feature keep the full list; Imagen fills unsourced key frames (cap documented, max 40 billable images, never 400). Parallel down leaves footage `missing` (no invented URL, no Imagen pretend-source). Imagen or Vertex down keeps the shot list and leaves images missing. Lean does not restamp sources or collisions. If the receipt is thin, the script names the hole. It does not invent history to fill pages.
+Then a write-once timeline (grounded / mainstream / fringe, house-organ, propaganda, causal links only when Parallel sourced them). Then a **full script you can record from** — scene headings, action/B-roll, host VO or screenplay dialogue — not one block per receipt row. Political `script_lean` changes the spoken argument, not the stamps and not the thickness. Then the collision search on factual VO lines. Then a **frame-by-frame shot list** (shot number, duration, camera, action, line). Each shot is `sourced` | `imagen` | `missing`. Nonfiction uses archive tape for event shots; genAI is for maps and infographics. Never a photoreal fake of a real event. Fiction features may Imagen invented rooms. Sourced is a cited link, not a rip. We do not license the tape we point at and we do not clear rights. Parallel down leaves footage `missing` (no invented URL, no Imagen pretend-source). Lean does not restamp sources or collisions. If the receipt is thin, the script names the hole. It does not invent history to fill pages.
 
 Sample first-open: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent · tell "Narrator-led global overview of the US and Iran" · tone "Grounded in the record"). Seed collisions stay `missing` — GET never spends.
 
-![Architecture](docs/architecture.svg)
+![Architecture](docs/architecture.png)
 
 ## How it works
 
 1. First-open shows the required picks, the Hormuz VO, source stamps, collision fields (`missing` until a live search), and the shot list. GET never calls Parallel or Imagen.
 2. `POST /api/shifts` needs `SHIFT_TOKEN` + `X-Shift-Token` and the required picks. Unset token → 403. Any missing pick (including empty tell, or empty tone on news/doc) → 400. No spend.
-3. **Google ADK** crew on **Vertex Gemini 3.5 Flash**: picks → timeline → timed VO → collision search → shot list.
+3. **Google ADK** crew on **Vertex Gemini 3.5 Flash**: picks → Parallel timeline → full script → collision search → shot list → archive tape or Imagen graphic.
 4. Parallel down, or a pre-1980 miss → fail-closed HOLD. Collision rail down → every collision field `missing`, never `collision=no`. Unhinged lean still cannot invent a source.
 5. The floor has no publish control. Nothing is posted.
 
@@ -88,7 +88,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Locks: required picks or no run; empty tell is 400; empty tone on news/doc is 400; documentary cut never invents a family even if tell says drama; fiction frame stays labeled; lean and tone do not restamp sources or collision URLs; Parallel down leaves collision `missing` (never `no`); a Hormuz doc URL hit stamps `collision=yes` on that beat; sourced footage preferred over Imagen; GET never spends; POST without token is 403; floor never posts.
+Locks: required picks or no run; empty tell is 400; empty tone on news/doc is 400; documentary cut never invents a family even if tell says drama; fiction frame stays labeled; lean and tone do not restamp sources or collision URLs; Parallel down leaves collision `missing` (never `no`); a Hormuz doc URL hit stamps `collision=yes` on that beat; nonfiction event shots are archive or missing (Imagen is maps/infographics only); GET never spends; POST without token is 403; floor never posts.
 
 ### ADK web (optional)
 
@@ -150,6 +150,7 @@ sample_data/packet.json    first-open oc-hormuz-decade
 sample_data/frames/        storyboard frames cut from the seed script
 backend/onecrew/           FastAPI + ADK crew + receipt lock
 backend/tests/             locks
+docs/architecture.png        diagram for GitHub (svg is the source)
 docs/architecture.svg
 DEMO.md
 LICENSE

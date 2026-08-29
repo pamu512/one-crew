@@ -38,10 +38,11 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
         shot_no += 1
         key = True if short else (beat.scene != last_scene or shot_no == 1)
         last_scene = beat.scene
+        picture = _shot_line(beat, rows, packet)
         shots.append(
             ShotFrame(
                 id=f"shot-{shot_no:03d}-{beat.id}",
-                shot=_shot_line(beat, rows, packet),
+                shot=picture,
                 source_refs=refs,
                 image_href="",
                 imagen=False,
@@ -54,6 +55,7 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
                 footage=MISSING,
                 footage_url=None,
                 footage_title=MISSING,
+                kind=_shot_kind(picture),
             )
         )
     return shots
@@ -169,6 +171,23 @@ def persist_generated_image(frame_id: str, result: Any) -> str:
     return f"/api/frames/{frame_id}"
 
 
+def _shot_kind(line: str) -> str:
+    blob = (line or "").lower()
+    if any(key in blob for key in ("troop-movement", "troop movement", "motion graphic", "animation")):
+        return "motion_graphic"
+    if any(key in blob for key in ("infographic", "chart", "gulf map", "wall map")):
+        return "infographic"
+    return "event"
+
+
+def _allows_imagen(shot: ShotFrame, *, fiction: bool) -> bool:
+    if shot.footage == "sourced":
+        return False
+    if fiction:
+        return True
+    return shot.kind in {"motion_graphic", "infographic"}
+
+
 def _url_ok(url: str | None) -> bool:
     return bool(url) and url.startswith(("http://", "https://"))
 
@@ -219,11 +238,14 @@ def prefer_footage(shots: list[ShotFrame], rails: Rails) -> bool:
 
 
 def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> list[ShotFrame]:
+    fiction = invents_frame(cut=packet.cut, tell=packet.tell or "")
     if not rails.imagen or not rails.vertex:
         for shot in shots:
             if shot.footage != "sourced":
                 shot.image_href = ""
                 shot.imagen = False
+                if not fiction and shot.kind == "event":
+                    shot.footage = MISSING
         return shots
     if packet.cut in {"tiktok-length", "shorts"}:
         cap = len(shots)
@@ -232,6 +254,12 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
     spent = 0
     for shot in shots:
         if shot.footage == "sourced":
+            continue
+        if not _allows_imagen(shot, fiction=fiction):
+            shot.image_href = ""
+            shot.imagen = False
+            if shot.footage != "sourced":
+                shot.footage = MISSING
             continue
         if not shot.key_frame or spent >= cap:
             continue

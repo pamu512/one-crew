@@ -228,7 +228,7 @@ FLOOR_HTML = """<!DOCTYPE html>
         <div class="frame">
           ${fr.image_href ? `<img src="${fr.image_href}" alt="${fr.shot}"/>` : `<p class="note">Image missing. Shot list kept. Not invented.</p>`}
           <p>${fr.shot_no ? "#" + fr.shot_no + " · " : ""}${fr.camera ? fr.camera + " · " : ""}${fr.shot}</p>
-          <p class="note">footage · ${fr.footage || "missing"}${fr.footage === "sourced" ? " · someone else's footage, not ours. We do not license it." : ""}</p>
+          <p class="note">footage · ${fr.footage || "missing"}${fr.kind ? " · " + fr.kind : ""}${fr.footage === "sourced" ? " · someone else's footage, not ours. We do not license it." : ""}${fr.footage === "imagen" && (fr.kind === "motion_graphic" || fr.kind === "infographic") ? " · graphic, not archive" : ""}</p>
           ${fr.footage_url ? `<div class="url">${fr.footage_url}${fr.footage_title && fr.footage_title !== "missing" ? " · " + fr.footage_title : ""}</div>` : ""}
           ${fr.line ? `<p class="note">${fr.line}</p>` : ""}
         </div>`).join("");

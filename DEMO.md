@@ -20,7 +20,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 ## 1:20–2:10 · Lean lock + floor
 
 1. Script lean does not restamp sources or collision URLs. Unhinged voice still cannot invent a source.
-2. The timed VO converted to a shot list. Boards are not optional. If Imagen is down, the shot list stays and images stay missing.
+2. The timed VO converted to a shot list. Nonfiction uses archive tape for events; Imagen is maps and infographics only. Fiction may Imagen invented rooms. We do not license the tape. Boards are not optional. If Imagen is down, the shot list stays and images stay missing.
 3. No publish button. The floor never posts. **live spend off**.
 
 ## 2:10–2:50 · Locks

@@ -45,9 +45,7 @@ def test_parallel_footage_hit_skips_imagen(monkeypatch) -> None:
     assert called == []
 
 
-def test_parallel_footage_miss_allows_imagen(monkeypatch) -> None:
-    called = []
-
+def _fake_gen(called):
     def fake_gen(*, prompt: str, number_of_images: int = 1):
         called.append(prompt)
         return SimpleNamespace(
@@ -56,15 +54,54 @@ def test_parallel_footage_miss_allows_imagen(monkeypatch) -> None:
             ]
         )
 
+    return fake_gen
+
+
+def test_nonfiction_event_shot_never_imagen(monkeypatch) -> None:
+    called = []
     monkeypatch.setattr("onecrew.board.search", _miss)
-    monkeypatch.setattr("onecrew.board.generate_frames", fake_gen)
+    monkeypatch.setattr("onecrew.board.generate_frames", _fake_gen(called))
     packet = seed_first_open()
     write_script(packet)
     frames = write_board(packet, Rails(parallel=True, vertex=True, imagen=True))
-    assert frames
+    events = [
+        f
+        for f in frames
+        if f.kind == "event" or "tanker" in f.shot.lower() or "2018" in f.shot.lower() or "announcement" in f.shot.lower()
+    ]
+    assert events
+    assert all(f.footage in {"sourced", "missing"} for f in events)
+    assert all(f.imagen is False for f in events)
+    assert all("photoreal" not in (f.shot or "").lower() or f.imagen is False for f in events)
+
+
+def test_nonfiction_infographic_may_imagen(monkeypatch) -> None:
+    called = []
+    monkeypatch.setattr("onecrew.board.search", _miss)
+    monkeypatch.setattr("onecrew.board.generate_frames", _fake_gen(called))
+    packet = seed_first_open()
+    write_script(packet)
+    frames = write_board(packet, Rails(parallel=True, vertex=True, imagen=True))
+    graphics = [f for f in frames if f.kind in {"infographic", "motion_graphic"}]
+    assert graphics
     assert called
-    assert any(f.footage == "imagen" and f.imagen for f in frames)
-    assert all(f.footage != "sourced" for f in frames)
+    assert any(f.footage == "imagen" and f.imagen and f.kind in {"infographic", "motion_graphic"} for f in graphics)
+    assert all(f.kind != "event" for f in graphics)
+
+
+def test_feature_kitchen_imagen_allowed(monkeypatch) -> None:
+    called = []
+    monkeypatch.setattr("onecrew.board.search", _miss)
+    monkeypatch.setattr("onecrew.board.generate_frames", _fake_gen(called))
+    packet = seed_first_open()
+    packet.cut = "feature_film"
+    packet.tell = "One family in Bandar Abbas, kitchen radio on"
+    write_script(packet)
+    frames = write_board(packet, Rails(parallel=True, vertex=True, imagen=True))
+    kitchens = [f for f in frames if "kitchen" in f.shot.lower()]
+    assert kitchens
+    assert called
+    assert any(f.imagen for f in kitchens)
 
 
 def test_parallel_down_footage_missing_no_invented_url(monkeypatch) -> None:

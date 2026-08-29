@@ -204,6 +204,7 @@ class ShotFrame(BaseModel):
     footage: Footage = MISSING
     footage_url: str | None = None
     footage_title: str = MISSING
+    kind: str = ""
 
 
 class Receipt(BaseModel):

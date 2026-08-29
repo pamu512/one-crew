@@ -262,6 +262,16 @@ def test_tell_examples_are_not_an_enum() -> None:
     assert "examples" in readme.lower()
     assert "genre `nonfiction`" not in readme
     assert "not a closed list" in readme.lower() or "not the only" in readme.lower()
+    assert "![Architecture](docs/architecture.png)" in readme
+    assert "architecture.svg)" not in readme
+    assert "archive tape" in readme.lower()
+    assert "maps and infographics" in readme.lower()
+    png = Path("/workspace/docs/architecture.png").read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    svg = Path("/workspace/docs/architecture.svg").read_text()
+    assert "<script" not in svg.lower()
+    assert "foreignObject" not in svg
+    assert "onload" not in svg.lower()
 
 
 def test_fiction_vo_has_no_receipt_jargon() -> None:

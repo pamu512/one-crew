@@ -110,7 +110,8 @@ def test_board_does_not_return_hardcoded_hormuz_stills(monkeypatch) -> None:
     assert any("milk" in frame.shot.lower() or "dairy" in frame.shot.lower() or "auction" in frame.shot.lower() for frame in frames)
     assert all("receipt card" not in frame.shot.lower() for frame in frames)
     assert any(frame.beat_id for frame in frames)
-    assert any(frame.imagen and frame.image_href for frame in frames)
+    assert all(not frame.imagen or frame.kind in {"infographic", "motion_graphic"} for frame in frames)
+    assert all(frame.footage != "sourced" or frame.footage_url for frame in frames)
 
 
 def test_hold_does_not_invent_frames() -> None:

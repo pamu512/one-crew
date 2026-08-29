@@ -23,7 +23,7 @@ The researcher writes a timeline once and stamps each source. The floor writes a
 - Before you record: timed VO, collision list, house-organ / propaganda / fringe / unsourced stamps
 - Match list only — not a copyright clearance, not legal advice, not a license
 - Required picks: topic, platform, length, depth, script lean, tell (free text), tone (free text on news/doc)
-- Shot list cut from that VO; prefer sourced frames; genAI is the fallback; we do not license the tape
+- Shot list cut from that VO; nonfiction uses archive tape for events; genAI is maps and infographics only; we do not license the tape
 - Script lean does not restamp sources or collisions
 - Write-once Parallel timeline
 - GET never spends; POST is token-gated and pick-gated
