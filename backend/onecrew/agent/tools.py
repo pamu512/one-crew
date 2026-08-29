@@ -138,7 +138,7 @@ def frames_from_script(packet: Packet, refs: list[str]) -> list[ShotFrame]:
         ),
     ]
     if packet.cut:
-        return frames[: frame_count(require_cut(packet.cut))]
+        return frames[: frame_count(require_cut(packet.cut), packet.platform)]
     return frames
 
 

@@ -99,7 +99,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
     if not findings:
         return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
     if packet.cut:
-        findings = size_findings(findings, packet.cut)
+        findings = size_findings(findings, packet.cut, packet.platform)
     # ponytail: live causal_links stay empty unless Parallel sourced a this-led-to-that URL.
     # Seed shows one missing link; do not invent a 40-year chain here.
     return Receipt(
@@ -116,7 +116,7 @@ def _board(packet: Packet, rails: Rails) -> list:
     if not rails.imagen or not rails.vertex:
         return []
     refs = [f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url]
-    shots = frame_count(require_cut(packet.cut))
+    shots = frame_count(require_cut(packet.cut), packet.platform)
     try:
         generate_frames(
             prompt=(

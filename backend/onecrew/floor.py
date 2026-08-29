@@ -97,7 +97,12 @@ FLOOR_HTML = """<!DOCTYPE html>
       {id:"tiktok", label:"tiktok"},
       {id:"youtube", label:"youtube"},
       {id:"youtube_shorts", label:"youtube_shorts"},
-      {id:"instagram", label:"instagram"},
+      {id:"instagram_reels", label:"instagram_reels"},
+      {id:"instagram_stories", label:"instagram_stories"},
+      {id:"instagram_feed", label:"instagram_feed"},
+      {id:"facebook_reels", label:"facebook_reels"},
+      {id:"facebook_feed", label:"facebook_feed"},
+      {id:"threads", label:"threads"},
       {id:"podcast", label:"podcast"}
     ];
     const CUTS = [

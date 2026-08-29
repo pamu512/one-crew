@@ -17,7 +17,18 @@ Cut = Literal[
     "one_time_short_episode",
     "full_length_documentary",
 ]
-Platform = Literal["tiktok", "youtube", "youtube_shorts", "instagram", "podcast"]
+Platform = Literal[
+    "tiktok",
+    "youtube",
+    "youtube_shorts",
+    "instagram_reels",
+    "instagram_stories",
+    "instagram_feed",
+    "facebook_reels",
+    "facebook_feed",
+    "threads",
+    "podcast",
+]
 ScriptLean = Literal[
     "centered_independent",
     "left",
@@ -42,7 +53,18 @@ CUTS = (
     "one_time_short_episode",
     "full_length_documentary",
 )
-PLATFORMS = ("tiktok", "youtube", "youtube_shorts", "instagram", "podcast")
+PLATFORMS = (
+    "tiktok",
+    "youtube",
+    "youtube_shorts",
+    "instagram_reels",
+    "instagram_stories",
+    "instagram_feed",
+    "facebook_reels",
+    "facebook_feed",
+    "threads",
+    "podcast",
+)
 SCRIPT_LEANS = (
     "centered_independent",
     "left",

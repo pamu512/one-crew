@@ -81,7 +81,7 @@ def test_tiktok_packet_is_not_a_doc_packet() -> None:
         depth="decade",
         cut="tiktok-length",
     )
-    with pytest.raises(ReceiptInvalidError, match="not a doc packet"):
+    with pytest.raises(ReceiptInvalidError, match="not a documentary board"):
         write_receipt(
             packet,
             Receipt(

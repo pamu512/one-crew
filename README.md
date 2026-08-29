@@ -12,14 +12,14 @@ One Crew is a research companion. Four picks, then a write-once timeline, then a
 
 Required picks, in this order, before any Parallel or Imagen spend. No defaults. Any missing pick = no run.
 
-1. **Platform** — `tiktok` | `youtube` | `youtube_shorts` | `instagram` | `podcast`
+1. **Platform** (TikTok, YouTube, Instagram / Meta, podcast — no free-text, no default) — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
 2. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`
 3. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
 4. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
 
 Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
 
-The floor writes the **script** in the requested lean, sized to platform + length, with citations pointing at those rows. The script **must** convert to a storyboard: Imagen frames from that script, one frame per beat/shot, sized to the cut. Parallel refs may inform the frames. If Imagen or Vertex is down, frames stay missing — they are not invented. Boards are not optional.
+The floor writes the **script** in the requested lean, sized to that surface + length, with citations pointing at those rows. The script **must** convert to a storyboard: Imagen frames from that script, one frame per beat/shot, sized to the surface. A Stories board is not a documentary board. A Reels board is not a YouTube long-form board. Parallel refs may inform the frames. If Imagen or Vertex is down, frames stay missing — they are not invented. Boards are not optional.
 
 Requested script lean does **not** restamp sources. Unhinged / fringe voice still cannot invent sources or mark propaganda as grounded. Centered_independent still must show missing when Parallel missed. Do not hide fringe or propaganda to match a centered ask. Do not invent a lobby to match a far-right / far-left ask.
 

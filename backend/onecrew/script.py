@@ -42,7 +42,7 @@ def write_script(packet: Packet) -> Packet:
     cut = require_cut(packet.cut) if packet.cut else None
     rows = list(receipt.findings)
     if cut:
-        rows = rows[: event_cap(cut)]
+        rows = rows[: event_cap(cut, packet.platform)]
     bits = [f"{opener} Platform {packet.platform or 'missing'}. Cut {packet.cut or 'missing'}."]
     for finding in rows:
         bits.append(_cite(finding))

@@ -128,7 +128,9 @@ def validate_finding(finding: Finding) -> None:
     validate_attribution(finding)
 
 
-def validate_ready_receipt(receipt: Receipt, *, cut: str | None = None) -> None:
+def validate_ready_receipt(
+    receipt: Receipt, *, cut: str | None = None, platform: str | None = None
+) -> None:
     if not receipt.findings:
         raise ReceiptInvalidError("READY receipt needs findings")
     for finding in receipt.findings:
@@ -143,8 +145,10 @@ def validate_ready_receipt(receipt: Receipt, *, cut: str | None = None) -> None:
         raise ReceiptInvalidError("No cut chosen = no run")
     from onecrew.cut import event_cap
 
-    if len(receipt.findings) > event_cap(cut):  # type: ignore[arg-type]
-        raise ReceiptInvalidError("A TikTok packet is not a doc packet")
+    if len(receipt.findings) > event_cap(cut, platform):  # type: ignore[arg-type]
+        raise ReceiptInvalidError(
+            "A Stories board is not a documentary board; a Reels board is not a YouTube long-form board"
+        )
 
 
 def hold_receipt(packet_id: str, rails: Rails) -> Receipt:
@@ -172,7 +176,7 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
     if packet.receipt is not None and packet.receipt.written:
         raise ReceiptWriteOnceError(f"receipt already written for {packet.id}")
     if receipt.disposition == "READY":
-        validate_ready_receipt(receipt, cut=packet.cut)
+        validate_ready_receipt(receipt, cut=packet.cut, platform=packet.platform)
     elif receipt.disposition == "HOLD":
         if receipt.findings:
             raise ReceiptInvalidError("HOLD must not invent stamps")
@@ -197,9 +201,9 @@ def attach_frames(packet: Packet, frames: list[ShotFrame], *, rails: Rails) -> P
     from onecrew.cut import frame_count
     from onecrew.cut import require_cut
 
-    expected = frame_count(require_cut(packet.cut))
+    expected = frame_count(require_cut(packet.cut), packet.platform)
     if len(frames) != expected:
-        raise ReceiptInvalidError("boards are sized to the cut, not a collage")
+        raise ReceiptInvalidError("boards are sized to the surface, not a collage")
     for frame in frames:
         if not frame.shot.strip():
             raise ReceiptInvalidError("each frame needs a real shot, not a mood")

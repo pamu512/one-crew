@@ -10,7 +10,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 
 ## 0:40–1:20 · Four picks + script
 
-1. Point at **youtube · one_time_short_episode · decade · centered_independent**. No pick is pre-selected on a new run. Any missing pick = no run.
+1. Point at **youtube · one_time_short_episode · decade · centered_independent**. Platform list includes Instagram and other Meta surfaces (`instagram_reels`, `instagram_stories`, `instagram_feed`, `facebook_reels`, `facebook_feed`, `threads`). No pick is pre-selected. Any missing pick = no run. A Stories board is not a documentary board.
 2. Point at the **script** and the **storyboard** together — citations like `[jcpoa-2018]` point at source rows. One frame per beat, not a collage.
 3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
 4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.
