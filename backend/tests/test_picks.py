@@ -91,7 +91,7 @@ def test_unhinged_lean_still_fail_closed_on_missing_parallel() -> None:
         script_lean="unhinged_fringe",
         topic="Hormuz",
     )
-    packet = run_live_packet(shift, board=False)
+    packet = run_live_packet(shift)
     assert packet.receipt is not None
     assert packet.receipt.disposition == "HOLD"
     assert packet.receipt.findings == []

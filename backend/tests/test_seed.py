@@ -65,6 +65,14 @@ def test_seeded_missing_causal_link() -> None:
     assert link.to_id == "oil-panic"
 
 
+def test_seed_shows_script_and_storyboard_together() -> None:
+    packet = seed_first_open()
+    assert packet.script.strip()
+    assert "[jcpoa-2018]" in packet.script
+    assert len(packet.frames) >= 1
+    assert all(frame.shot.strip() for frame in packet.frames)
+
+
 def test_seeded_four_shot_frames() -> None:
     import xml.etree.ElementTree as ET
 

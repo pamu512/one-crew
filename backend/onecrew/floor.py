@@ -211,7 +211,7 @@ FLOOR_HTML = """<!DOCTYPE html>
         ${findings}
         <div class="brand" style="margin:16px 0 8px">Causal links</div>
         ${links || `<p class="note">No Parallel-sourced link. Missing, not invented.</p>`}
-        <div class="brand" style="margin:16px 0 8px">Boards (optional, sized to cut)</div>
+        <div class="brand" style="margin:16px 0 8px">Storyboard (from the script)</div>
         <div class="frames">${frames}</div>
       `;
       if (packet.topic && !document.getElementById("topic").value) {
@@ -273,7 +273,7 @@ FLOOR_HTML = """<!DOCTYPE html>
           "content-type": "application/json",
           ...(token ? {"X-Shift-Token": token} : {})
         },
-        body: JSON.stringify({topic, platform, cut, depth, script_lean, board: false, goal: topic || "Research the topic. Do not post."})
+        body: JSON.stringify({topic, platform, cut, depth, script_lean, goal: topic || "Research the topic. Do not post."})
       });
       const text = await res.text();
       document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);

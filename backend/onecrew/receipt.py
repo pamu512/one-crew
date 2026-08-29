@@ -190,10 +190,8 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
 
 
 def attach_frames(packet: Packet, frames: list[ShotFrame], *, rails: Rails) -> Packet:
-    if not rails.ok:
-        packet.frames = []
-        return packet
-    if not frames:
+    """Storyboard from the script. If Imagen/Vertex is down, frames stay missing."""
+    if not rails.imagen or not rails.vertex or not frames:
         packet.frames = []
         return packet
     from onecrew.cut import frame_count

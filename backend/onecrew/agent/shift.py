@@ -59,7 +59,7 @@ def open_shift(
 
 
 def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
-    if not rails.ok:
+    if not rails.parallel:
         held = hold_receipt(packet.id, rails)
         pre = pre1980_fail_closed(packet_id=packet.id, depth=depth, rails=rails, parallel_hits=0)
         return pre or held
@@ -112,15 +112,17 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
 
 
 def _board(packet: Packet, rails: Rails) -> list:
-    if not rails.ok:
+    """Storyboard from the script. If Imagen/Vertex is down, frames stay missing."""
+    if not rails.imagen or not rails.vertex:
         return []
     refs = [f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url]
     shots = frame_count(require_cut(packet.cut))
     try:
         generate_frames(
             prompt=(
-                f"{shots} photoreal shot frames sized to cut={packet.cut}. Script: {packet.script}. "
-                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a collage."
+                f"{shots} photoreal storyboard frames, one per beat, from this script. "
+                f"Cut={packet.cut}. Script: {packet.script}. "
+                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a mood collage."
             ),
             number_of_images=shots,
         )
@@ -129,8 +131,8 @@ def _board(packet: Packet, rails: Rails) -> list:
     return frames_from_script(packet, [r for r in refs if r])
 
 
-def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
-    """Spend path. Caller already checked token + all four picks."""
+def run_live_packet(shift: ShiftRecord) -> Packet:
+    """Spend path. Picks → sources → script → storyboard. Boards are not optional."""
     require_picks(shift.platform, shift.cut, shift.depth, shift.script_lean)
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
@@ -147,7 +149,7 @@ def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
         shift_id=shift.id,
     )
     bus.emit(shift.id, agent="researcher", kind="plan", message=f"Research {fresh.id} depth={shift.depth}")
-    if not rails.ok:
+    if not rails.parallel:
         write_receipt(
             fresh,
             pre1980_fail_closed(
@@ -155,34 +157,23 @@ def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
             )
             or hold_receipt(fresh.id, rails),
         )
-        attach_frames(fresh, [], rails=rails)
         write_script(fresh)
+        attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
 
     receipt = _research(fresh, rails, shift.depth)
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
-        attach_frames(fresh, [], rails=rails)
         write_script(fresh)
+        attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
 
     write_receipt(fresh, receipt)
     write_script(fresh)
-    if not board:
-        store.upsert_packet(fresh)
-        return fresh
-
-    bus.emit(shift.id, agent="boarder", kind="plan", message=f"Boards sized to {shift.cut}")
+    bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
-    if not frames:
-        down = rails.model_copy(update={"imagen": False})
-        # Receipt already written — board miss does not invent frames.
-        attach_frames(fresh, [], rails=down)
-        store.upsert_packet(fresh)
-        return fresh
-
     attach_frames(fresh, frames, rails=rails)
     store.upsert_packet(fresh)
     return fresh
@@ -193,7 +184,6 @@ async def run_shift(
     *,
     packet_id: str | None = None,
     shift: ShiftRecord | None = None,
-    board: bool = False,
     platform: str | None = None,
     depth: str | None = None,
     cut: str | None = None,
@@ -211,7 +201,7 @@ async def run_shift(
             topic=topic,
         )
     try:
-        packet = run_live_packet(shift, board=board)
+        packet = run_live_packet(shift)
         shift.status = "completed"
         shift.finished_at = utcnow()
         store.upsert_shift(shift)

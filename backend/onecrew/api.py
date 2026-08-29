@@ -72,7 +72,6 @@ class ShiftRequest(BaseModel):
         default="Research the topic inside the chosen depth. Write a timeline. Do not post."
     )
     packet_id: str = Field(default=config.SEED_PACKET_ID)
-    board: bool = False
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -188,7 +187,7 @@ async def start_shift(
         script_lean=script_lean,
         topic=topic,
     )
-    await run_shift(body.goal, packet_id=body.packet_id, shift=shift, board=body.board)
+    await run_shift(body.goal, packet_id=body.packet_id, shift=shift)
     return shift.model_dump()
 
 

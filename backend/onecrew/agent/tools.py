@@ -38,7 +38,7 @@ def imagen_shots(script: str, refs: str) -> dict[str, Any]:
     """Boarder tool. Vertex Imagen. Spends. Real shots, not a mood dump."""
     prompt = (
         f"Four photoreal shot frames from this short-form script, using only these refs. "
-        f"Real camera setups, not a mood board. Script: {script}. Refs: {refs}"
+        f"Storyboard from this script, one frame per beat, not a mood collage. Script: {script}. Refs: {refs}"
     )
     try:
         generate_frames(prompt=prompt, number_of_images=4)
