@@ -263,10 +263,16 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
             continue
         if not shot.key_frame or spent >= cap:
             continue
-        prompt = (
-            f"One photoreal storyboard frame, not a collage. Cut={packet.cut}. "
-            f"Shot: {shot.shot}. VO beat {shot.beat_id}."
-        )
+        if not fiction and shot.kind in {"motion_graphic", "infographic"}:
+            prompt = (
+                f"Motion graphic or infographic explainer, not photoreal archive tape. "
+                f"Cut={packet.cut}. Shot: {shot.shot}. VO beat {shot.beat_id}."
+            )
+        else:
+            prompt = (
+                f"One photoreal storyboard frame, not a collage. Cut={packet.cut}. "
+                f"Shot: {shot.shot}. VO beat {shot.beat_id}."
+            )
         try:
             result = generate_frames(prompt=prompt, number_of_images=1)
         except ImagenDownError:
