@@ -73,7 +73,7 @@ FLOOR_HTML = """<!DOCTYPE html>
   <main>
     <section class="card">
       <div class="brand">Desk</div>
-      <p class="script">Topic first, then platform, length, depth, script lean, tell. Any missing pick = no run. GET does not spend. The floor never posts.</p>
+      <p class="script">Topic first, then platform, length, depth, script lean, tell, tone. Any missing pick = no run. GET does not spend. The floor never posts.</p>
       <label for="topic">Topic — pick 1, required</label>
       <textarea id="topic" rows="3" placeholder="Explain what's going on with the Hormuz strait"></textarea>
       <label>Platform — required</label>
@@ -93,6 +93,14 @@ FLOOR_HTML = """<!DOCTYPE html>
       <p class="note">Weekly news desk, host only</p>
       <p class="note">Historical drama through one port family</p>
       <p class="note">Documentary / weekly_update stay news: host VO, no invented people, even if you type a family thriller. Feature invents a frame from whatever you typed.</p>
+      <label for="tone">Tone — required on news/doc (not on feature_film)</label>
+      <textarea id="tone" rows="2" placeholder="Grounded in the record"></textarea>
+      <p class="note">Examples only — not the only allowed values:</p>
+      <p class="note">News desk</p>
+      <p class="note">Make the viewer think</p>
+      <p class="note">Question the decisions</p>
+      <p class="note">Personal take</p>
+      <p class="note">Grounded in the record</p>
       <label for="token">Shift token (spend only)</label>
       <input id="token" type="password" autocomplete="off"/>
       <button id="research" type="button" disabled>Write script</button>
@@ -150,9 +158,11 @@ FLOOR_HTML = """<!DOCTYPE html>
       const depth = chosenRadio("depth");
       const lean = chosenRadio("script_lean");
       const tell = document.getElementById("tell").value.trim();
+      const tone = document.getElementById("tone").value.trim();
+      const needTone = cut !== "feature_film";
       const btn = document.getElementById("research");
       const live = window.__shiftsOn === true;
-      btn.disabled = !topic || !platform || !cut || !depth || !lean || !tell || !live;
+      btn.disabled = !topic || !platform || !cut || !depth || !lean || !tell || (needTone && !tone) || !live;
       const msg = document.getElementById("desk-msg");
       if (!topic) { msg.textContent = "No topic chosen = no run."; return; }
       if (!platform) { msg.textContent = "No platform chosen = no run."; return; }
@@ -160,8 +170,9 @@ FLOOR_HTML = """<!DOCTYPE html>
       if (!depth) { msg.textContent = "No depth chosen = no run."; return; }
       if (!lean) { msg.textContent = "No script lean chosen = no run."; return; }
       if (!tell) { msg.textContent = "No tell chosen = no run."; return; }
+      if (needTone && !tone) { msg.textContent = "No tone chosen = no run."; return; }
       msg.textContent = live
-        ? "Six picks locked. Research spends Parallel only after this."
+        ? "Picks locked. Research spends Parallel only after this."
         : "Live spend off. Token-gate still on spend.";
     }
 
@@ -217,12 +228,14 @@ FLOOR_HTML = """<!DOCTYPE html>
         <div class="frame">
           ${fr.image_href ? `<img src="${fr.image_href}" alt="${fr.shot}"/>` : `<p class="note">Image missing. Shot list kept. Not invented.</p>`}
           <p>${fr.shot_no ? "#" + fr.shot_no + " · " : ""}${fr.camera ? fr.camera + " · " : ""}${fr.shot}</p>
+          <p class="note">footage · ${fr.footage || "missing"}${fr.footage === "sourced" ? " · someone else's footage, not ours. We do not license it." : ""}</p>
+          ${fr.footage_url ? `<div class="url">${fr.footage_url}${fr.footage_title && fr.footage_title !== "missing" ? " · " + fr.footage_title : ""}</div>` : ""}
           ${fr.line ? `<p class="note">${fr.line}</p>` : ""}
         </div>`).join("");
       document.getElementById("packet").innerHTML = `
         <div class="brand">${packet.id}</div>
         <h1 class="hook">${packet.topic || packet.hook}</h1>
-        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.tell || "none"}</p>
+        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.tell || "none"} · tone: ${packet.tone || "none"}</p>
         <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
         <div class="brand" style="margin:16px 0 8px">Existing media · collision</div>
@@ -288,6 +301,7 @@ FLOOR_HTML = """<!DOCTYPE html>
 
     document.getElementById("topic").addEventListener("input", syncDesk);
     document.getElementById("tell").addEventListener("input", syncDesk);
+    document.getElementById("tone").addEventListener("input", syncDesk);
     document.getElementById("research").addEventListener("click", async () => {
       const platform = chosenRadio("platform");
       const cut = chosenRadio("cut");
@@ -295,7 +309,8 @@ FLOOR_HTML = """<!DOCTYPE html>
       const script_lean = chosenRadio("script_lean");
       const topic = document.getElementById("topic").value.trim();
       const tell = document.getElementById("tell").value.trim();
-      if (!topic || !platform || !cut || !depth || !script_lean || !tell) {
+      const tone = document.getElementById("tone").value.trim();
+      if (!topic || !platform || !cut || !depth || !script_lean || !tell || (cut !== "feature_film" && !tone)) {
         document.getElementById("desk-msg").textContent = "Any missing pick = no run.";
         return;
       }
@@ -306,7 +321,7 @@ FLOOR_HTML = """<!DOCTYPE html>
           "content-type": "application/json",
           ...(token ? {"X-Shift-Token": token} : {})
         },
-        body: JSON.stringify({topic, platform, cut, depth, script_lean, tell, goal: topic || "Research the topic. Do not post."})
+        body: JSON.stringify({topic, platform, cut, depth, script_lean, tell, tone, goal: topic || "Research the topic. Do not post."})
       });
       const text = await res.text();
       document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);

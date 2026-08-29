@@ -11,6 +11,7 @@ Independent = Literal["yes", "no", "missing"]
 Propaganda = Literal["yes", "no", "missing"]
 Collision = Literal["yes", "no", "missing"]
 CollisionKind = Literal["same_script", "near_script", "missing"]
+Footage = Literal["sourced", "imagen", "missing"]
 Depth = Literal["1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet"]
 Cut = Literal[
     "tiktok-length",
@@ -50,6 +51,7 @@ INDEPENDENT = frozenset({"yes", "no", "missing"})
 PROPAGANDA = frozenset({"yes", "no", "missing"})
 COLLISIONS = frozenset({"yes", "no", "missing"})
 COLLISION_KINDS = frozenset({"same_script", "near_script", "missing"})
+FOOTAGES = frozenset({"sourced", "imagen", "missing"})
 DEPTHS = ("1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet")
 CUTS = (
     "tiktok-length",
@@ -199,6 +201,9 @@ class ShotFrame(BaseModel):
     shot_no: int = 0
     camera: str = ""
     line: str = ""
+    footage: Footage = MISSING
+    footage_url: str | None = None
+    footage_title: str = MISSING
 
 
 class Receipt(BaseModel):
@@ -230,6 +235,7 @@ class Packet(BaseModel):
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
     tell: str = ""
+    tone: str = ""
     hook: str
     script: str
     status: PacketStatus = "ready"
@@ -256,6 +262,7 @@ class ShiftRecord(BaseModel):
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
     tell: str = ""
+    tone: str = ""
     topic: str = ""
     rails: Rails | None = None
     error: str | None = None

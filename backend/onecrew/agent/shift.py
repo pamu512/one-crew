@@ -31,6 +31,7 @@ def open_shift(
     cut: str | None = None,
     script_lean: str | None = None,
     tell: str | None = None,
+    tone: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     (
@@ -40,7 +41,8 @@ def open_shift(
         chosen_depth,
         chosen_lean,
         chosen_tell,
-    ) = require_picks(topic, platform, cut, depth, script_lean, tell)
+        chosen_tone,
+    ) = require_picks(topic, platform, cut, depth, script_lean, tell, tone)
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
     rails = assess_rails()
@@ -58,6 +60,7 @@ def open_shift(
         cut=chosen_cut,
         script_lean=chosen_lean,
         tell=chosen_tell,
+        tone=chosen_tone,
         topic=chosen_topic,
         rails=rails,
         store_backend=store.backend,
@@ -133,6 +136,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         shift.depth,
         shift.script_lean,
         shift.tell,
+        shift.tone,
     )
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
@@ -144,6 +148,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         cut=shift.cut,
         script_lean=shift.script_lean,
         tell=shift.tell,
+        tone=shift.tone,
         hook=shift.topic or existing.hook,
         script="",
         status="running",
@@ -193,6 +198,7 @@ async def run_shift(
     cut: str | None = None,
     script_lean: str | None = None,
     tell: str | None = None,
+    tone: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     if shift is None:
@@ -204,6 +210,7 @@ async def run_shift(
             cut=cut,
             script_lean=script_lean,
             tell=tell,
+            tone=tone,
             topic=topic,
         )
     try:

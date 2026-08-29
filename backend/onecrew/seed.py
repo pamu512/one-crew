@@ -10,6 +10,7 @@ from onecrew.receipt import write_receipt
 from onecrew.script import write_script
 from onecrew.store import store
 from onecrew.tell import SEED_TELL
+from onecrew.tone import SEED_TONE
 
 CFR_JCPOA = "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
 OPEC_URL = "https://www.opec.org/"
@@ -108,6 +109,7 @@ def build_seed_packet() -> Packet:
         cut="one_time_short_episode",
         script_lean="centered_independent",
         tell=SEED_TELL,
+        tone=SEED_TONE,
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",

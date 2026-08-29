@@ -14,6 +14,7 @@ def test_first_open_packet_id_is_oc_hormuz_decade() -> None:
     assert packet.platform == "youtube"
     assert packet.script_lean == "centered_independent"
     assert packet.tell == "Narrator-led global overview of the US and Iran"
+    assert packet.tone == "Grounded in the record"
     assert "[jcpoa-2018]" in packet.script
     assert "[hormuz-share]" in packet.script
     assert "[secret-closure]" in packet.script
@@ -95,6 +96,10 @@ def test_seeded_shot_list_matches_timed_vo() -> None:
         assert frame.shot.strip()
         assert "mood" not in frame.shot.lower()
         assert frame.imagen is False
+        assert frame.footage == "missing"
+        assert frame.footage_url is None
+        assert "ap reel" not in (frame.footage_title or "").lower()
+        assert "ap.org" not in (frame.footage_url or "")
         svg = (config.FRAMES_DIR / f"{frame.id}.svg").read_bytes()
         assert all(b >= 32 or b in (9, 10, 13) for b in svg)
         ET.fromstring(svg)

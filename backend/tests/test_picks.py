@@ -13,6 +13,7 @@ from onecrew.picks import (
     require_topic,
 )
 from onecrew.tell import SEED_TELL, TellRequiredError
+from onecrew.tone import SEED_TONE, ToneRequiredError
 from onecrew.script import write_script
 from onecrew.seed import seed_first_open
 from onecrew.spend import ledger
@@ -26,6 +27,7 @@ def _all(**overrides):
         "depth": "decade",
         "script_lean": "centered_independent",
         "tell": SEED_TELL,
+        "tone": SEED_TONE,
     }
     body.update(overrides)
     return body
@@ -74,6 +76,15 @@ def test_no_run_without_all_six_picks(monkeypatch) -> None:
         missing_omitted = client.post("/api/shifts", json=omitted_tell, headers=headers)
         assert missing_omitted.status_code == 400
         assert "tell" in missing_omitted.json()["detail"].lower()
+        missing_tone = client.post("/api/shifts", json=_all(tone=None), headers=headers)
+        assert missing_tone.status_code == 400
+        assert "tone" in missing_tone.json()["detail"].lower()
+        empty_tone = client.post("/api/shifts", json=_all(tone="   "), headers=headers)
+        assert empty_tone.status_code == 400
+        omitted_tone = {k: v for k, v in _all().items() if k != "tone"}
+        missing_tone_omit = client.post("/api/shifts", json=omitted_tone, headers=headers)
+        assert missing_tone_omit.status_code == 400
+        assert "tone" in missing_tone_omit.json()["detail"].lower()
     assert ledger.parallel_calls == before_p == 0
     assert ledger.imagen_calls == before_i == 0
     with pytest.raises(TopicRequiredError, match="No topic chosen"):
@@ -91,6 +102,10 @@ def test_no_run_without_all_six_picks(monkeypatch) -> None:
         require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", "left", None)
     with pytest.raises(TellRequiredError, match="No tell chosen"):
         require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", "left", "   ")
+    with pytest.raises(ToneRequiredError, match="No tone chosen"):
+        require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", "left", SEED_TELL, None)
+    with pytest.raises(ToneRequiredError, match="No tone chosen"):
+        require_picks("Hormuz", "youtube", "full_length_documentary", "decade", "left", SEED_TELL, "")
 
 
 def test_script_lean_cannot_change_a_source_stamp() -> None:
@@ -126,6 +141,7 @@ def test_unhinged_lean_still_fail_closed_on_missing_parallel() -> None:
         depth="decade",
         script_lean="unhinged_fringe",
         tell="Thriller on a tanker crossing Hormuz that might get hit",
+        tone=SEED_TONE,
         topic="Hormuz",
     )
     packet = run_live_packet(shift)

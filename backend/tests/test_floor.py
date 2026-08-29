@@ -29,6 +29,14 @@ def test_floor_html_has_no_publish_button() -> None:
         assert "name=\"genre\"" not in FLOOR_HTML
         assert "name=\"vantage\"" not in FLOOR_HTML
         assert 'id="tell"' in FLOOR_HTML
+        assert 'id="tone"' in FLOOR_HTML
+        assert "No tone chosen = no run" in page.text
+        assert "News desk" in page.text
+        assert "Make the viewer think" in page.text
+        assert "Question the decisions" in page.text
+        assert "Personal take" in page.text
+        assert "Grounded in the record" in page.text
+        assert "grounded in reality" not in page.text.lower()
         assert "<textarea" in FLOOR_HTML
         assert "checked=" not in FLOOR_HTML
         assert "checked>" not in FLOOR_HTML

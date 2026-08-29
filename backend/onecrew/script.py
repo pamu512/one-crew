@@ -5,6 +5,7 @@ import re
 from onecrew.cut import event_cap, is_long_cut, require_cut
 from onecrew.models import MISSING, Finding, Packet, ScriptBeat
 from onecrew.tell import invents_frame, tell_lane
+from onecrew.tone import apply_tone
 
 
 def _cite(finding_id: str) -> str:
@@ -264,7 +265,12 @@ def _map_table_frame(theme: str, lean: str) -> str:
 
 
 def _vo_for(finding: Finding, lean: str, *, long_form: bool, packet: Packet) -> str:
-    fact = _vo_body(finding, lean, long_form=long_form).rstrip() + _cite(finding.id)
+    spoken = apply_tone(
+        _vo_body(finding, lean, long_form=long_form).rstrip(),
+        packet.tone,
+        fiction=_invents_frame(packet),
+    )
+    fact = spoken + _cite(finding.id)
     frame = _frame_for(packet, finding, lean)
     if not frame:
         return fact
@@ -725,7 +731,8 @@ def write_script(packet: Packet) -> Packet:
         beat.collision_title = old.collision_title
         beat.collision_kind = old.collision_kind
     lines = [
-        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.tell or 'missing'}",
+        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.tell or 'missing'}"
+        + (f" · {packet.tone}" if packet.tone else ""),
         "",
     ]
     last_act = None

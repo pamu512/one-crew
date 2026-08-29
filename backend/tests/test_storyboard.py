@@ -82,6 +82,11 @@ def test_board_does_not_return_hardcoded_hormuz_stills(monkeypatch) -> None:
     packet = _dairy_packet()
     returned = []
 
+    def miss(*_a, **_k):
+        return SimpleNamespace(results=[])
+
+    monkeypatch.setattr("onecrew.board.search", miss)
+
     def fake_gen(*, prompt: str, number_of_images: int = 1):
         returned.append(prompt)
         return SimpleNamespace(

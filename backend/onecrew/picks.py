@@ -4,6 +4,7 @@ from onecrew.cut import CutRequiredError, require_cut
 from onecrew.depth import DepthRequiredError, require_depth
 from onecrew.models import PLATFORMS, SCRIPT_LEANS, Cut, Depth, Platform, ScriptLean
 from onecrew.tell import TellRequiredError, require_tell
+from onecrew.tone import ToneRequiredError, require_tone
 
 
 class TopicRequiredError(ValueError):
@@ -25,6 +26,7 @@ PickError = (
     DepthRequiredError,
     ScriptLeanRequiredError,
     TellRequiredError,
+    ToneRequiredError,
 )
 
 
@@ -56,15 +58,18 @@ def require_picks(
     depth: str | None,
     script_lean: str | None,
     tell: str | None,
-) -> tuple[str, Platform, Cut, Depth, ScriptLean, str]:
-    """Order: topic, platform, length, depth, script lean, tell. Any missing pick = no run."""
+    tone: str | None = None,
+) -> tuple[str, Platform, Cut, Depth, ScriptLean, str, str]:
+    """Order: topic, platform, length, depth, script lean, tell, tone. Tone required unless feature_film."""
+    chosen_cut = require_cut(cut)
     return (
         require_topic(topic),
         require_platform(platform),
-        require_cut(cut),
+        chosen_cut,
         require_depth(depth),
         require_script_lean(script_lean),
         require_tell(tell),
+        require_tone(cut=chosen_cut, tone=tone),
     )
 
 

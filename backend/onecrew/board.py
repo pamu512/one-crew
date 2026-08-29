@@ -7,8 +7,14 @@ from xml.sax.saxutils import escape
 from onecrew import config
 from onecrew.cut import frame_count, require_cut
 from onecrew.imagen_client import ImagenDownError, generate_frames
-from onecrew.models import Finding, Packet, Rails, ScriptBeat, ShotFrame
+from onecrew.models import MISSING, Finding, Packet, Rails, ScriptBeat, ShotFrame
+from onecrew.parallel_client import ParallelDownError, search
 from onecrew.tell import invents_frame, tell_lane
+
+FOOTAGE_OBJECTIVE = (
+    "Find existing news-archive stills, official video, or a published frame "
+    "that matches this shot. Return a media URL if one exists."
+)
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -45,6 +51,9 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
                 shot_no=shot_no,
                 camera=beat.camera or ("WIDE" if beat.kind == "action" else "MCU"),
                 line=beat.vo.split("\n")[-1][:180],
+                footage=MISSING,
+                footage_url=None,
+                footage_title=MISSING,
             )
         )
     return shots
@@ -160,11 +169,61 @@ def persist_generated_image(frame_id: str, result: Any) -> str:
     return f"/api/frames/{frame_id}"
 
 
+def _url_ok(url: str | None) -> bool:
+    return bool(url) and url.startswith(("http://", "https://"))
+
+
+def prefer_footage(shots: list[ShotFrame], rails: Rails) -> bool:
+    """Search Parallel for existing pictures. Not a license. Not a collision/script check."""
+    if not rails.parallel:
+        for shot in shots:
+            shot.footage = MISSING
+            shot.footage_url = None
+            shot.footage_title = MISSING
+        return False
+    searched = False
+    try:
+        for shot in shots:
+            result = search(
+                objective=FOOTAGE_OBJECTIVE,
+                search_queries=[shot.shot, shot.line or shot.beat_id],
+            )
+            searched = True
+            rows = list(getattr(result, "results", None) or [])
+            url = None
+            title = ""
+            for row in rows:
+                candidate = getattr(row, "url", None)
+                if _url_ok(candidate):
+                    url = candidate
+                    title = (getattr(row, "title", None) or "").strip()
+                    break
+            if url:
+                shot.footage = "sourced"
+                shot.footage_url = url
+                shot.footage_title = title or MISSING
+                shot.imagen = False
+                shot.image_href = ""
+            else:
+                shot.footage = MISSING
+                shot.footage_url = None
+                shot.footage_title = MISSING
+    except ParallelDownError:
+        for shot in shots:
+            if shot.footage != "sourced":
+                shot.footage = MISSING
+                shot.footage_url = None
+                shot.footage_title = MISSING
+        return False
+    return searched
+
+
 def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> list[ShotFrame]:
     if not rails.imagen or not rails.vertex:
         for shot in shots:
-            shot.image_href = ""
-            shot.imagen = False
+            if shot.footage != "sourced":
+                shot.image_href = ""
+                shot.imagen = False
         return shots
     if packet.cut in {"tiktok-length", "shorts"}:
         cap = len(shots)
@@ -172,6 +231,8 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
         cap = frame_count(require_cut(packet.cut), packet.platform) if packet.cut else len(shots)
     spent = 0
     for shot in shots:
+        if shot.footage == "sourced":
+            continue
         if not shot.key_frame or spent >= cap:
             continue
         prompt = (
@@ -183,18 +244,25 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
         except ImagenDownError:
             shot.image_href = ""
             shot.imagen = False
+            if shot.footage != "sourced":
+                shot.footage = MISSING
             continue
         shot.image_href = persist_generated_image(shot.id, result)
         shot.imagen = bool(shot.image_href)
+        if shot.imagen:
+            shot.footage = "imagen"
         spent += 1
     return shots
 
 
 def write_board(packet: Packet, rails: Rails) -> list[ShotFrame]:
-    """Shot list from the timed VO, then Imagen onto those shots. Never leftover stills."""
+    """Shot list, then prefer sourced footage, then Imagen only on misses."""
     shots = write_shot_list(packet)
     if not shots:
         return []
+    searched = prefer_footage(shots, rails)
+    if not searched:
+        return shots
     return apply_imagen(shots, packet, rails=rails)
 
 
@@ -208,6 +276,9 @@ def apply_seed_placeholders(shots: list[ShotFrame]) -> list[ShotFrame]:
         path.write_bytes(_placeholder_svg(shot.id, shot.shot))
         shot.image_href = f"/api/frames/{shot.id}"
         shot.imagen = False
+        shot.footage = MISSING
+        shot.footage_url = None
+        shot.footage_title = MISSING
     return shots
 
 

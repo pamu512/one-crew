@@ -13,6 +13,7 @@ from onecrew.script import write_script
 from onecrew.seed import seed_first_open
 from onecrew.spend import ledger
 from onecrew.tell import SEED_TELL, TELL_EXAMPLES, TellRequiredError, invents_frame
+from onecrew.tone import SEED_TONE
 
 FAMILY_TELL = "One family in Bandar Abbas, kitchen radio on"
 SHIP_TELL = "Thriller on a tanker crossing Hormuz that might get hit"
@@ -23,6 +24,7 @@ FAMILY_DRAMA_TELL = "Historical drama through one port family"
 def _from_seed(*, tell: str, lean: str = "centered_independent", cut: str | None = None):
     packet = seed_first_open()
     packet.tell = tell
+    packet.tone = SEED_TONE
     packet.script_lean = lean
     if cut:
         packet.cut = cut
@@ -66,13 +68,14 @@ def test_documentary_family_drama_invents_no_leila() -> None:
     assert "Leila" not in packet.script
     assert "(frame)" not in packet.script
     assert invents_frame(cut="full_length_documentary", tell=FAMILY_DRAMA_TELL) is False
-    topic, platform, cut, depth, lean, tell = require_picks(
+    topic, platform, cut, depth, lean, tell, tone = require_picks(
         "Hormuz",
         "youtube",
         "full_length_documentary",
         "decade",
         "centered_independent",
         "family thriller on a tanker",
+        SEED_TONE,
     )
     assert tell == "family thriller on a tanker"
     assert cut == "full_length_documentary"
@@ -137,6 +140,7 @@ def test_hold_does_not_invent_a_family() -> None:
         depth="decade",
         script_lean="centered_independent",
         tell=FAMILY_TELL,
+        tone=SEED_TONE,
         topic="Hormuz",
     )
     shift.rails = Rails(parallel=False, vertex=False, imagen=False)
@@ -154,6 +158,7 @@ def _shift_body(**overrides):
         "depth": "decade",
         "script_lean": "centered_independent",
         "tell": SEED_TELL,
+        "tone": SEED_TONE,
     }
     body.update(overrides)
     return body
@@ -189,6 +194,7 @@ def test_documentary_thriller_tell_is_not_400(monkeypatch) -> None:
         "decade",
         "centered_independent",
         SHIP_TELL,
+        SEED_TONE,
     )
     seed = seed_first_open()
     seed.cut = "full_length_documentary"

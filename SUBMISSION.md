@@ -14,7 +14,7 @@ Before you record: a timed VO, a collision list, and source stamps you can see. 
 
 One Crew is a research companion for a one-person shop. Before you record, you see (1) a timed VO with citations, (2) which lines already exist as someone else's media (collision yes / no / missing), and (3) which sources are house organs, propaganda, fringe, or unsourced. The point is you can see the risk on the page. We do not clear copyright. We do not give legal advice. We do not license footage. A Parallel miss is not permission. Collision=missing means we did not get a search, not that you are in the clear. The floor never posts, so we also do not publish the thing that would get you a claim.
 
-Six picks are required before any Parallel or Imagen spend, no defaults: topic (free text; empty or whitespace = no run), platform (tiktok, youtube, youtube_shorts, Instagram/Meta surfaces, podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary, feature_film), depth, script lean (voice only; fixed political list), and tell (required free text; examples on the floor, not a closed list). Pairing is the cut: documentary / weekly_update are always host/reporter news (no invented people, even if tell says family thriller). feature_film may invent a frame labeled (frame) from whatever they typed. Empty tell is 400 and does not spend.
+Required picks before any Parallel or Imagen spend, no defaults: topic (free text; empty or whitespace = no run), platform (tiktok, youtube, youtube_shorts, Instagram/Meta surfaces, podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary, feature_film), depth, script lean (voice only; fixed political list), tell (required free text; examples on the floor, not a closed list), and tone (required free text on news/doc, examples only — News desk / Make the viewer think / Question the decisions / Personal take / Grounded in the record). Pairing is the cut: documentary / weekly_update are always host/reporter news (no invented people, even if tell says family thriller). feature_film may invent a frame labeled (frame) from whatever they typed and does not require tone. Empty tell, or empty tone on news/doc, is 400 and does not spend.
 
 The researcher writes a timeline once and stamps each source. The floor writes a full recordable script (scene headings, action, host VO or screenplay dialogue — not one beat per receipt row), then searches Parallel for existing YouTube / docs / news / films whose narration matches, then cuts a frame-by-frame shot list. Hits stamp collision=yes with a sourced URL. A sourced miss is collision=no. Parallel down stays missing. Lean does not restamp. TikTok/Shorts generate every beat; episode/doc/feature generate one key frame per scene (event cap, never 400 images). If Imagen or Vertex is down, the shot list stays and images stay missing.
 
@@ -22,8 +22,8 @@ The researcher writes a timeline once and stamps each source. The floor writes a
 
 - Before you record: timed VO, collision list, house-organ / propaganda / fringe / unsourced stamps
 - Match list only — not a copyright clearance, not legal advice, not a license
-- Six required picks: topic, platform, length, depth, script lean, tell (free text; examples only)
-- Shot list cut from that VO; boards are not optional
+- Required picks: topic, platform, length, depth, script lean, tell (free text), tone (free text on news/doc)
+- Shot list cut from that VO; prefer sourced frames; genAI is the fallback; we do not license the tape
 - Script lean does not restamp sources or collisions
 - Write-once Parallel timeline
 - GET never spends; POST is token-gated and pick-gated
