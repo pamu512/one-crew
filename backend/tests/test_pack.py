@@ -1,6 +1,8 @@
 import pytest
+from fastapi.testclient import TestClient
 
 from onecrew.agent.shift import open_shift, run_live_packet
+from onecrew.api import app
 from onecrew.models import Exclusion, Rails
 from onecrew.pack import PackInvalidError, hits_accounted, write_research_pack
 from onecrew.script import write_script
@@ -16,6 +18,20 @@ _STAMP_MARKERS = (
     "independent =",
     "vested_interest =",
     "propaganda =",
+    "collision =",
+)
+
+_THESIS_HEADINGS = (
+    "## Question",
+    "## Picks",
+    "## Tell",
+    "## Tone",
+    "## Timeline of what led here",
+    "## Argument",
+    "## Sources",
+    "## Causal links",
+    "## What we could not find",
+    "## Left out / not included",
 )
 
 
@@ -24,25 +40,20 @@ def test_seed_pack_is_a_thesis() -> None:
     pack = packet.research_pack
     assert pack
     assert len(pack) >= 2000
-    for heading in (
-        "## Question",
-        "## Picks",
-        "## Timeline of what led here",
-        "## Sources",
-        "## Causal links",
-        "## What we could not find",
-        "## Left out / not included",
-    ):
+    for heading in _THESIS_HEADINGS:
         assert heading in pack
     for finding in packet.receipt.findings:
         assert finding.id in pack
         assert finding.claim in pack
+        assert f"The stamp is {finding.stamp} (grounded|mainstream|fringe)." in pack
     for marker in _STAMP_MARKERS:
         assert pack.count(marker) >= len(packet.receipt.findings)
     assert packet.exclusions
     assert any(row.reason == "parallel_miss" for row in packet.exclusions)
     assert "Left out / not included" in pack
     assert packet.exclusions[0].what in pack
+    assert "never sold as fact" in pack
+    assert "Propaganda stays marked" in pack
 
 
 def test_hold_pack_is_non_empty() -> None:
@@ -61,6 +72,7 @@ def test_hold_pack_is_non_empty() -> None:
     assert packet.script == ""
     assert packet.research_pack
     assert "HOLD" in packet.research_pack
+    assert "what ran" in packet.research_pack.lower() or "why" in packet.research_pack.lower()
     assert "Left out / not included" in packet.research_pack
     assert any(row.reason == "rails_down" for row in packet.exclusions)
 
@@ -75,10 +87,24 @@ def test_lean_tone_tell_do_not_change_thesis_stamps() -> None:
     write_research_pack(seed)
     assert "[jcpoa-2018]" in seed.script
     for finding in seed.receipt.findings:
-        assert f"grounded|mainstream|fringe = {finding.stamp}" in seed.research_pack
+        line = f"The stamp is {finding.stamp} (grounded|mainstream|fringe)."
+        assert line in before
+        assert line in seed.research_pack
         assert finding.id in seed.research_pack
-    assert "stamps: grounded|mainstream|fringe = grounded" in before
-    assert "stamps: grounded|mainstream|fringe = grounded" in seed.research_pack
+    assert "The stamp is grounded (grounded|mainstream|fringe)." in before
+    assert "The stamp is grounded (grounded|mainstream|fringe)." in seed.research_pack
+
+
+def test_get_serves_seed_thesis_without_spend() -> None:
+    seed_first_open()
+    with TestClient(app) as client:
+        body = client.get("/api/packets")
+    assert body.status_code == 200
+    pack = body.json()["packets"][0]["research_pack"]
+    assert pack
+    assert len(pack) >= 2000
+    for heading in _THESIS_HEADINGS:
+        assert heading in pack
 
 
 def test_silent_hit_drop_fails() -> None:

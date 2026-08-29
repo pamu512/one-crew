@@ -148,6 +148,7 @@ class Finding(BaseModel):
     id: str
     claim: str
     stamp: Stamp
+    title: str = MISSING
     parallel_url: str | None = None
     parallel_status: ParallelStatus
     note: str

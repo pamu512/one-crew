@@ -58,6 +58,7 @@ def findings_from_parallel_rows(
     hit_claim: str,
     mainstream_claim: str,
     miss_claim: str,
+    hit_title: str = MISSING,
 ) -> list[Finding]:
     """Stamp exactly one of grounded / mainstream / fringe. Hit + miss on the same receipt."""
     if not hit_url:
@@ -67,6 +68,7 @@ def findings_from_parallel_rows(
             id="timeline-hit",
             claim=hit_claim,
             stamp="grounded",
+            title=hit_title or MISSING,
             parallel_url=hit_url,
             parallel_status="hit",
             note="Parallel URL on this row.",

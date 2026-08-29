@@ -10,7 +10,7 @@ from onecrew.collision import stamp_collisions
 from onecrew.cut import size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
-from onecrew.models import Depth, Exclusion, Packet, Rails, Receipt, ShiftRecord, utcnow
+from onecrew.models import MISSING, Depth, Exclusion, Packet, Rails, Receipt, ShiftRecord, utcnow
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
@@ -92,6 +92,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
     hit_rows = list(getattr(hit, "results", None) or [])
     miss_rows = list(getattr(miss, "results", None) or [])
     hit_url = getattr(hit_rows[0], "url", None) if hit_rows else None
+    hit_title = getattr(hit_rows[0], "title", None) or MISSING if hit_rows else MISSING
     pre = pre1980_fail_closed(
         packet_id=packet.id,
         depth=depth,
@@ -104,6 +105,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
         return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
     findings = findings_from_parallel_rows(
         hit_url=hit_url,
+        hit_title=hit_title,
         hit_claim=f"Grounded event inside {depth}: {packet.topic or packet.hook}",
         mainstream_claim=f"Widely repeated frame about {packet.topic or packet.hook}",
         miss_claim=f"Fringe claim about {packet.topic or packet.hook}",
