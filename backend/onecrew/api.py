@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from onecrew import config
+from onecrew.board import resolve_frame_file
 from onecrew.cut import cuts_payload
 from onecrew.depth import depths_payload
 from onecrew.picks import (
@@ -26,14 +27,6 @@ from onecrew.spend import ledger
 from onecrew.store import store
 
 log = logging.getLogger("onecrew.api")
-
-FRAME_FILES = {
-    "tanker-lane": "tanker-lane.svg",
-    "strait-map": "strait-map.svg",
-    "oil-share": "oil-share.svg",
-    "link-empty": "link-empty.svg",
-}
-
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -149,13 +142,11 @@ def get_packet(packet_id: str) -> dict[str, Any]:
 
 @app.get("/api/frames/{frame_id}")
 def get_frame(frame_id: str) -> Response:
-    name = FRAME_FILES.get(frame_id)
-    if not name:
+    path = resolve_frame_file(frame_id)
+    if path is None:
         raise HTTPException(404, "frame not found")
-    path = config.FRAMES_DIR / name
-    if not path.is_file():
-        raise HTTPException(404, "frame file missing")
-    return Response(content=path.read_bytes(), media_type="image/svg+xml; charset=utf-8")
+    media = "image/svg+xml; charset=utf-8" if path.suffix == ".svg" else f"image/{path.suffix.lstrip('.')}"
+    return Response(content=path.read_bytes(), media_type=media)
 
 
 @app.get("/api/shifts")

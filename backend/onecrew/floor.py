@@ -34,7 +34,7 @@ FLOOR_HTML = """<!DOCTYPE html>
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
     h1 { font-size: 22px; font-weight: 560; line-height: 1.25; margin: 8px 0 0; }
     .hook { color: var(--fg); }
-    .script { color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .script { color: var(--muted); font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
     .finding { border-top: 1px solid var(--line); padding: 12px 0; }
     .stamp { font-family: ui-monospace, monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
     .stamp.grounded { color: var(--grounded); }
@@ -66,7 +66,7 @@ FLOOR_HTML = """<!DOCTYPE html>
   <header>
     <div>
       <div class="brand">One Crew</div>
-      <div class="sub">Research companion. Script plus cited sources. Floor never posts.</div>
+      <div class="sub">Research companion. Timed VO plus cited sources. Floor never posts.</div>
     </div>
     <div class="badges" id="badges"></div>
   </header>
@@ -204,21 +204,21 @@ FLOOR_HTML = """<!DOCTYPE html>
       const links = (rec.causal_links || []).map(linkHtml).join("");
       const frames = (packet.frames || []).map(fr => `
         <div class="frame">
-          <img src="${fr.image_href}" alt="${fr.shot}"/>
+          ${fr.image_href ? `<img src="${fr.image_href}" alt="${fr.shot}"/>` : `<p class="note">Image missing. Shot list kept. Not invented.</p>`}
           <p>${fr.shot}</p>
         </div>`).join("");
       document.getElementById("packet").innerHTML = `
         <div class="brand">${packet.id}</div>
         <h1 class="hook">${packet.topic || packet.hook}</h1>
         <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"}</p>
-        <div class="brand" style="margin:16px 0 8px">Script</div>
+        <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
         <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
         <div class="brand" style="margin:16px 0 8px">Cited sources</div>
         ${findings}
         <div class="brand" style="margin:16px 0 8px">Causal links</div>
         ${links || `<p class="note">No Parallel-sourced link. Missing, not invented.</p>`}
-        <div class="brand" style="margin:16px 0 8px">Storyboard (from the script)</div>
+        <div class="brand" style="margin:16px 0 8px">Shot list (from that VO)</div>
         <div class="frames">${frames}</div>
       `;
       if (packet.topic && !document.getElementById("topic").value) {

@@ -194,18 +194,21 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
 
 
 def attach_frames(packet: Packet, frames: list[ShotFrame], *, rails: Rails) -> Packet:
-    """Storyboard from the script. If Imagen/Vertex is down, frames stay missing."""
-    if not rails.imagen or not rails.vertex or not frames:
+    """Keep the shot list from the VO. If Imagen/Vertex is down, images stay missing."""
+    if packet.receipt is not None and packet.receipt.disposition == "HOLD":
         packet.frames = []
         return packet
-    from onecrew.cut import frame_count
-    from onecrew.cut import require_cut
-
-    expected = frame_count(require_cut(packet.cut), packet.platform)
-    if len(frames) != expected:
-        raise ReceiptInvalidError("boards are sized to the surface, not a collage")
+    if not packet.script.strip() and not packet.beats:
+        packet.frames = []
+        return packet
+    out: list[ShotFrame] = []
     for frame in frames:
         if not frame.shot.strip():
             raise ReceiptInvalidError("each frame needs a real shot, not a mood")
-    packet.frames = frames
+        copied = frame.model_copy()
+        if not rails.imagen or not rails.vertex:
+            copied.image_href = ""
+            copied.imagen = False
+        out.append(copied)
+    packet.frames = out
     return packet

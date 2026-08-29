@@ -12,13 +12,28 @@ EVENT_CAP: dict[Cut, int] = {
     "one_time_short_episode": 8,
     "full_length_documentary": 40,
 }
+# Imagen spend cap = one image per short-form beat, or one key frame per
+# episode/doc scene. Never 400 calls. Actual spend is min(scenes, this cap).
 FRAME_COUNT: dict[Cut, int] = {
-    "tiktok-length": 2,
-    "shorts": 2,
-    "weekly_update": 3,
-    "one_time_short_episode": 4,
-    "full_length_documentary": 4,
+    "tiktok-length": 3,
+    "shorts": 4,
+    "weekly_update": 6,
+    "one_time_short_episode": 8,
+    "full_length_documentary": 40,
 }
+
+# Spoken-scene length. Short form is tens of seconds. Episode blocks ~8 min
+# so ~5 seed scenes land near 45 min. Doc scenes are shorter so 40 rows
+# stay near feature length, not 400 images.
+SCENE_SECONDS: dict[Cut, int] = {
+    "tiktok-length": 10,
+    "shorts": 12,
+    "weekly_update": 30,
+    "one_time_short_episode": 480,
+    "full_length_documentary": 180,
+}
+
+LONG_CUTS = frozenset({"one_time_short_episode", "full_length_documentary"})
 
 # Script + storyboard sized to the Meta/TikTok/YouTube surface.
 PLATFORM_EVENT_CAP: dict[Platform, int] = {
@@ -34,16 +49,16 @@ PLATFORM_EVENT_CAP: dict[Platform, int] = {
     "podcast": 12,
 }
 PLATFORM_FRAME_COUNT: dict[Platform, int] = {
-    "tiktok": 2,
-    "youtube": 4,
-    "youtube_shorts": 2,
-    "instagram_reels": 2,
-    "instagram_stories": 2,
-    "instagram_feed": 3,
-    "facebook_reels": 2,
-    "facebook_feed": 3,
-    "threads": 2,
-    "podcast": 4,
+    "tiktok": 3,
+    "youtube": 40,
+    "youtube_shorts": 4,
+    "instagram_reels": 4,
+    "instagram_stories": 3,
+    "instagram_feed": 6,
+    "facebook_reels": 4,
+    "facebook_feed": 6,
+    "threads": 3,
+    "podcast": 12,
 }
 
 
@@ -78,3 +93,11 @@ def frame_count(cut: Cut, platform: Platform | None = None) -> int:
 
 def size_findings(findings: list, cut: Cut, platform: Platform | None = None) -> list:
     return findings[: event_cap(cut, platform)]
+
+
+def scene_seconds(cut: Cut) -> int:
+    return SCENE_SECONDS[cut]
+
+
+def is_long_cut(cut: Cut) -> bool:
+    return cut in LONG_CUTS

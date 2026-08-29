@@ -4,11 +4,11 @@ import logging
 import uuid
 
 from onecrew import config
-from onecrew.agent.tools import findings_from_parallel_rows, frames_from_script
-from onecrew.cut import frame_count, require_cut, size_findings
+from onecrew.agent.tools import findings_from_parallel_rows
+from onecrew.board import write_board
+from onecrew.cut import size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
-from onecrew.imagen_client import ImagenDownError, generate_frames
 from onecrew.models import Depth, Packet, Rails, Receipt, ShiftRecord, utcnow
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.picks import require_picks
@@ -112,23 +112,8 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
 
 
 def _board(packet: Packet, rails: Rails) -> list:
-    """Storyboard from the script. If Imagen/Vertex is down, frames stay missing."""
-    if not rails.imagen or not rails.vertex:
-        return []
-    refs = [f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url]
-    shots = frame_count(require_cut(packet.cut), packet.platform)
-    try:
-        generate_frames(
-            prompt=(
-                f"{shots} photoreal storyboard frames, one per beat, from this script. "
-                f"Cut={packet.cut}. Script: {packet.script}. "
-                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a mood collage."
-            ),
-            number_of_images=shots,
-        )
-    except ImagenDownError:
-        return []
-    return frames_from_script(packet, [r for r in refs if r])
+    """Shot list from the timed VO, then Imagen onto those shots."""
+    return write_board(packet, rails)
 
 
 def run_live_packet(shift: ShiftRecord) -> Packet:

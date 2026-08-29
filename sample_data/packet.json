@@ -6,7 +6,7 @@
   "cut": "one_time_short_episode",
   "script_lean": "centered_independent",
   "hook": "Explain what's going on with the Hormuz strait",
-  "script": "Straight read. Platform youtube. Cut one_time_short_episode. The United States withdrew from the JCPOA, tightening the Iran file around the Gulf. Grounded. Independent missing. [jcpoa-2018] A large share of seaborne oil still transits the Strait of Hormuz. Grounded. Propaganda yes, issuer OPEC. Not independent. [hormuz-share] Any Hormuz scare means oil crashes the world overnight. Mainstream, not a source. Source lean missing. [oil-panic] Producer states treat an open Hormuz as an oil-market given. Mainstream, not a source. Source lean industry. [producer-frame] Hormuz has already been mined shut under a hidden navy treaty. Tagged fringe, never sold as fact. [secret-closure] Centered note: some source lean fields are missing. Fringe stays on the list. Not hidden to match a centered ask. Propaganda stays marked. Not hidden.",
+  "script": "Timed VO · youtube · one_time_short_episode · centered_independent\n\nACT 1\n00:00:00–00:08:00\nIn 2018, on the receipt: The United States withdrew from the JCPOA, tightening the Iran file around the Gulf. Grounded. Independent on that row is missing. [jcpoa-2018] Hold on this card. Do not add a fact that is not on the row.\n\n00:08:00–00:16:00\nIn 2018-2024, on the receipt: A large share of seaborne oil still transits the Strait of Hormuz. Grounded. Propaganda yes, issuer OPEC. Not independent. [hormuz-share] Hold on this card. Do not add a fact that is not on the row.\n\nACT 2\n00:16:00–00:24:00\nIn 2023-2024, on the receipt: Any Hormuz scare means oil crashes the world overnight. Mainstream, not a source. Source lean missing. [oil-panic] Hold on this card. Do not add a fact that is not on the row.\n\n00:24:00–00:32:00\nIn 2018-2024, on the receipt: Producer states treat an open Hormuz as an oil-market given. Mainstream, not a source. Source lean industry. [producer-frame] Hold on this card. Do not add a fact that is not on the row.\n\nACT 3\n00:32:00–00:40:00\nIn decade, on the receipt: Hormuz has already been mined shut under a hidden navy treaty. Tagged fringe, never sold as fact. [secret-closure] Hold on this card. Do not add a fact that is not on the row.\n\n00:40:00–00:43:00\nOn the receipt: Causal link jcpoa-2018 to oil-panic is missing. The 2018 JCPOA exit caused the 2023-2024 Hormuz panic. Parallel did not source this. Not invented. [jcpoa-2018] [oil-panic]\n",
   "status": "ready",
   "receipt": {
     "packet_id": "oc-hormuz-decade",
@@ -144,40 +144,141 @@
       }
     ]
   },
-  "frames": [
+  "beats": [
     {
-      "id": "tanker-lane",
-      "shot": "Tanker in a narrow lane, land on both sides.",
-      "source_refs": [
-        "https://www.opec.org/"
-      ],
-      "image_href": "/api/frames/tanker-lane",
-      "imagen": false
+      "id": "jcpoa-2018",
+      "start": "00:00:00",
+      "duration_s": 480,
+      "act": "ACT 1",
+      "vo": "In 2018, on the receipt: The United States withdrew from the JCPOA, tightening the Iran file around the Gulf. Grounded. Independent on that row is missing. [jcpoa-2018] Hold on this card. Do not add a fact that is not on the row.",
+      "finding_ids": [
+        "jcpoa-2018"
+      ]
     },
     {
-      "id": "strait-map",
-      "shot": "Chart table with a strait map and a 2018 date chip.",
+      "id": "hormuz-share",
+      "start": "00:08:00",
+      "duration_s": 480,
+      "act": "ACT 1",
+      "vo": "In 2018-2024, on the receipt: A large share of seaborne oil still transits the Strait of Hormuz. Grounded. Propaganda yes, issuer OPEC. Not independent. [hormuz-share] Hold on this card. Do not add a fact that is not on the row.",
+      "finding_ids": [
+        "hormuz-share"
+      ]
+    },
+    {
+      "id": "oil-panic",
+      "start": "00:16:00",
+      "duration_s": 480,
+      "act": "ACT 2",
+      "vo": "In 2023-2024, on the receipt: Any Hormuz scare means oil crashes the world overnight. Mainstream, not a source. Source lean missing. [oil-panic] Hold on this card. Do not add a fact that is not on the row.",
+      "finding_ids": [
+        "oil-panic"
+      ]
+    },
+    {
+      "id": "producer-frame",
+      "start": "00:24:00",
+      "duration_s": 480,
+      "act": "ACT 2",
+      "vo": "In 2018-2024, on the receipt: Producer states treat an open Hormuz as an oil-market given. Mainstream, not a source. Source lean industry. [producer-frame] Hold on this card. Do not add a fact that is not on the row.",
+      "finding_ids": [
+        "producer-frame"
+      ]
+    },
+    {
+      "id": "secret-closure",
+      "start": "00:32:00",
+      "duration_s": 480,
+      "act": "ACT 3",
+      "vo": "In decade, on the receipt: Hormuz has already been mined shut under a hidden navy treaty. Tagged fringe, never sold as fact. [secret-closure] Hold on this card. Do not add a fact that is not on the row.",
+      "finding_ids": [
+        "secret-closure"
+      ]
+    },
+    {
+      "id": "jcpoa-to-houthi",
+      "start": "00:40:00",
+      "duration_s": 180,
+      "act": "ACT 3",
+      "vo": "On the receipt: Causal link jcpoa-2018 to oil-panic is missing. The 2018 JCPOA exit caused the 2023-2024 Hormuz panic. Parallel did not source this. Not invented. [jcpoa-2018] [oil-panic]",
+      "finding_ids": [
+        "jcpoa-2018",
+        "oil-panic"
+      ]
+    }
+  ],
+  "frames": [
+    {
+      "id": "shot-jcpoa-2018",
+      "shot": "Single locked-off receipt card for jcpoa-2018: The United States withdrew from the JCPOA, tightening the Iran file around the Gulf. On-screen [jcpoa-2018]. Duration 480s. No collage.",
       "source_refs": [
         "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
       ],
-      "image_href": "/api/frames/strait-map",
-      "imagen": false
+      "image_href": "/api/frames/shot-jcpoa-2018",
+      "imagen": false,
+      "beat_id": "jcpoa-2018",
+      "duration_s": 480,
+      "key_frame": true
     },
     {
-      "id": "oil-share",
-      "shot": "Phone showing the Parallel oil-share URL. Not a collage.",
+      "id": "shot-hormuz-share",
+      "shot": "Single locked-off receipt card for hormuz-share: A large share of seaborne oil still transits the Strait of Hormuz. On-screen [hormuz-share]. Duration 480s. No collage.",
       "source_refs": [
         "https://www.opec.org/"
       ],
-      "image_href": "/api/frames/oil-share",
-      "imagen": false
+      "image_href": "/api/frames/shot-hormuz-share",
+      "imagen": false,
+      "beat_id": "hormuz-share",
+      "duration_s": 480,
+      "key_frame": true
     },
     {
-      "id": "link-empty",
-      "shot": "Timeline board: JCPOA to panic — causal link missing. No invented chain.",
-      "source_refs": [],
-      "image_href": "/api/frames/link-empty",
-      "imagen": false
+      "id": "shot-oil-panic",
+      "shot": "Single locked-off receipt card for oil-panic: Any Hormuz scare means oil crashes the world overnight. On-screen [oil-panic]. Duration 480s. No collage.",
+      "source_refs": [
+        "oil-panic"
+      ],
+      "image_href": "/api/frames/shot-oil-panic",
+      "imagen": false,
+      "beat_id": "oil-panic",
+      "duration_s": 480,
+      "key_frame": true
+    },
+    {
+      "id": "shot-producer-frame",
+      "shot": "Single locked-off receipt card for producer-frame: Producer states treat an open Hormuz as an oil-market given. On-screen [producer-frame]. Duration 480s. No collage.",
+      "source_refs": [
+        "producer-frame"
+      ],
+      "image_href": "/api/frames/shot-producer-frame",
+      "imagen": false,
+      "beat_id": "producer-frame",
+      "duration_s": 480,
+      "key_frame": true
+    },
+    {
+      "id": "shot-secret-closure",
+      "shot": "Single locked-off receipt card for secret-closure: Hormuz has already been mined shut under a hidden navy treaty. On-screen [secret-closure]. Duration 480s. No collage.",
+      "source_refs": [
+        "secret-closure"
+      ],
+      "image_href": "/api/frames/shot-secret-closure",
+      "imagen": false,
+      "beat_id": "secret-closure",
+      "duration_s": 480,
+      "key_frame": true
+    },
+    {
+      "id": "shot-jcpoa-to-houthi",
+      "shot": "Single locked-off receipt card for jcpoa-to-houthi: The United States withdrew from the JCPOA, tightening the Iran file around the Gulf. On-screen [jcpoa-2018] [oil-panic]. Duration 180s. No collage.",
+      "source_refs": [
+        "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
+      ],
+      "image_href": "/api/frames/shot-jcpoa-to-houthi",
+      "imagen": false,
+      "beat_id": "jcpoa-to-houthi",
+      "duration_s": 180,
+      "key_frame": true
     }
   ],
   "shift_id": null

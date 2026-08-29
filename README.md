@@ -1,8 +1,8 @@
 # One Crew
 
-Pick topic, platform, length, depth, then how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
+Pick topic, platform, length, depth, then how you want it to lean. You get a timed VO, cited sources, and a shot list cut from that VO.
 
-One Crew is a research companion. Five picks, then a write-once timeline, then a **script**, then a **storyboard** — one Imagen frame per beat, sized to the cut. Not a mood collage. The crew does not post.
+One Crew is a research companion. Five picks, then a write-once timeline, then a **timed VO**, then a **shot list** from that VO. Imagen fills key frames. Not a receipt-join. Not a leftover stills collage. The crew does not post.
 
 **Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. The floor never posts.**
 
@@ -20,7 +20,7 @@ Required picks, in this order, before any Parallel or Imagen spend. No defaults.
 
 Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
 
-The floor writes the **script** in the requested lean, sized to that surface + length, with citations pointing at those rows. The script **must** convert to a storyboard: Imagen frames from that script, one frame per beat/shot, sized to the surface. A Stories board is not a documentary board. A Reels board is not a YouTube long-form board. Parallel refs may inform the frames. If Imagen or Vertex is down, frames stay missing — they are not invented. Boards are not optional.
+The floor writes a **timed VO** in the requested lean, sized to that surface + length, with beats, timecodes, and citations pointing at those rows. Lean changes the spoken wording, not the stamps. Then a **shot list** is cut from that VO: one shot per beat/scene. TikTok / Shorts generate every beat. Episode / documentary generate one Imagen key frame per scene — never 400 images (cap is the event cap, max 40 on a YouTube documentary). The full shot list still shows. A Stories board is not a documentary board. A Reels board is not a YouTube long-form board. If Imagen or Vertex is down, the shot list stays and images stay missing — they are not invented. Boards are not optional.
 
 Requested script lean does **not** restamp sources. Unhinged / fringe voice still cannot invent sources or mark propaganda as grounded. Centered_independent still must show missing when Parallel missed. Do not hide fringe or propaganda to match a centered ask. Do not invent a lobby to match a far-right / far-left ask.
 
@@ -34,11 +34,11 @@ A one-person shop that needs a script with receipts. Sample first-open packet: *
 
 ## How it works
 
-1. First-open shows the five picks (topic first), a script with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the storyboard cut from that script. GET never calls Parallel or Imagen.
+1. First-open shows the five picks (topic first), a timed Hormuz VO with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the shot list cut from that VO. GET never calls Parallel or Imagen.
 2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all five picks. Unset token → 403. Empty, whitespace, or omitted topic → 400. Any missing pick → 400. No spend.
-3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**. Flow is picks → timeline + sources → script → storyboard.
+3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**. Flow is picks → timeline + sources → timed VO → shot list.
 4. Write-once receipt. Script lean cannot change a source stamp.
-5. Missing Parallel — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed. Missing Imagen/Vertex → frames stay missing.
+5. Missing Parallel — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed. Missing Imagen/Vertex → shot list kept, images missing.
 6. The floor has no publish control. Nothing is posted.
 
 ## How to run locally
@@ -56,7 +56,7 @@ pip install -r backend/requirements.txt
 PYTHONPATH=backend python -m onecrew
 ```
 
-Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the Hormuz script, the cited sources, and the storyboard. The floor has no publish button.
+Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the timed Hormuz VO, the cited sources, and the shot list. The floor has no publish button.
 
 ```bash
 PYTHONPATH=backend python -m onecrew &
@@ -78,7 +78,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Tests lock: no run without all five picks (empty/whitespace/omitted topic is 400 and does not spend); script lean cannot change a source stamp; unhinged lean still fail-closed on missing Parallel; first-open shows script + storyboard; Imagen down leaves frames missing.
+Tests lock: no run without all five picks (empty/whitespace/omitted topic is 400 and does not spend); right vs left VO wording differs and stamps stay identical; TikTok VO is short and an episode has running timecodes; every beat cites a finding id; unhinged/centered cannot hide fringe or propaganda; the boarder cannot return the leftover tanker-lane set; Imagen down keeps the shot list and leaves images missing; HOLD writes an empty script.
 
 ### ADK web (optional)
 

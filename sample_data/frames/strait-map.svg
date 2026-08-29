@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="Strait map and 2018 chip">
-  <rect width="640" height="360" fill="#1a1410"/>
-  <rect x="48" y="48" width="360" height="264" rx="8" fill="#241c16" stroke="#6a5340"/>
-  <path d="M80 220 C140 140, 200 160, 260 200 C320 240, 360 180, 380 160" fill="none" stroke="#c8e6a0" stroke-width="4"/>
-  <rect x="440" y="80" width="140" height="48" rx="6" fill="#3a2e22" stroke="#f0c27a"/>
-  <text x="468" y="110" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="18">2018</text>
-  <text x="440" y="180" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="18">strait-map</text>
-  <text x="440" y="208" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Chart table. Date chip.</text>
-</svg>

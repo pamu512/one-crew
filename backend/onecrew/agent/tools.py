@@ -4,7 +4,7 @@ from typing import Any
 
 from onecrew import config
 from onecrew.imagen_client import ImagenDownError, generate_frames
-from onecrew.models import MISSING, Finding, Packet, ShotFrame
+from onecrew.models import MISSING, Finding
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.store import store
 
@@ -35,16 +35,17 @@ def parallel_search(objective: str, query: str) -> dict[str, Any]:
 
 
 def imagen_shots(script: str, refs: str) -> dict[str, Any]:
-    """Boarder tool. Vertex Imagen. Spends. Real shots, not a mood dump."""
+    """Boarder tool. Vertex Imagen. Spends. Uses the returned images."""
     prompt = (
-        f"Four photoreal shot frames from this short-form script, using only these refs. "
-        f"Storyboard from this script, one frame per beat, not a mood collage. Script: {script}. Refs: {refs}"
+        f"One photoreal shot from this timed VO beat, not a mood collage. "
+        f"Script: {script}. Refs: {refs}"
     )
     try:
-        generate_frames(prompt=prompt, number_of_images=4)
+        result = generate_frames(prompt=prompt, number_of_images=1)
     except ImagenDownError as exc:
-        return {"ok": False, "error": str(exc)}
-    return {"ok": True, "frames": 4}
+        return {"ok": False, "error": str(exc), "frames": 0}
+    images = getattr(result, "generated_images", None) or getattr(result, "images", None) or []
+    return {"ok": True, "frames": len(images), "used_return": True}
 
 
 RESEARCHER_TOOLS = [get_packet, parallel_search]
@@ -102,44 +103,6 @@ def findings_from_parallel_rows(
             vested_interest=MISSING,
         ),
     ]
-
-
-def frames_from_script(packet: Packet, refs: list[str]) -> list[ShotFrame]:
-    from onecrew.cut import frame_count, require_cut
-
-    frames = [
-        ShotFrame(
-            id="tanker-lane",
-            shot="Tanker in a narrow lane, land on both sides.",
-            source_refs=refs,
-            image_href="/api/frames/tanker-lane",
-            imagen=True,
-        ),
-        ShotFrame(
-            id="strait-map",
-            shot="Chart table with a strait map and a 2018 date chip.",
-            source_refs=refs,
-            image_href="/api/frames/strait-map",
-            imagen=True,
-        ),
-        ShotFrame(
-            id="oil-share",
-            shot="Phone showing the Parallel oil-share URL. Not a collage.",
-            source_refs=refs,
-            image_href="/api/frames/oil-share",
-            imagen=True,
-        ),
-        ShotFrame(
-            id="link-empty",
-            shot="Timeline board: causal link missing. No invented chain.",
-            source_refs=[],
-            image_href="/api/frames/link-empty",
-            imagen=True,
-        ),
-    ]
-    if packet.cut:
-        return frames[: frame_count(require_cut(packet.cut), packet.platform)]
-    return frames
 
 
 # Keep seed id reachable for tools without importing seed (avoids cycle in ADK load).

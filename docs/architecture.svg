@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 640" width="1100" height="640" role="img" aria-label="One Crew architecture">
   <rect width="1100" height="640" fill="#16110d"/>
   <text x="40" y="42" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="16" letter-spacing="3">ONE CREW</text>
-  <text x="40" y="66" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Script, cited sources, storyboard from that script. Floor never posts.</text>
+  <text x="40" y="66" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Timed VO, cited sources, shot list from that VO. Floor never posts.</text>
 
   <rect x="40" y="100" width="240" height="120" rx="10" fill="#1e1712" stroke="#3a2d24"/>
   <text x="56" y="128" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">ONE-PERSON SHOP</text>
@@ -29,7 +29,7 @@
 
   <rect x="630" y="268" width="190" height="80" rx="8" fill="#241c16" stroke="#3a2d24"/>
   <text x="646" y="296" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">3. Boarder</text>
-  <text x="646" y="318" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">storyboard from the script</text>
+  <text x="646" y="318" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12">shot list from the timed VO</text>
 
   <rect x="846" y="268" width="190" height="80" rx="8" fill="#241c16" stroke="#3a2d24"/>
   <text x="862" y="296" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">4. Floor</text>
@@ -56,7 +56,7 @@
   <rect x="610" y="460" width="450" height="140" rx="10" fill="#1a1810" stroke="#5a5030"/>
   <text x="626" y="492" fill="#f0d48a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">READY packet</text>
   <text x="626" y="518" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Same receipt: Parallel hit AND Parallel miss.</text>
-  <text x="626" y="542" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Four shot frames from script + those refs.</text>
+  <text x="626" y="542" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Shot list from the timed VO. Key frames only.</text>
   <text x="626" y="566" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">GOOGLE_CLOUD_PROJECT from env only.</text>
 
   <path d="M280 160 H320" stroke="#f0c27a" stroke-width="1.5" fill="none"/>

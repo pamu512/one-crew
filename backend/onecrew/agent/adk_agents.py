@@ -43,15 +43,17 @@ Otherwise missing. Do not call something propaganda from tone.
 propaganda=yes does not drop the row, does not hide fringe, and does not replace grounded.
 The same receipt MUST show a Parallel hit AND a Parallel miss.
 If Parallel is down: HOLD. No new stamps. No invented lean. No invented independence. No invented chain.
-The script MUST convert to a storyboard. You do not skip the boarder.
+The floor writes a timed VO from the receipt, then a shot list from that VO. You do not skip the boarder.
 You do not post. You do not publish.
 """
 
 BOARDER_INSTRUCTION = """You are One Crew's boarder.
 
-The script MUST convert to a storyboard. One Imagen frame per beat/shot, sized to the cut.
-Frames come from the script. Parallel refs may inform them. Not a mood collage.
-If Vertex or Imagen is down: frames stay missing. Do not invent frames.
+Write a shot list from the timed VO: one shot per beat/scene (description, duration, beat id, source refs).
+Then Imagen: one call per key shot. Use the returned images. Never discard generate_frames output.
+Never fall back to leftover tanker/map/phone/timeline stills.
+TikTok/Shorts: generate every beat. Episode/doc: one key frame per scene; the full shot list still shows.
+If Vertex or Imagen is down: keep the shot list, leave images missing. Do not invent pictures. Do not collage.
 You do not post. You do not publish.
 """
 

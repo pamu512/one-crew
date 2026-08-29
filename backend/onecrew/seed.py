@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 
 from onecrew import config
-from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt, ShotFrame
+from onecrew.board import apply_seed_placeholders, write_shot_list
+from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt
 from onecrew.receipt import write_receipt
 from onecrew.script import write_script
 from onecrew.store import store
@@ -13,7 +14,7 @@ OPEC_URL = "https://www.opec.org/"
 
 SEED_TOPIC = "Explain what's going on with the Hormuz strait"
 SEED_HOOK = SEED_TOPIC
-SEED_SCRIPT = ""  # written from the receipt after stamps; lean does not restamp.
+SEED_SCRIPT = ""  # timed VO written from the receipt; lean does not restamp.
 
 
 def seed_findings() -> list[Finding]:
@@ -96,39 +97,6 @@ def seed_links() -> list[CausalLink]:
     ]
 
 
-def seed_frames() -> list[ShotFrame]:
-    return [
-        ShotFrame(
-            id="tanker-lane",
-            shot="Tanker in a narrow lane, land on both sides.",
-            source_refs=[OPEC_URL],
-            image_href="/api/frames/tanker-lane",
-            imagen=False,
-        ),
-        ShotFrame(
-            id="strait-map",
-            shot="Chart table with a strait map and a 2018 date chip.",
-            source_refs=[CFR_JCPOA],
-            image_href="/api/frames/strait-map",
-            imagen=False,
-        ),
-        ShotFrame(
-            id="oil-share",
-            shot="Phone showing the Parallel oil-share URL. Not a collage.",
-            source_refs=[OPEC_URL],
-            image_href="/api/frames/oil-share",
-            imagen=False,
-        ),
-        ShotFrame(
-            id="link-empty",
-            shot="Timeline board: JCPOA to panic — causal link missing. No invented chain.",
-            source_refs=[],
-            image_href="/api/frames/link-empty",
-            imagen=False,
-        ),
-    ]
-
-
 def build_seed_packet() -> Packet:
     packet = Packet(
         id=config.SEED_PACKET_ID,
@@ -140,7 +108,7 @@ def build_seed_packet() -> Packet:
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",
-        frames=seed_frames(),
+        frames=[],
     )
     receipt = Receipt(
         packet_id=packet.id,
@@ -149,7 +117,9 @@ def build_seed_packet() -> Packet:
         causal_links=seed_links(),
         disposition="READY",
     )
-    return write_script(write_receipt(packet, receipt))
+    packet = write_script(write_receipt(packet, receipt))
+    packet.frames = apply_seed_placeholders(write_shot_list(packet))
+    return packet
 
 
 def load_sample_packet() -> Packet:

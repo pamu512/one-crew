@@ -152,12 +152,24 @@ class CausalLink(BaseModel):
     parallel_url: str | None = None
 
 
+class ScriptBeat(BaseModel):
+    id: str
+    start: str
+    duration_s: int
+    act: str = ""
+    vo: str
+    finding_ids: list[str] = Field(default_factory=list)
+
+
 class ShotFrame(BaseModel):
     id: str
     shot: str
     source_refs: list[str] = Field(default_factory=list)
-    image_href: str
+    image_href: str = ""
     imagen: bool = False
+    beat_id: str = ""
+    duration_s: int = 0
+    key_frame: bool = False
 
 
 class Receipt(BaseModel):
@@ -192,6 +204,7 @@ class Packet(BaseModel):
     script: str
     status: PacketStatus = "ready"
     receipt: Receipt | None = None
+    beats: list[ScriptBeat] = Field(default_factory=list)
     frames: list[ShotFrame] = Field(default_factory=list)
     shift_id: str | None = None
 

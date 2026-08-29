@@ -73,22 +73,26 @@ def test_seed_shows_script_and_storyboard_together() -> None:
     assert all(frame.shot.strip() for frame in packet.frames)
 
 
-def test_seeded_four_shot_frames() -> None:
+def test_seeded_shot_list_matches_timed_vo() -> None:
     import xml.etree.ElementTree as ET
 
     from onecrew import config
 
     packet = seed_first_open()
-    assert len(packet.frames) == 4
-    assert {f.id for f in packet.frames} == {
+    assert packet.beats
+    assert len(packet.frames) == len(packet.beats)
+    assert {f.id for f in packet.frames} != {
         "tanker-lane",
         "strait-map",
         "oil-share",
         "link-empty",
     }
+    beat_ids = {b.id for b in packet.beats}
     for frame in packet.frames:
+        assert frame.beat_id in beat_ids
         assert frame.shot.strip()
         assert "mood" not in frame.shot.lower()
+        assert frame.imagen is False
         svg = (config.FRAMES_DIR / f"{frame.id}.svg").read_bytes()
         assert all(b >= 32 or b in (9, 10, 13) for b in svg)
         ET.fromstring(svg)
