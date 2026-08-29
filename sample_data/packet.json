@@ -13,7 +13,13 @@
         "stamp": "grounded",
         "parallel_url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/",
         "parallel_status": "hit",
-        "note": "Parallel URL on this row."
+        "note": "Parallel URL on this row.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null
       },
       {
         "id": "3am-kitchen",
@@ -21,7 +27,27 @@
         "stamp": "mainstream",
         "parallel_url": null,
         "parallel_status": "n/a",
-        "note": "Widely repeated, may be bias, not a source."
+        "note": "Widely repeated, may be bias, not a source.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null
+      },
+      {
+        "id": "industry-recovery",
+        "claim": "Pickle juice is a branded recovery category the pickle trade pushes as sports nutrition.",
+        "stamp": "mainstream",
+        "parallel_url": null,
+        "parallel_status": "n/a",
+        "note": "Widely repeated, may be bias, not a source.",
+        "lean": "industry",
+        "lean_url": "https://www.ilovepickles.org/",
+        "interests": ["Pickle Packers International"],
+        "interests_url": "https://www.ilovepickles.org/",
+        "who_repeats": ["Pickle Packers International"],
+        "who_repeats_url": "https://www.ilovepickles.org/"
       },
       {
         "id": "nasa-miss",
@@ -29,14 +55,21 @@
         "stamp": "fringe",
         "parallel_url": null,
         "parallel_status": "miss",
-        "note": "Parallel miss. Included and tagged fringe. Never sold as fact."
+        "note": "Parallel miss. Included and tagged fringe. Never sold as fact.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null
       }
     ],
     "disposition": "READY",
     "hold_reason": null,
     "invented_source": false,
     "collage": false,
-    "invented_stamp": false
+    "invented_stamp": false,
+    "invented_lean": false
   },
   "frames": [
     {

@@ -29,6 +29,9 @@ def test_seeded_mainstream_3am_kitchen() -> None:
     assert "3am" in row.claim.lower() or "3am" in row.id
     assert "not a source" in row.note.lower()
     assert row.parallel_url is None
+    assert row.lean == "missing"
+    assert row.interests == "missing"
+    assert row.who_repeats == "missing"
 
 
 def test_seeded_fringe_nasa_miss() -> None:

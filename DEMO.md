@@ -11,7 +11,7 @@ Talk over the floor with `oc-pickle-debt` already open.
 ## 0:40–1:20 · Receipt
 
 1. Point at **grounded** ranking hit — Parallel URL on the row.
-2. Point at **mainstream** 3am-kitchen — widely repeated, not a source.
+2. Point at **mainstream** 3am-kitchen — lean / interests / who_repeats are `missing`. Then **industry-recovery** — those fields present, Parallel URL on each, lean is not the stamp.
 3. Point at **fringe** NASA miss — Parallel miss, never sold as fact.
 4. Same receipt: a hit **and** a miss.
 

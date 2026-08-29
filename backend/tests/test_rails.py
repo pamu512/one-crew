@@ -41,3 +41,10 @@ def test_hold_no_invented_stamp() -> None:
     receipt = hold_receipt("oc-pickle-debt", Rails(parallel=False, vertex=False, imagen=False))
     assert receipt.invented_stamp is False
     assert receipt.findings == []
+
+
+def test_hold_no_invented_lean() -> None:
+    receipt = hold_receipt("oc-pickle-debt", Rails(parallel=False, vertex=False, imagen=False))
+    assert receipt.invented_lean is False
+    assert receipt.findings == []
+    assert "invented lean" in (receipt.hold_reason or "")

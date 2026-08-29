@@ -102,6 +102,9 @@ FLOOR_HTML = """<!DOCTYPE html>
           <p>${f.claim}</p>
           ${f.parallel_url ? `<div class="url">${f.parallel_url}</div>` : ""}
           <div class="note">${f.note}</div>
+          <div class="note">lean: ${f.lean || "missing"}${f.lean_url ? " · " + f.lean_url : ""}</div>
+          <div class="note">interests: ${Array.isArray(f.interests) ? f.interests.join(", ") : (f.interests || "missing")}${f.interests_url ? " · " + f.interests_url : ""}</div>
+          <div class="note">who_repeats: ${Array.isArray(f.who_repeats) ? f.who_repeats.join(", ") : (f.who_repeats || "missing")}${f.who_repeats_url ? " · " + f.who_repeats_url : ""}</div>
         </div>`).join("");
       const frames = (packet.frames || []).map(fr => `
         <div class="frame">

@@ -4,7 +4,7 @@ from typing import Any
 
 from onecrew import config
 from onecrew.imagen_client import ImagenDownError, generate_frames
-from onecrew.models import Finding, Packet, ShotFrame
+from onecrew.models import MISSING, Finding, Packet, ShotFrame
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.store import store
 
@@ -69,6 +69,9 @@ def findings_from_parallel_rows(
             parallel_url=hit_url,
             parallel_status="hit",
             note="Parallel URL on this row.",
+            lean=MISSING,
+            interests=MISSING,
+            who_repeats=MISSING,
         ),
         Finding(
             id="3am-kitchen",
@@ -77,6 +80,9 @@ def findings_from_parallel_rows(
             parallel_url=None,
             parallel_status="n/a",
             note="Widely repeated, may be bias, not a source.",
+            lean=MISSING,
+            interests=MISSING,
+            who_repeats=MISSING,
         ),
         Finding(
             id="nasa-miss",
@@ -85,6 +91,9 @@ def findings_from_parallel_rows(
             parallel_url=None,
             parallel_status="miss",
             note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+            lean=MISSING,
+            interests=MISSING,
+            who_repeats=MISSING,
         ),
     ]
 

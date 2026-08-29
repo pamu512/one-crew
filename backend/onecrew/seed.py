@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 
 from onecrew import config
-from onecrew.models import Finding, Packet, Receipt, ShotFrame
+from onecrew.models import MISSING, Finding, Packet, Receipt, ShotFrame
 from onecrew.receipt import write_receipt
 from onecrew.store import store
+
+PPI_URL = "https://www.ilovepickles.org/"
 
 SEED_HOOK = "Pickle juice at 3am is a ranking cheat code — NASA even studied it."
 SEED_SCRIPT = (
@@ -33,6 +35,23 @@ def seed_findings() -> list[Finding]:
             parallel_url=None,
             parallel_status="n/a",
             note="Widely repeated, may be bias, not a source.",
+            lean=MISSING,
+            interests=MISSING,
+            who_repeats=MISSING,
+        ),
+        Finding(
+            id="industry-recovery",
+            claim="Pickle juice is a branded recovery category the pickle trade pushes as sports nutrition.",
+            stamp="mainstream",
+            parallel_url=None,
+            parallel_status="n/a",
+            note="Widely repeated, may be bias, not a source.",
+            lean="industry",
+            lean_url=PPI_URL,
+            interests=["Pickle Packers International"],
+            interests_url=PPI_URL,
+            who_repeats=["Pickle Packers International"],
+            who_repeats_url=PPI_URL,
         ),
         Finding(
             id="nasa-miss",

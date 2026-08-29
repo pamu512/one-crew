@@ -22,6 +22,7 @@ GET is seeded (`oc-pickle-debt`) and never spends Parallel or Imagen. POST that 
 
 - Write-once Parallel receipt
 - Stamps: grounded / mainstream / fringe
+- Mainstream lean / interests / who_repeats: Parallel-sourced or missing
 - Hit and miss on the same receipt
 - Four shot frames from script + Parallel refs
 - Fail-closed HOLD when rails are down

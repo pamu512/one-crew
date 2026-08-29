@@ -12,6 +12,7 @@ PacketStatus = Literal["ready", "hold", "running"]
 ShiftStatus = Literal["running", "completed", "failed"]
 
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
+MISSING = "missing"
 
 
 def utcnow() -> str:
@@ -59,6 +60,14 @@ class Finding(BaseModel):
     parallel_url: str | None = None
     parallel_status: ParallelStatus
     note: str
+    # Mainstream attribution. Separate fields — not Gemini note text.
+    # Filled only when Parallel returned a sourceable hit. Otherwise "missing".
+    lean: str = MISSING
+    lean_url: str | None = None
+    interests: str | list[str] = MISSING
+    interests_url: str | None = None
+    who_repeats: str | list[str] = MISSING
+    who_repeats_url: str | None = None
 
 
 class ShotFrame(BaseModel):
@@ -78,6 +87,7 @@ class Receipt(BaseModel):
     invented_source: bool = False
     collage: bool = False
     invented_stamp: bool = False
+    invented_lean: bool = False
 
     @property
     def parallel_hit(self) -> bool:
