@@ -105,6 +105,8 @@ def build_seed_packet() -> Packet:
         depth="decade",
         cut="one_time_short_episode",
         script_lean="centered_independent",
+        genre="nonfiction",
+        vantage="global_overview",
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",

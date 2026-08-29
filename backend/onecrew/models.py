@@ -37,6 +37,8 @@ ScriptLean = Literal[
     "far_left",
     "unhinged_fringe",
 ]
+Genre = Literal["nonfiction", "horror", "war", "historical", "musical", "drama", "thriller"]
+Vantage = Literal["global_overview", "one_family", "one_ship"]
 LinkStamp = Literal["grounded", "missing"]
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
@@ -73,6 +75,16 @@ SCRIPT_LEANS = (
     "far_left",
     "unhinged_fringe",
 )
+GENRES = (
+    "nonfiction",
+    "horror",
+    "war",
+    "historical",
+    "musical",
+    "drama",
+    "thriller",
+)
+VANTAGES = ("global_overview", "one_family", "one_ship")
 MISSING = "missing"
 
 
@@ -159,6 +171,7 @@ class ScriptBeat(BaseModel):
     act: str = ""
     vo: str
     finding_ids: list[str] = Field(default_factory=list)
+    frame: str = ""
 
 
 class ShotFrame(BaseModel):
@@ -200,6 +213,8 @@ class Packet(BaseModel):
     depth: Depth | None = None
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
+    genre: Genre | None = None
+    vantage: Vantage | None = None
     hook: str
     script: str
     status: PacketStatus = "ready"
@@ -222,6 +237,8 @@ class ShiftRecord(BaseModel):
     depth: Depth | None = None
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
+    genre: Genre | None = None
+    vantage: Vantage | None = None
     topic: str = ""
     rails: Rails | None = None
     error: str | None = None

@@ -29,11 +29,19 @@ def open_shift(
     depth: str | None = None,
     cut: str | None = None,
     script_lean: str | None = None,
+    genre: str | None = None,
+    vantage: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
-    chosen_topic, chosen_platform, chosen_cut, chosen_depth, chosen_lean = require_picks(
-        topic, platform, cut, depth, script_lean
-    )
+    (
+        chosen_topic,
+        chosen_platform,
+        chosen_cut,
+        chosen_depth,
+        chosen_lean,
+        chosen_genre,
+        chosen_vantage,
+    ) = require_picks(topic, platform, cut, depth, script_lean, genre, vantage)
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
     rails = assess_rails()
@@ -50,6 +58,8 @@ def open_shift(
         depth=chosen_depth,
         cut=chosen_cut,
         script_lean=chosen_lean,
+        genre=chosen_genre,
+        vantage=chosen_vantage,
         topic=chosen_topic,
         rails=rails,
         store_backend=store.backend,
@@ -118,7 +128,15 @@ def _board(packet: Packet, rails: Rails) -> list:
 
 def run_live_packet(shift: ShiftRecord) -> Packet:
     """Spend path. Picks → sources → script → storyboard. Boards are not optional."""
-    require_picks(shift.topic, shift.platform, shift.cut, shift.depth, shift.script_lean)
+    require_picks(
+        shift.topic,
+        shift.platform,
+        shift.cut,
+        shift.depth,
+        shift.script_lean,
+        shift.genre,
+        shift.vantage,
+    )
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
     fresh = Packet(
@@ -128,6 +146,8 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         depth=shift.depth,
         cut=shift.cut,
         script_lean=shift.script_lean,
+        genre=shift.genre,
+        vantage=shift.vantage,
         hook=shift.topic or existing.hook,
         script="",
         status="running",
@@ -173,6 +193,8 @@ async def run_shift(
     depth: str | None = None,
     cut: str | None = None,
     script_lean: str | None = None,
+    genre: str | None = None,
+    vantage: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     if shift is None:
@@ -183,6 +205,8 @@ async def run_shift(
             depth=depth,
             cut=cut,
             script_lean=script_lean,
+            genre=genre,
+            vantage=vantage,
             topic=topic,
         )
     try:

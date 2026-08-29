@@ -25,7 +25,7 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
         shots.append(
             ShotFrame(
                 id=f"shot-{beat.id}",
-                shot=_shot_line(beat, rows),
+                shot=_shot_line(beat, rows, packet),
                 source_refs=refs,
                 image_href="",
                 imagen=False,
@@ -37,7 +37,13 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
     return shots
 
 
-def _shot_line(beat: ScriptBeat, rows: list[Finding]) -> str:
+def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
+    if (packet.genre or "nonfiction") != "nonfiction":
+        if packet.vantage == "one_family":
+            return _family_shot(beat)
+        if packet.vantage == "one_ship":
+            return _ship_shot(beat)
+        return "Map-table room, radio on, a paper Gulf chart. No collage. Not a receipt card."
     blob = " ".join([beat.id, beat.vo] + [f.claim for f in rows]).lower()
     if (
         beat.id == "jcpoa-to-houthi"
@@ -63,6 +69,36 @@ def _shot_line(beat: ScriptBeat, rows: list[Finding]) -> str:
         return "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them."
     claim = rows[0].claim.rstrip(".") if rows else beat.vo.split("[")[0].strip().rstrip(".")
     return f"Photoreal frame of the action just spoken: {claim}."
+
+
+def _family_shot(beat: ScriptBeat) -> str:
+    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
+    if beat.id == "jcpoa-2018" or ("2018" in blob and "jcpoa" in blob):
+        return "Bandar Abbas kitchen, radio on, 2018 news on a small TV, dishes in the sink."
+    if beat.id == "secret-closure" or "alley" in blob:
+        return "Open kitchen door onto an alley in Bandar Abbas. No minefield on camera."
+    if beat.id == "hormuz-share" or "harbor" in blob:
+        return "Kitchen window over a harbor road, tankers only as distant lights."
+    if beat.id == "oil-panic" or "neighbor" in blob:
+        return "Neighbor in a Bandar Abbas kitchen doorway, overhead bulb, street quiet."
+    if "jcpoa-to-houthi" in blob or "arrow" in blob:
+        return "Kitchen table, two dates on scrap paper, no arrow drawn."
+    return "Family kitchen in Bandar Abbas, radio on, evening light."
+
+
+def _ship_shot(beat: ScriptBeat) -> str:
+    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
+    if beat.id == "jcpoa-2018":
+        return "Bridge chart table, 2018 printout under a lamp, strait on the radar ring."
+    if beat.id == "secret-closure":
+        return "Lookout on the wing, dark Hormuz water, no mines visible."
+    if beat.id == "hormuz-share":
+        return "Bow of a ship in the Hormuz lane, land close on both sides, hull unhit."
+    if beat.id == "oil-panic":
+        return "Crew mess, radio on, coffee cups, no fire and no blast."
+    if "jcpoa-to-houthi" in blob or "explosion" in blob or "heading" in blob:
+        return "Bridge watch clock and a clipboard with two dates. No explosion on screen."
+    return "Tanker bridge at night, watch officer at the window, threat only."
 
 
 def persist_generated_image(frame_id: str, result: Any) -> str:

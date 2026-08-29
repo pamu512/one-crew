@@ -8,17 +8,17 @@ One Crew
 
 ## Tagline
 
-Pick topic, then platform, length, depth, and how you want it to lean. You get a timed VO, cited sources, and a shot list cut from that VO.
+Pick topic, then platform, length, depth, lean, and how to tell it. You get a timed VO, cited sources, and a shot list cut from that VO.
 
 ## Text description
 
-One Crew is a research companion that returns a timed VO plus cited sources. Before any Parallel or Imagen spend you pick, in order: topic (free text, required; empty or whitespace = no run), then platform (tiktok, youtube, youtube_shorts, Instagram/Meta: instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, plus podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary), depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet), and script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe). No defaults. Any missing pick = no run.
+One Crew is a research companion that returns a timed VO plus cited sources. Before any Parallel or Imagen spend you pick, in order: topic (free text, required; empty or whitespace = no run), then platform (tiktok, youtube, youtube_shorts, Instagram/Meta: instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, plus podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary), depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet), script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe), and tell (genre: nonfiction, horror, war, historical, musical, drama, thriller; vantage: global_overview, one_family, one_ship). nonfiction is the straight research read. The script may invent only the frame and must label it (frame). Receipt stamps stay non-fiction. No defaults. Any missing pick = no run.
 
 The researcher writes a timeline once and stamps each source. The floor writes a timed VO in the requested lean, sized to platform and length, with beats, timecodes, and citations pointing at those rows. Then a shot list is cut from that VO. TikTok/Shorts generate every beat. Episode/doc generate one Imagen key frame per scene (capped at the event cap, never 400 images). Not a receipt-join. If Imagen or Vertex is down, the shot list stays and images stay missing. Script lean does not restamp sources. The floor never posts.
 
 ## Features and functionality
 
-- Five required picks: topic, platform, length, depth, script lean
+- Six required picks: topic, platform, length, depth, script lean, tell (genre + vantage)
 - Timed VO plus cited sources plus a shot list cut from that VO
 - Boards are not optional; Imagen/Vertex down keeps the shot list and leaves images missing
 - Script lean does not restamp sources

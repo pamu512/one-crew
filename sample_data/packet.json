@@ -5,8 +5,10 @@
   "depth": "decade",
   "cut": "one_time_short_episode",
   "script_lean": "centered_independent",
+  "genre": "nonfiction",
+  "vantage": "global_overview",
   "hook": "Explain what's going on with the Hormuz strait",
-  "script": "Timed VO · youtube · one_time_short_episode · centered_independent\n\nACT 1\n00:00:00–00:08:00\nIn 2018 the United States withdrew from the JCPOA, tightening the Iran file around the Gulf. I'm staying on that withdrawal and that tighter file. [jcpoa-2018]\n\n00:08:00–00:16:00\nA large share of seaborne oil still transits the Strait of Hormuz. Tankers still use that lane. OPEC published that share. [hormuz-share]\n\nACT 2\n00:16:00–00:24:00\nYou'll hear that any Hormuz scare means oil crashes the world overnight. That's the scare. I'm not proving a crash from this beat. [oil-panic]\n\n00:24:00–00:32:00\nProducer states treat an open Hormuz as an oil-market given. That's the industry frame. [producer-frame]\n\nACT 3\n00:32:00–00:40:00\nThere's a claim that Hormuz has already been mined shut under a hidden navy treaty. I can't run that as fact. You still hear the claim. You don't get a minefield from me. [secret-closure]\n\n00:40:00–00:43:00\nI cannot tell you that the 2018 JCPOA exit caused the 2023-2024 Hormuz panic. That connection is not sourced. [jcpoa-2018] [oil-panic]\n",
+  "script": "Timed VO · youtube · one_time_short_episode · centered_independent · nonfiction · global_overview\n\nACT 1\n00:00:00–00:08:00\nIn 2018 the United States withdrew from the JCPOA, tightening the Iran file around the Gulf. I'm staying on that withdrawal and that tighter file. [jcpoa-2018]\n\n00:08:00–00:16:00\nA large share of seaborne oil still transits the Strait of Hormuz. Tankers still use that lane. OPEC published that share. [hormuz-share]\n\nACT 2\n00:16:00–00:24:00\nYou'll hear that any Hormuz scare means oil crashes the world overnight. That's the scare. I'm not proving a crash from this beat. [oil-panic]\n\n00:24:00–00:32:00\nProducer states treat an open Hormuz as an oil-market given. That's the industry frame. [producer-frame]\n\nACT 3\n00:32:00–00:40:00\nThere's a claim that Hormuz has already been mined shut under a hidden navy treaty. I can't run that as fact. You still hear the claim. You don't get a minefield from me. [secret-closure]\n\n00:40:00–00:43:00\nI cannot tell you that the 2018 JCPOA exit caused the 2023-2024 Hormuz panic. That connection is not sourced. [jcpoa-2018] [oil-panic]\n",
   "status": "ready",
   "receipt": {
     "packet_id": "oc-hormuz-decade",
@@ -153,7 +155,8 @@
       "vo": "In 2018 the United States withdrew from the JCPOA, tightening the Iran file around the Gulf. I'm staying on that withdrawal and that tighter file. [jcpoa-2018]",
       "finding_ids": [
         "jcpoa-2018"
-      ]
+      ],
+      "frame": ""
     },
     {
       "id": "hormuz-share",
@@ -163,7 +166,8 @@
       "vo": "A large share of seaborne oil still transits the Strait of Hormuz. Tankers still use that lane. OPEC published that share. [hormuz-share]",
       "finding_ids": [
         "hormuz-share"
-      ]
+      ],
+      "frame": ""
     },
     {
       "id": "oil-panic",
@@ -173,7 +177,8 @@
       "vo": "You'll hear that any Hormuz scare means oil crashes the world overnight. That's the scare. I'm not proving a crash from this beat. [oil-panic]",
       "finding_ids": [
         "oil-panic"
-      ]
+      ],
+      "frame": ""
     },
     {
       "id": "producer-frame",
@@ -183,7 +188,8 @@
       "vo": "Producer states treat an open Hormuz as an oil-market given. That's the industry frame. [producer-frame]",
       "finding_ids": [
         "producer-frame"
-      ]
+      ],
+      "frame": ""
     },
     {
       "id": "secret-closure",
@@ -193,7 +199,8 @@
       "vo": "There's a claim that Hormuz has already been mined shut under a hidden navy treaty. I can't run that as fact. You still hear the claim. You don't get a minefield from me. [secret-closure]",
       "finding_ids": [
         "secret-closure"
-      ]
+      ],
+      "frame": ""
     },
     {
       "id": "jcpoa-to-houthi",
@@ -204,7 +211,8 @@
       "finding_ids": [
         "jcpoa-2018",
         "oil-panic"
-      ]
+      ],
+      "frame": ""
     }
   ],
   "frames": [

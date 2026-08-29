@@ -6,11 +6,11 @@ Record unedited. Show the timed VO and the cited sources. Do not post.
 
 Talk over the floor with `oc-hormuz-decade` already open.
 
-> Topic is pick 1. Then platform, length, depth, and how you want it to lean. You get a timed VO, cited sources, and a shot list cut from that VO.
+> Topic is pick 1. Then platform, length, depth, lean, and tell (genre + vantage). You get a timed VO, cited sources, and a shot list cut from that VO.
 
-## 0:40–1:20 · Five picks + timed VO
+## 0:40–1:20 · Six picks + timed VO
 
-1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent**. Platform list includes Instagram and other Meta surfaces. No pick is pre-selected. Empty topic = no run. Any missing pick = no run.
+1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview**. Same receipt can be told as drama/one_family or thriller/one_ship. Invented frame only, labeled `(frame)`. Empty topic or tell = no run. Any missing pick = no run.
 2. Point at the **timed VO** and the **shot list** together — act/scene blocks with running timecodes, citations like `[jcpoa-2018]`. One shot per beat, not a leftover stills collage.
 3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
 4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.
@@ -43,7 +43,7 @@ Stop.
 
 ## Prep
 
-- [ ] First-open shows five picks (topic first) + timed VO + shot list + mixed source list
+- [ ] First-open shows six picks (topic first, tell last) + timed VO + shot list + mixed source list
 - [ ] No pick defaults
 - [ ] No publish control
 - [ ] Tests green

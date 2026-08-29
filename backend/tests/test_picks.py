@@ -6,9 +6,11 @@ from onecrew.agent.shift import open_shift, run_live_packet
 from onecrew.api import app
 from onecrew.models import MISSING
 from onecrew.picks import (
+    GenreRequiredError,
     PlatformRequiredError,
     ScriptLeanRequiredError,
     TopicRequiredError,
+    VantageRequiredError,
     require_picks,
     require_topic,
 )
@@ -24,16 +26,18 @@ def _all(**overrides):
         "cut": "one_time_short_episode",
         "depth": "decade",
         "script_lean": "centered_independent",
+        "genre": "nonfiction",
+        "vantage": "global_overview",
     }
     body.update(overrides)
     return body
 
 
-def test_no_run_without_all_five_picks(monkeypatch) -> None:
+def test_no_run_without_all_six_picks(monkeypatch) -> None:
     monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
 
     def boom(*_a, **_k):
-        raise AssertionError("spent without all five picks")
+        raise AssertionError("spent without all six picks")
 
     monkeypatch.setattr("onecrew.parallel_client.search", boom)
     monkeypatch.setattr("onecrew.imagen_client.generate_frames", boom)
@@ -63,6 +67,15 @@ def test_no_run_without_all_five_picks(monkeypatch) -> None:
         missing_lean = client.post("/api/shifts", json=_all(script_lean=None), headers=headers)
         assert missing_lean.status_code == 400
         assert "lean" in missing_lean.json()["detail"].lower()
+        missing_genre = client.post("/api/shifts", json=_all(genre=None), headers=headers)
+        assert missing_genre.status_code == 400
+        assert "genre" in missing_genre.json()["detail"].lower()
+        empty_genre = client.post("/api/shifts", json=_all(genre=""), headers=headers)
+        assert empty_genre.status_code == 400
+        omitted_tell = {k: v for k, v in _all().items() if k not in {"genre", "vantage"}}
+        missing_vantage = client.post("/api/shifts", json={**omitted_tell, "genre": "drama"}, headers=headers)
+        assert missing_vantage.status_code == 400
+        assert "vantage" in missing_vantage.json()["detail"].lower()
     assert ledger.parallel_calls == before_p == 0
     assert ledger.imagen_calls == before_i == 0
     with pytest.raises(TopicRequiredError, match="No topic chosen"):
@@ -71,11 +84,15 @@ def test_no_run_without_all_five_picks(monkeypatch) -> None:
         require_topic("   ")
     assert require_topic("  Hormuz  ") == "Hormuz"
     with pytest.raises(TopicRequiredError, match="No topic chosen"):
-        require_picks(None, "youtube", "one_time_short_episode", "decade", "left")
+        require_picks(None, "youtube", "one_time_short_episode", "decade", "left", "nonfiction", "global_overview")
     with pytest.raises(PlatformRequiredError):
-        require_picks("Hormuz", None, "one_time_short_episode", "decade", "left")
+        require_picks("Hormuz", None, "one_time_short_episode", "decade", "left", "nonfiction", "global_overview")
     with pytest.raises(ScriptLeanRequiredError):
-        require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", None)
+        require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", None, "nonfiction", "global_overview")
+    with pytest.raises(GenreRequiredError, match="No genre chosen"):
+        require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", "left", None, "global_overview")
+    with pytest.raises(VantageRequiredError, match="No vantage chosen"):
+        require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", "left", "drama", "")
 
 
 def test_script_lean_cannot_change_a_source_stamp() -> None:
@@ -110,6 +127,8 @@ def test_unhinged_lean_still_fail_closed_on_missing_parallel() -> None:
         cut="tiktok-length",
         depth="decade",
         script_lean="unhinged_fringe",
+        genre="thriller",
+        vantage="one_ship",
         topic="Hormuz",
     )
     packet = run_live_packet(shift)

@@ -1,8 +1,8 @@
 # One Crew
 
-Pick topic, platform, length, depth, then how you want it to lean. You get a timed VO, cited sources, and a shot list cut from that VO.
+Pick topic, platform, length, depth, lean, then how to tell it. You get a timed VO, cited sources, and a shot list cut from that VO.
 
-One Crew is a research companion. Five picks, then a write-once timeline, then a **timed VO**, then a **shot list** from that VO. Imagen fills key frames. Not a receipt-join. Not a leftover stills collage. The crew does not post.
+One Crew is a research companion. Six picks, then a write-once timeline, then a **timed VO**, then a **shot list** from that VO. Imagen fills key frames. Not a receipt-join. Not a leftover stills collage. The crew does not post.
 
 **Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. The floor never posts.**
 
@@ -17,6 +17,7 @@ Required picks, in this order, before any Parallel or Imagen spend. No defaults.
 3. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`
 4. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
 5. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
+6. **Tell** (two required fields, no free-text genre) — genre: `nonfiction` | `horror` | `war` | `historical` | `musical` | `drama` | `thriller` · vantage: `global_overview` | `one_family` | `one_ship`. `nonfiction` is the straight research read. Empty genre or vantage = no run. The script may invent only the frame (names, rooms, a radio, a captain) and must label it `(frame)`. Receipt stamps stay non-fiction.
 
 Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
 
@@ -30,12 +31,12 @@ The floor never posts.
 
 ## Who it's for
 
-A one-person shop that needs a script with receipts. Sample first-open packet: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent).
+A one-person shop that needs a script with receipts. Sample first-open packet: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview).
 
 ## How it works
 
-1. First-open shows the five picks (topic first), a timed Hormuz VO with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the shot list cut from that VO. GET never calls Parallel or Imagen.
-2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all five picks. Unset token → 403. Empty, whitespace, or omitted topic → 400. Any missing pick → 400. No spend.
+1. First-open shows the six picks (topic first, tell last), a timed Hormuz VO with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the shot list cut from that VO. GET never calls Parallel or Imagen.
+2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all six picks. Unset token → 403. Empty, whitespace, or omitted topic → 400. Empty genre or vantage → 400. Any missing pick → 400. No spend.
 3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**. Flow is picks → timeline + sources → timed VO → shot list.
 4. Write-once receipt. Script lean cannot change a source stamp.
 5. Missing Parallel — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed. Missing Imagen/Vertex → shot list kept, images missing.
@@ -78,7 +79,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Tests lock: no run without all five picks (empty/whitespace/omitted topic is 400 and does not spend); right vs left VO wording differs and stamps stay identical; TikTok VO is short and an episode has running timecodes; every beat cites a finding id; unhinged/centered cannot hide fringe or propaganda; the boarder cannot return the leftover tanker-lane set; Imagen down keeps the shot list and leaves images missing; HOLD writes an empty script.
+Tests lock: no run without all six picks (empty/whitespace/omitted topic or tell is 400 and does not spend); right vs left VO wording differs and stamps stay identical; same receipt can be told as nonfiction/global, drama/one_family, and thriller/one_ship; thriller does not claim a sourced explosion; TikTok VO is short and an episode has running timecodes; every beat cites a finding id; invented frame is labeled `(frame)`; HOLD writes an empty script and does not invent a family.
 
 ### ADK web (optional)
 

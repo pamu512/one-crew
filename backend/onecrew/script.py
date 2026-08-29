@@ -209,8 +209,71 @@ def _vo_mine(lean: str, *, long_form: bool) -> str:
     return line + (extra if long_form else "")
 
 
-def _vo_for(finding: Finding, lean: str, *, long_form: bool) -> str:
-    return _vo_body(finding, lean, long_form=long_form).rstrip() + _cite(finding.id)
+def _invents_frame(packet: Packet) -> bool:
+    return (packet.genre or "nonfiction") != "nonfiction"
+
+
+def _frame_for(packet: Packet, finding: Finding, lean: str) -> str:
+    """Invented room/character only. Labeled (frame). Never a grounded fact."""
+    if not _invents_frame(packet):
+        return ""
+    vantage = packet.vantage or "global_overview"
+    theme = _theme(finding)
+    if vantage == "one_ship":
+        return _ship_frame(theme, lean)
+    if vantage == "one_family":
+        return _family_frame(theme, lean)
+    return _map_table_frame(theme, lean)
+
+
+def _family_frame(theme: str, lean: str) -> str:
+    if theme == "jcpoa":
+        if lean == "right":
+            return "Leila's brother slaps the table in their Bandar Abbas kitchen. (frame)"
+        if lean in {"left", "far_left"}:
+            return "Leila keeps the kitchen radio low so the kids stay asleep in Bandar Abbas. (frame)"
+        return "Leila shuts the kitchen radio in Bandar Abbas. (frame)"
+    if theme == "oil_lane":
+        return "From the kitchen window she can see the harbor road, not the lane itself. (frame)"
+    if theme == "panic":
+        return "A neighbor fills the doorway and talks overnight prices. (frame)"
+    if theme == "producer":
+        return "The state bulletin plays on the small TV above the sink. (frame)"
+    if theme == "mine_rumor":
+        return "Someone in the alley repeats a rumor through the open kitchen door. (frame)"
+    return "Leila stays at the Bandar Abbas sink with the radio on. (frame)"
+
+
+def _ship_frame(theme: str, lean: str) -> str:
+    if theme == "jcpoa":
+        if lean == "right":
+            return "Captain Reza pins a 2018 printout under the bridge lamp. (frame)"
+        if lean in {"left", "far_left"}:
+            return "On the bridge Reza reads the old date out loud to the watch. (frame)"
+        return "Captain Reza checks the chart table on a ship crossing the strait. (frame)"
+    if theme == "oil_lane":
+        return "The lookout calls an open lane from the wing. No blast. (frame)"
+    if theme == "panic":
+        return "In the mess the radio talks crash. The hull is still quiet. (frame)"
+    if theme == "producer":
+        return "Shore radio on the bridge speaker talks like the lane is a given. (frame)"
+    if theme == "mine_rumor":
+        return "A crewman repeats a mine-treaty rumor on the wing. Reza does not change heading for a rumor. (frame)"
+    return "Reza keeps the watch. A hit is a scene they fear, not a fact they have. (frame)"
+
+
+def _map_table_frame(theme: str, lean: str) -> str:
+    if theme == "mine_rumor":
+        return "At a map table someone repeats a rumor. The map does not grow mines. (frame)"
+    return "A narrator stands at a map table with a radio on. (frame)"
+
+
+def _vo_for(finding: Finding, lean: str, *, long_form: bool, packet: Packet) -> str:
+    fact = _vo_body(finding, lean, long_form=long_form).rstrip() + _cite(finding.id)
+    frame = _frame_for(packet, finding, lean)
+    if not frame:
+        return fact
+    return f"{frame} {fact}"
 
 
 def _close_vo(link_claim: str, lean: str, cite: list[str]) -> str:
@@ -224,7 +287,18 @@ def _close_vo(link_claim: str, lean: str, cite: list[str]) -> str:
         line = f"I want a clean line that {lowered}. I don't have it, so I won't draw it."
     else:
         line = f"I cannot tell you that {lowered}. That connection is not sourced."
-    return line + "".join(_cite(fid) for fid in cite)
+    spoken = line + "".join(_cite(fid) for fid in cite)
+    return spoken
+
+
+def _close_frame(packet: Packet) -> str:
+    if not _invents_frame(packet):
+        return ""
+    if packet.vantage == "one_ship":
+        return "Reza does not log a sourced explosion. The watch just keeps the heading. (frame) "
+    if packet.vantage == "one_family":
+        return "Leila does not draw an arrow between two dates on the kitchen paper. (frame) "
+    return "No arrow gets drawn on the map table. (frame) "
 
 
 def _tc(total_s: int, *, hours: bool) -> str:
@@ -267,8 +341,9 @@ def write_script(packet: Packet) -> Packet:
                 start=_tc(cursor, hours=hours),
                 duration_s=duration,
                 act=_act_name(index, scene_total) if long_form else "",
-                vo=_vo_for(finding, lean, long_form=long_form),
+                vo=_vo_for(finding, lean, long_form=long_form, packet=packet),
                 finding_ids=[finding.id],
+                frame=_frame_for(packet, finding, lean),
             )
         )
         cursor += duration
@@ -283,13 +358,14 @@ def write_script(packet: Packet) -> Packet:
                     start=_tc(cursor, hours=hours),
                     duration_s=close_s,
                     act=_act_name(len(rows), scene_total),
-                    vo=_close_vo(link.claim, lean, cite),
+                    vo=_close_frame(packet) + _close_vo(link.claim, lean, cite),
                     finding_ids=cite,
+                    frame=_close_frame(packet).strip(),
                 )
             )
             cursor += close_s
     lines = [
-        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean}",
+        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.genre or 'nonfiction'} · {packet.vantage or 'global_overview'}",
         "",
     ]
     last_act = None

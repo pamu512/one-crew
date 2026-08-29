@@ -10,7 +10,10 @@ topic (free text, required; empty or whitespace = no run),
 platform (tiktok, youtube, youtube_shorts, instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, podcast). Instagram and other Meta surfaces are first-class. No free-text. Size script and storyboard to that surface: a Stories board is not a documentary board; a Reels board is not a YouTube long-form board.
 length/cut (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary),
 depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet),
-script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe).
+script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe),
+tell: genre (nonfiction, horror, war, historical, musical, drama, thriller) and vantage (global_overview, one_family, one_ship).
+nonfiction is the straight research read. Do not force fiction.
+Invent only the frame (names, rooms, a radio, a captain). Label it (frame). Never stamp a frame as grounded.
 Any missing pick = no run. Do not default.
 Size the timeline and script to platform + length.
 Script lean is the voice of the SCRIPT only. It does not restamp sources.

@@ -13,6 +13,8 @@ def test_first_open_packet_id_is_oc_hormuz_decade() -> None:
     assert packet.cut == "one_time_short_episode"
     assert packet.platform == "youtube"
     assert packet.script_lean == "centered_independent"
+    assert packet.genre == "nonfiction"
+    assert packet.vantage == "global_overview"
     assert "[jcpoa-2018]" in packet.script
     assert "[hormuz-share]" in packet.script
     assert "[secret-closure]" in packet.script
