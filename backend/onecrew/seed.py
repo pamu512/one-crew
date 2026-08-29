@@ -136,6 +136,7 @@ def build_seed_packet() -> Packet:
         id=config.SEED_PACKET_ID,
         topic=SEED_TOPIC,
         depth="decade",
+        cut="one_time_short_episode",
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",

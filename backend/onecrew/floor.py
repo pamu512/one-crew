@@ -66,59 +66,72 @@ FLOOR_HTML = """<!DOCTYPE html>
   <header>
     <div>
       <div class="brand">One Crew</div>
-      <div class="sub">Research is the front door. Floor never posts.</div>
+      <div class="sub">Research companion. You pick the window and the cut. Floor never posts.</div>
     </div>
     <div class="badges" id="badges"></div>
   </header>
   <main>
     <section class="card">
       <div class="brand">Desk</div>
-      <p class="script">Type a topic. Choose one depth. No depth = no run. GET does not spend. The floor never posts.</p>
+      <p class="script">Topic, then depth, then cut. No depth = no run. No cut = no run. GET does not spend. The floor never posts.</p>
       <label for="topic">Topic</label>
       <textarea id="topic" rows="3" placeholder="Explain what's going on with the Hormuz strait"></textarea>
       <label>Depth — one only, required</label>
       <div class="depths" id="depths"></div>
+      <label>Cut — one only, required</label>
+      <div class="depths" id="cuts"></div>
       <label for="token">Shift token (spend only)</label>
       <input id="token" type="password" autocomplete="off"/>
       <button id="research" type="button" disabled>Research timeline</button>
-      <p class="script" id="desk-msg">No depth chosen = no run.</p>
+      <p class="script" id="desk-msg">No depth chosen = no run. No cut chosen = no run.</p>
       <p class="script" id="health"></p>
     </section>
     <section class="card" id="packet">Loading oc-hormuz-decade…</section>
   </main>
   <script>
     const DEPTHS = [
-      {id:"current", label:"current (past year)"},
-      {id:"2-3-years", label:"2-3 years"},
-      {id:"5-years", label:"5 years"},
+      {id:"current", label:"1y"},
+      {id:"2-3-years", label:"2-3y"},
+      {id:"5-years", label:"5y"},
       {id:"decade", label:"decade"},
       {id:"few-decades", label:"few decades"},
-      {id:"pre-1980", label:"pre-1980 / pre-internet (all the way back)"}
+      {id:"pre-1980", label:"pre-1980 / pre-internet"}
+    ];
+    const CUTS = [
+      {id:"tiktok", label:"tiktok"},
+      {id:"youtube_shorts", label:"youtube_shorts"},
+      {id:"weekly_update", label:"weekly_update"},
+      {id:"one_time_short_episode", label:"one_time_short_episode"},
+      {id:"full_length_documentary", label:"full_length_documentary"}
     ];
 
-    function chosenDepth() {
-      const el = document.querySelector('input[name="depth"]:checked');
+    function chosenRadio(name) {
+      const el = document.querySelector('input[name="' + name + '"]:checked');
       return el ? el.value : "";
     }
 
     function syncDesk() {
-      const depth = chosenDepth();
+      const depth = chosenRadio("depth");
+      const cut = chosenRadio("cut");
       const btn = document.getElementById("research");
       const live = window.__shiftsOn === true;
-      btn.disabled = !depth || !live;
-      document.getElementById("desk-msg").textContent = !depth
-        ? "No depth chosen = no run."
-        : (live ? "Depth locked. Research spends Parallel only after this." : "Live spend off. Token-gate still on spend.");
+      btn.disabled = !depth || !cut || !live;
+      const msg = document.getElementById("desk-msg");
+      if (!depth) { msg.textContent = "No depth chosen = no run."; return; }
+      if (!cut) { msg.textContent = "No cut chosen = no run."; return; }
+      msg.textContent = live
+        ? "Depth and cut locked. Research spends Parallel only after this."
+        : "Live spend off. Token-gate still on spend.";
     }
 
-    function renderDepths() {
-      const root = document.getElementById("depths");
+    function renderRadios(rootId, name, rows) {
+      const root = document.getElementById(rootId);
       root.innerHTML = "";
-      DEPTHS.forEach(d => {
+      rows.forEach(d => {
         const lab = document.createElement("label");
         const inp = document.createElement("input");
         inp.type = "radio";
-        inp.name = "depth";
+        inp.name = name;
         inp.value = d.id;
         inp.addEventListener("change", syncDesk);
         lab.appendChild(inp);
@@ -167,14 +180,14 @@ FLOOR_HTML = """<!DOCTYPE html>
       document.getElementById("packet").innerHTML = `
         <div class="brand">${packet.id}</div>
         <h1 class="hook">${packet.topic || packet.hook}</h1>
-        <p class="script">depth: ${packet.depth || "none"}</p>
+        <p class="script">depth: ${packet.depth || "none"} · cut: ${packet.cut || "none"}</p>
         <p class="script">${packet.script}</p>
         <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
         <div class="brand" style="margin:16px 0 8px">Timeline</div>
         ${findings}
         <div class="brand" style="margin:16px 0 8px">Causal links</div>
         ${links || `<p class="note">No Parallel-sourced link. Missing, not invented.</p>`}
-        <div class="brand" style="margin:16px 0 8px">Four shot frames</div>
+        <div class="brand" style="margin:16px 0 8px">Boards (optional, sized to cut)</div>
         <div class="frames">${frames}</div>
       `;
       if (packet.topic && !document.getElementById("topic").value) {
@@ -183,7 +196,8 @@ FLOOR_HTML = """<!DOCTYPE html>
     }
 
     async function load() {
-      renderDepths();
+      renderRadios("depths", "depth", DEPTHS);
+      renderRadios("cuts", "cut", CUTS);
       const health = await fetch("/api/health").then(r => r.json());
       window.__shiftsOn = !!(health.shifts && health.shifts.enabled);
       const badges = document.getElementById("badges");
@@ -217,9 +231,14 @@ FLOOR_HTML = """<!DOCTYPE html>
     }
 
     document.getElementById("research").addEventListener("click", async () => {
-      const depth = chosenDepth();
+      const depth = chosenRadio("depth");
+      const cut = chosenRadio("cut");
       if (!depth) {
         document.getElementById("desk-msg").textContent = "No depth chosen = no run.";
+        return;
+      }
+      if (!cut) {
+        document.getElementById("desk-msg").textContent = "No cut chosen = no run.";
         return;
       }
       const topic = document.getElementById("topic").value.trim();
@@ -230,7 +249,7 @@ FLOOR_HTML = """<!DOCTYPE html>
           "content-type": "application/json",
           ...(token ? {"X-Shift-Token": token} : {})
         },
-        body: JSON.stringify({topic, depth, board: false, goal: topic || "Research the topic. Do not post."})
+        body: JSON.stringify({topic, depth, cut, board: false, goal: topic || "Research the topic. Do not post."})
       });
       const text = await res.text();
       document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);

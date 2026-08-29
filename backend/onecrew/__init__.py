@@ -1,3 +1,3 @@
-"""One Crew — overnight researcher and board artist. Never posts."""
+"""One Crew — research companion for a one-person shop. Never posts."""
 
 __version__ = "1.0.0"

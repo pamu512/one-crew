@@ -8,19 +8,20 @@ One Crew
 
 ## Tagline
 
-Overnight researcher and board artist. Parallel timelines. Imagen shots. The floor never posts.
+A research companion for a one-person shop. You pick the window and the cut. The floor never posts.
 
 ## Text description
 
-One Crew is for a bedroom YouTube / TikTok creator who types a topic. The desk asks depth before any Parallel or Imagen spend — current, 2-3 years, 5 years, decade, few decades, or pre-1980. No depth chosen = no run. The researcher calls the official Parallel Web Python SDK and writes a timeline once. Each event is a row. Causal links are their own stamps: grounded only if Parallel sourced the link; otherwise the link is missing. Do not invent a 40-year chain.
+One Crew is a research companion for a one-person shop. You type a topic, then choose how far back and how long the piece is. Depth is required (1y / 2-3y / 5y / decade / few decades / pre-1980 pre-internet). Cut is required (tiktok, youtube_shorts, weekly_update, one_time_short_episode, full_length_documentary). No depth or no cut = no run. The receipt and any boards are sized to that cut. A TikTok packet is not a doc packet. A documentary depth+cut can be a long timeline.
 
-Each event is stamped exactly one of grounded (Parallel URL on the row), mainstream (widely repeated, may be bias, not a source), or fringe (included and tagged, never sold as fact). The same receipt must show a Parallel hit and a Parallel miss. Boards come after the receipt if the creator wants frames. If Parallel, Vertex, or Imagen is down — or pre-1980 misses — the packet HOLDs. No invented source, no collage, no invented stamp, no invented chain.
+The researcher calls the official Parallel Web Python SDK and writes a timeline once. Each event is stamped grounded, mainstream, or fringe, plus lean, interests, source independence, vested interest, and propaganda — Parallel-sourced or missing. Causal links are grounded only if Parallel sourced the link; otherwise missing. Missing stays missing.
 
-GET is seeded (`oc-hormuz-decade`) and never spends Parallel or Imagen. POST that spends is 403 unless `X-Shift-Token` matches `SHIFT_TOKEN`. Depth is required on that POST. The floor has no publish control.
+Boards stay optional after the timeline, from the script/timeline plus Parallel refs — never a collage. If Parallel, Vertex, or Imagen is down — or pre-1980 misses — the packet HOLDs. GET is seeded (`oc-hormuz-decade`) and never spends. POST that spends is token-gated. The floor never posts.
 
 ## Features and functionality
 
-- Topic front door + required depth picker (no default)
+- Research companion front door: topic + required depth + required cut (no defaults)
+- Receipt and boards sized to the cut; TikTok is not a doc packet
 - Write-once Parallel timeline
 - Causal links: grounded only if Parallel sourced; else missing
 - Stamps: grounded / mainstream / fringe
@@ -28,9 +29,9 @@ GET is seeded (`oc-hormuz-decade`) and never spends Parallel or Imagen. POST tha
 - Cited sources: independent yes/no/missing and vested_interest, Parallel-sourced or missing
 - Propaganda yes/no/missing: Parallel-sourced named issuer or missing; not Gemini tone
 - Hit and miss on the same receipt
-- Four shot frames from script + Parallel refs, after the receipt
+- Optional boards after the timeline, never a collage
 - Fail-closed HOLD when rails are down or pre-1980 misses
-- GET never spends; POST spend is token-gated and depth-gated
+- GET never spends; POST spend is token-gated, depth-gated, and cut-gated
 - Floor never posts
 - Gemini ADK crew on Vertex 3.5 Flash
 

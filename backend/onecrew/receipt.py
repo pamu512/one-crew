@@ -128,7 +128,7 @@ def validate_finding(finding: Finding) -> None:
     validate_attribution(finding)
 
 
-def validate_ready_receipt(receipt: Receipt) -> None:
+def validate_ready_receipt(receipt: Receipt, *, cut: str | None = None) -> None:
     if not receipt.findings:
         raise ReceiptInvalidError("READY receipt needs findings")
     for finding in receipt.findings:
@@ -139,6 +139,12 @@ def validate_ready_receipt(receipt: Receipt) -> None:
         raise ReceiptInvalidError("same receipt MUST show a Parallel hit AND a Parallel miss")
     if receipt.invented_source or receipt.collage or receipt.invented_stamp or receipt.invented_lean:
         raise ReceiptInvalidError("READY receipt cannot invent source, collage, stamp, or lean")
+    if cut is None:
+        raise ReceiptInvalidError("No cut chosen = no run")
+    from onecrew.cut import event_cap
+
+    if len(receipt.findings) > event_cap(cut):  # type: ignore[arg-type]
+        raise ReceiptInvalidError("A TikTok packet is not a doc packet")
 
 
 def hold_receipt(packet_id: str, rails: Rails) -> Receipt:
@@ -166,7 +172,7 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
     if packet.receipt is not None and packet.receipt.written:
         raise ReceiptWriteOnceError(f"receipt already written for {packet.id}")
     if receipt.disposition == "READY":
-        validate_ready_receipt(receipt)
+        validate_ready_receipt(receipt, cut=packet.cut)
     elif receipt.disposition == "HOLD":
         if receipt.findings:
             raise ReceiptInvalidError("HOLD must not invent stamps")
@@ -187,8 +193,15 @@ def attach_frames(packet: Packet, frames: list[ShotFrame], *, rails: Rails) -> P
     if not rails.ok:
         packet.frames = []
         return packet
-    if len(frames) != 4:
-        raise ReceiptInvalidError("boarder delivers four shot frames, not a mood dump")
+    if not frames:
+        packet.frames = []
+        return packet
+    from onecrew.cut import frame_count
+    from onecrew.cut import require_cut
+
+    expected = frame_count(require_cut(packet.cut))
+    if len(frames) != expected:
+        raise ReceiptInvalidError("boards are sized to the cut, not a collage")
     for frame in frames:
         if not frame.shot.strip():
             raise ReceiptInvalidError("each frame needs a real shot, not a mood")

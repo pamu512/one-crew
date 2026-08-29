@@ -10,6 +10,7 @@ def test_first_open_packet_id_is_oc_hormuz_decade() -> None:
     assert packet.id == "oc-hormuz-decade"
     assert packet.topic.lower().find("hormuz") >= 0
     assert packet.depth == "decade"
+    assert packet.cut == "one_time_short_episode"
     with TestClient(app) as client:
         body = client.get("/api/packets")
         ids = {p["id"] for p in body.json()["packets"]}

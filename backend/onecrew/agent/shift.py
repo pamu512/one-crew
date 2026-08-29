@@ -5,6 +5,7 @@ import uuid
 
 from onecrew import config
 from onecrew.agent.tools import findings_from_parallel_rows, frames_from_script
+from onecrew.cut import CutRequiredError, frame_count, require_cut, size_findings
 from onecrew.depth import DepthRequiredError, pre1980_fail_closed, require_depth
 from onecrew.events import bus
 from onecrew.imagen_client import ImagenDownError, generate_frames
@@ -23,9 +24,11 @@ def open_shift(
     *,
     packet_id: str | None = None,
     depth: str | None = None,
+    cut: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     chosen = require_depth(depth)
+    chosen_cut = require_cut(cut)
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
     rails = assess_rails()
@@ -39,6 +42,7 @@ def open_shift(
         model=config.GEMINI_MODEL if live else "none",
         packet_id=packet_id,
         depth=chosen,
+        cut=chosen_cut,
         topic=topic or goal,
         rails=rails,
         store_backend=store.backend,
@@ -87,6 +91,8 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
     )
     if not findings:
         return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
+    if packet.cut:
+        findings = size_findings(findings, packet.cut)
     # ponytail: live causal_links stay empty unless Parallel sourced a this-led-to-that URL.
     # Seed shows one missing link; do not invent a 40-year chain here.
     return Receipt(
@@ -102,13 +108,14 @@ def _board(packet: Packet, rails: Rails) -> list:
     if not rails.ok:
         return []
     refs = [f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url]
+    shots = frame_count(require_cut(packet.cut))
     try:
         generate_frames(
             prompt=(
-                f"Four photoreal shot frames. Script: {packet.script}. "
-                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a mood dump."
+                f"{shots} photoreal shot frames sized to cut={packet.cut}. Script: {packet.script}. "
+                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a collage."
             ),
-            number_of_images=4,
+            number_of_images=shots,
         )
     except ImagenDownError:
         return []
@@ -116,15 +123,18 @@ def _board(packet: Packet, rails: Rails) -> list:
 
 
 def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
-    """Spend path. Caller already checked token + depth. One write at the end."""
+    """Spend path. Caller already checked token + depth + cut. One write at the end."""
     if shift.depth is None:
         raise DepthRequiredError("No depth chosen = no run")
+    if shift.cut is None:
+        raise CutRequiredError("No cut chosen = no run")
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
     fresh = Packet(
         id=existing.id,
         topic=shift.topic or existing.topic or existing.hook,
         depth=shift.depth,
+        cut=shift.cut,
         hook=shift.topic or existing.hook,
         script=existing.script,
         status="running",
@@ -155,7 +165,7 @@ def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
         store.upsert_packet(fresh)
         return fresh
 
-    bus.emit(shift.id, agent="boarder", kind="plan", message="Four shot frames")
+    bus.emit(shift.id, agent="boarder", kind="plan", message=f"Boards sized to {shift.cut}")
     frames = _board(fresh, rails)
     if not frames:
         down = rails.model_copy(update={"imagen": False})
@@ -176,10 +186,11 @@ async def run_shift(
     shift: ShiftRecord | None = None,
     board: bool = False,
     depth: str | None = None,
+    cut: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     if shift is None:
-        shift = open_shift(goal, packet_id=packet_id, depth=depth, topic=topic)
+        shift = open_shift(goal, packet_id=packet_id, depth=depth, cut=cut, topic=topic)
     try:
         packet = run_live_packet(shift, board=board)
         shift.status = "completed"

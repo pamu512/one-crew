@@ -105,7 +105,9 @@ def findings_from_parallel_rows(
 
 
 def frames_from_script(packet: Packet, refs: list[str]) -> list[ShotFrame]:
-    return [
+    from onecrew.cut import frame_count, require_cut
+
+    frames = [
         ShotFrame(
             id="tanker-lane",
             shot="Tanker in a narrow lane, land on both sides.",
@@ -135,6 +137,9 @@ def frames_from_script(packet: Packet, refs: list[str]) -> list[ShotFrame]:
             imagen=True,
         ),
     ]
+    if packet.cut:
+        return frames[: frame_count(require_cut(packet.cut))]
+    return frames
 
 
 # Keep seed id reachable for tools without importing seed (avoids cycle in ADK load).

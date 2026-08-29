@@ -4,12 +4,12 @@ from onecrew.models import DEPTHS, Depth, Rails, Receipt
 from onecrew.receipt import hold_receipt
 
 DEPTH_LABELS: dict[Depth, str] = {
-    "current": "current (past year)",
-    "2-3-years": "2-3 years",
-    "5-years": "5 years",
+    "current": "1y",
+    "2-3-years": "2-3y",
+    "5-years": "5y",
     "decade": "decade",
     "few-decades": "few decades",
-    "pre-1980": "pre-1980 / pre-internet (all the way back)",
+    "pre-1980": "pre-1980 / pre-internet",
 }
 
 

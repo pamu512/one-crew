@@ -10,6 +10,13 @@ ParallelStatus = Literal["hit", "miss", "n/a"]
 Independent = Literal["yes", "no", "missing"]
 Propaganda = Literal["yes", "no", "missing"]
 Depth = Literal["current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980"]
+Cut = Literal[
+    "tiktok",
+    "youtube_shorts",
+    "weekly_update",
+    "one_time_short_episode",
+    "full_length_documentary",
+]
 LinkStamp = Literal["grounded", "missing"]
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
@@ -19,6 +26,13 @@ STAMPS = frozenset({"grounded", "mainstream", "fringe"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
 PROPAGANDA = frozenset({"yes", "no", "missing"})
 DEPTHS = ("current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980")
+CUTS = (
+    "tiktok",
+    "youtube_shorts",
+    "weekly_update",
+    "one_time_short_episode",
+    "full_length_documentary",
+)
 MISSING = "missing"
 
 
@@ -131,6 +145,7 @@ class Packet(BaseModel):
     id: str
     topic: str = ""
     depth: Depth | None = None
+    cut: Cut | None = None
     hook: str
     script: str
     status: PacketStatus = "ready"
@@ -149,6 +164,7 @@ class ShiftRecord(BaseModel):
     model: str
     packet_id: str
     depth: Depth | None = None
+    cut: Cut | None = None
     topic: str = ""
     rails: Rails | None = None
     error: str | None = None
