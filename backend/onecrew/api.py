@@ -11,13 +11,16 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from onecrew import config
+from onecrew.board import resolve_frame_file
 from onecrew.cut import cuts_payload
 from onecrew.depth import depths_payload
 from onecrew.picks import (
     PickError,
+    genres_payload,
     leans_payload,
     platforms_payload,
     require_picks,
+    vantages_payload,
 )
 from onecrew.floor import FLOOR_HTML
 from onecrew.rails import assess_rails
@@ -26,14 +29,6 @@ from onecrew.spend import ledger
 from onecrew.store import store
 
 log = logging.getLogger("onecrew.api")
-
-FRAME_FILES = {
-    "tanker-lane": "tanker-lane.svg",
-    "strait-map": "strait-map.svg",
-    "oil-share": "oil-share.svg",
-    "link-empty": "link-empty.svg",
-}
-
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -68,6 +63,8 @@ class ShiftRequest(BaseModel):
     depth: str | None = Field(default=None)
     cut: str | None = Field(default=None)
     script_lean: str | None = Field(default=None)
+    genre: str | None = Field(default=None)
+    vantage: str | None = Field(default=None)
     goal: str = Field(
         default="Research the topic inside the chosen depth. Write a timeline. Do not post."
     )
@@ -107,6 +104,8 @@ def health() -> dict[str, Any]:
         "cuts": cuts_payload(),
         "depths": depths_payload(),
         "script_leans": leans_payload(),
+        "genres": genres_payload(),
+        "vantages": vantages_payload(),
     }
 
 
@@ -130,6 +129,16 @@ def list_script_leans() -> dict[str, Any]:
     return {"script_leans": leans_payload(), "default": None}
 
 
+@app.get("/api/genres")
+def list_genres() -> dict[str, Any]:
+    return {"genres": genres_payload(), "default": None}
+
+
+@app.get("/api/vantages")
+def list_vantages() -> dict[str, Any]:
+    return {"vantages": vantages_payload(), "default": None}
+
+
 @app.get("/api/packets")
 def list_packets() -> dict[str, Any]:
     packets = store.list_packets()
@@ -149,13 +158,11 @@ def get_packet(packet_id: str) -> dict[str, Any]:
 
 @app.get("/api/frames/{frame_id}")
 def get_frame(frame_id: str) -> Response:
-    name = FRAME_FILES.get(frame_id)
-    if not name:
+    path = resolve_frame_file(frame_id)
+    if path is None:
         raise HTTPException(404, "frame not found")
-    path = config.FRAMES_DIR / name
-    if not path.is_file():
-        raise HTTPException(404, "frame file missing")
-    return Response(content=path.read_bytes(), media_type="image/svg+xml; charset=utf-8")
+    media = "image/svg+xml; charset=utf-8" if path.suffix == ".svg" else f"image/{path.suffix.lstrip('.')}"
+    return Response(content=path.read_bytes(), media_type=media)
 
 
 @app.get("/api/shifts")
@@ -170,8 +177,14 @@ async def start_shift(
 ) -> dict[str, Any]:
     require_shift_token(x_shift_token)
     try:
-        topic, platform, cut, depth, script_lean = require_picks(
-            body.topic, body.platform, body.cut, body.depth, body.script_lean
+        topic, platform, cut, depth, script_lean, genre, vantage = require_picks(
+            body.topic,
+            body.platform,
+            body.cut,
+            body.depth,
+            body.script_lean,
+            body.genre,
+            body.vantage,
         )
     except PickError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -184,6 +197,8 @@ async def start_shift(
         cut=cut,
         depth=depth,
         script_lean=script_lean,
+        genre=genre,
+        vantage=vantage,
         topic=topic,
     )
     await run_shift(body.goal, packet_id=body.packet_id, shift=shift)

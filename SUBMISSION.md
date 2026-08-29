@@ -8,19 +8,19 @@ One Crew
 
 ## Tagline
 
-Pick topic, then platform, length, depth, and how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
+Pick topic, then platform, length, depth, lean, and how to tell it. You get a timed VO, cited sources, and a shot list cut from that VO.
 
 ## Text description
 
-One Crew is a research companion that returns a script plus cited sources. Before any Parallel or Imagen spend you pick, in order: topic (free text, required; empty or whitespace = no run), then platform (tiktok, youtube, youtube_shorts, Instagram/Meta: instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, plus podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary), depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet), and script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe). No defaults. Any missing pick = no run.
+One Crew is a research companion that returns a timed VO plus cited sources. Before any Parallel or Imagen spend you pick, in order: topic (free text, required; empty or whitespace = no run), then platform (tiktok, youtube, youtube_shorts, Instagram/Meta: instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, plus podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary, feature_film), depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet), script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe), and tell (genre: nonfiction, horror, war, historical, musical, drama, thriller; vantage: global_overview, one_family, one_ship). nonfiction is documentaries and news: host/reporter VO from the receipt, no invented family or ship. Fiction genres are feature films; frame invention is allowed only there and must be labeled (frame). full_length_documentary and weekly_update require nonfiction. feature_film requires a fiction genre. Illegal pairs are 400 and do not spend. Receipt stamps stay non-fiction. No defaults. Any missing pick = no run.
 
-The researcher writes a timeline once and stamps each source. The floor writes the script in the requested lean, sized to platform and length, with citations pointing at those rows. The script must convert to a storyboard: Imagen frames from that script, one per beat, sized to the cut. Not a mood collage. If Imagen or Vertex is down, frames stay missing. Script lean does not restamp sources. The floor never posts.
+The researcher writes a timeline once and stamps each source. The floor writes a timed VO in the requested lean, sized to platform and length, with beats, timecodes, and citations pointing at those rows. Then a shot list is cut from that VO. TikTok/Shorts generate every beat. Episode/doc/feature generate one Imagen key frame per scene (capped at the event cap, never 400 images). Not a receipt-join. If Imagen or Vertex is down, the shot list stays and images stay missing. Script lean does not restamp sources. The floor never posts.
 
 ## Features and functionality
 
-- Five required picks: topic, platform, length, depth, script lean
-- Script plus cited sources plus a storyboard cut from that script
-- Boards are not optional; Imagen/Vertex down leaves frames missing
+- Six required picks: topic, platform, length, depth, script lean, tell (genre + vantage)
+- Timed VO plus cited sources plus a shot list cut from that VO
+- Boards are not optional; Imagen/Vertex down keeps the shot list and leaves images missing
 - Script lean does not restamp sources
 - Write-once Parallel timeline
 - Stamps: grounded / mainstream / fringe, source lean, interests, independent, vested_interest, propaganda

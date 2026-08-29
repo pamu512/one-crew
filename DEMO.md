@@ -1,17 +1,17 @@
 # One Crew — 3 minute demo
 
-Record unedited. Show the script and the cited sources. Do not post.
+Record unedited. Show the timed VO and the cited sources. Do not post.
 
 ## 0:00–0:40 · Companion
 
 Talk over the floor with `oc-hormuz-decade` already open.
 
-> Topic is pick 1. Then platform, length, depth, and how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
+> Topic is pick 1. Then platform, length, depth, lean, and tell (genre + vantage). You get a timed VO, cited sources, and a shot list cut from that VO.
 
-## 0:40–1:20 · Five picks + script
+## 0:40–1:20 · Six picks + timed VO
 
-1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent**. Platform list includes Instagram and other Meta surfaces. No pick is pre-selected. Empty topic = no run. Any missing pick = no run.
-2. Point at the **script** and the **storyboard** together — citations like `[jcpoa-2018]` point at source rows. One frame per beat, not a collage.
+1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview**. Seed stays a news short, not a feature. Same receipt can be told as short fiction (drama/one_family or thriller/one_ship) or as a `feature_film` with a fiction genre. Invented frame only on fiction genres, labeled `(frame)`. Documentary + thriller, or feature + nonfiction, is 400. Empty topic or tell = no run. Any missing pick = no run.
+2. Point at the **timed VO** and the **shot list** together — act/scene blocks with running timecodes, citations like `[jcpoa-2018]`. One shot per beat, not a leftover stills collage.
 3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
 4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.
 5. Point at **fringe** secret-closure — still on the list. Centered ask did not hide it.
@@ -20,7 +20,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 ## 1:20–2:10 · Lean lock + floor
 
 1. Script lean does not restamp sources. Unhinged voice still cannot invent a source.
-2. The script converted to a storyboard. Boards are not optional. If Imagen is down, frames stay missing.
+2. The timed VO converted to a shot list. Boards are not optional. If Imagen is down, the shot list stays and images stay missing.
 3. No publish button. The floor never posts. **live spend off**.
 
 ## 2:10–2:50 · Locks
@@ -35,15 +35,15 @@ GET never spends. POST without token is 403. POST with token and any missing pic
 
 ## 2:50–3:00 · Close
 
-Stay on the script citation and the fringe row.
+Stay on the VO citation and the fringe row.
 
-> The script leaned. The stamps did not. The floor did not post.
+> The VO leaned. The stamps did not. The floor did not post.
 
 Stop.
 
 ## Prep
 
-- [ ] First-open shows five picks (topic first) + script + mixed source list
+- [ ] First-open shows six picks (topic first, tell last) + timed VO + shot list + mixed source list
 - [ ] No pick defaults
 - [ ] No publish control
 - [ ] Tests green

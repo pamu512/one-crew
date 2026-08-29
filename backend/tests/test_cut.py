@@ -25,12 +25,14 @@ def test_require_cut_no_default() -> None:
         require_cut("feature")
     assert require_cut("tiktok-length") == "tiktok-length"
     assert require_cut("full_length_documentary") == "full_length_documentary"
+    assert require_cut("feature_film") == "feature_film"
     assert list(CUTS) == [
         "tiktok-length",
         "shorts",
         "weekly_update",
         "one_time_short_episode",
         "full_length_documentary",
+        "feature_film",
     ]
 
 

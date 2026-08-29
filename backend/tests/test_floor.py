@@ -19,6 +19,9 @@ def test_floor_html_has_no_publish_button() -> None:
         assert "Topic — pick 1, required" in page.text
         assert "No topic chosen = no run" in page.text
         assert "No platform chosen = no run" in page.text
+        assert "No genre chosen = no run" in page.text
+        assert "No vantage chosen = no run" in page.text
+        assert "Tell · genre — pick 6, required" in page.text
         assert "checked=" not in FLOOR_HTML
         assert "checked>" not in FLOOR_HTML
 

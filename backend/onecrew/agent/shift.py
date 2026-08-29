@@ -4,11 +4,11 @@ import logging
 import uuid
 
 from onecrew import config
-from onecrew.agent.tools import findings_from_parallel_rows, frames_from_script
-from onecrew.cut import frame_count, require_cut, size_findings
+from onecrew.agent.tools import findings_from_parallel_rows
+from onecrew.board import write_board
+from onecrew.cut import size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
-from onecrew.imagen_client import ImagenDownError, generate_frames
 from onecrew.models import Depth, Packet, Rails, Receipt, ShiftRecord, utcnow
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.picks import require_picks
@@ -29,11 +29,19 @@ def open_shift(
     depth: str | None = None,
     cut: str | None = None,
     script_lean: str | None = None,
+    genre: str | None = None,
+    vantage: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
-    chosen_topic, chosen_platform, chosen_cut, chosen_depth, chosen_lean = require_picks(
-        topic, platform, cut, depth, script_lean
-    )
+    (
+        chosen_topic,
+        chosen_platform,
+        chosen_cut,
+        chosen_depth,
+        chosen_lean,
+        chosen_genre,
+        chosen_vantage,
+    ) = require_picks(topic, platform, cut, depth, script_lean, genre, vantage)
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
     rails = assess_rails()
@@ -50,6 +58,8 @@ def open_shift(
         depth=chosen_depth,
         cut=chosen_cut,
         script_lean=chosen_lean,
+        genre=chosen_genre,
+        vantage=chosen_vantage,
         topic=chosen_topic,
         rails=rails,
         store_backend=store.backend,
@@ -112,28 +122,21 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
 
 
 def _board(packet: Packet, rails: Rails) -> list:
-    """Storyboard from the script. If Imagen/Vertex is down, frames stay missing."""
-    if not rails.imagen or not rails.vertex:
-        return []
-    refs = [f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url]
-    shots = frame_count(require_cut(packet.cut), packet.platform)
-    try:
-        generate_frames(
-            prompt=(
-                f"{shots} photoreal storyboard frames, one per beat, from this script. "
-                f"Cut={packet.cut}. Script: {packet.script}. "
-                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a mood collage."
-            ),
-            number_of_images=shots,
-        )
-    except ImagenDownError:
-        return []
-    return frames_from_script(packet, [r for r in refs if r])
+    """Shot list from the timed VO, then Imagen onto those shots."""
+    return write_board(packet, rails)
 
 
 def run_live_packet(shift: ShiftRecord) -> Packet:
     """Spend path. Picks → sources → script → storyboard. Boards are not optional."""
-    require_picks(shift.topic, shift.platform, shift.cut, shift.depth, shift.script_lean)
+    require_picks(
+        shift.topic,
+        shift.platform,
+        shift.cut,
+        shift.depth,
+        shift.script_lean,
+        shift.genre,
+        shift.vantage,
+    )
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
     fresh = Packet(
@@ -143,6 +146,8 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         depth=shift.depth,
         cut=shift.cut,
         script_lean=shift.script_lean,
+        genre=shift.genre,
+        vantage=shift.vantage,
         hook=shift.topic or existing.hook,
         script="",
         status="running",
@@ -188,6 +193,8 @@ async def run_shift(
     depth: str | None = None,
     cut: str | None = None,
     script_lean: str | None = None,
+    genre: str | None = None,
+    vantage: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     if shift is None:
@@ -198,6 +205,8 @@ async def run_shift(
             depth=depth,
             cut=cut,
             script_lean=script_lean,
+            genre=genre,
+            vantage=vantage,
             topic=topic,
         )
     try:

@@ -16,6 +16,7 @@ Cut = Literal[
     "weekly_update",
     "one_time_short_episode",
     "full_length_documentary",
+    "feature_film",
 ]
 Platform = Literal[
     "tiktok",
@@ -37,6 +38,8 @@ ScriptLean = Literal[
     "far_left",
     "unhinged_fringe",
 ]
+Genre = Literal["nonfiction", "horror", "war", "historical", "musical", "drama", "thriller"]
+Vantage = Literal["global_overview", "one_family", "one_ship"]
 LinkStamp = Literal["grounded", "missing"]
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
@@ -52,6 +55,7 @@ CUTS = (
     "weekly_update",
     "one_time_short_episode",
     "full_length_documentary",
+    "feature_film",
 )
 PLATFORMS = (
     "tiktok",
@@ -73,6 +77,26 @@ SCRIPT_LEANS = (
     "far_left",
     "unhinged_fringe",
 )
+GENRES = (
+    "nonfiction",
+    "horror",
+    "war",
+    "historical",
+    "musical",
+    "drama",
+    "thriller",
+)
+FICTION_GENRES = (
+    "horror",
+    "war",
+    "historical",
+    "musical",
+    "drama",
+    "thriller",
+)
+NONFICTION_CUTS = ("weekly_update", "full_length_documentary")
+FEATURE_CUTS = ("feature_film",)
+VANTAGES = ("global_overview", "one_family", "one_ship")
 MISSING = "missing"
 
 
@@ -152,12 +176,25 @@ class CausalLink(BaseModel):
     parallel_url: str | None = None
 
 
+class ScriptBeat(BaseModel):
+    id: str
+    start: str
+    duration_s: int
+    act: str = ""
+    vo: str
+    finding_ids: list[str] = Field(default_factory=list)
+    frame: str = ""
+
+
 class ShotFrame(BaseModel):
     id: str
     shot: str
     source_refs: list[str] = Field(default_factory=list)
-    image_href: str
+    image_href: str = ""
     imagen: bool = False
+    beat_id: str = ""
+    duration_s: int = 0
+    key_frame: bool = False
 
 
 class Receipt(BaseModel):
@@ -188,10 +225,13 @@ class Packet(BaseModel):
     depth: Depth | None = None
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
+    genre: Genre | None = None
+    vantage: Vantage | None = None
     hook: str
     script: str
     status: PacketStatus = "ready"
     receipt: Receipt | None = None
+    beats: list[ScriptBeat] = Field(default_factory=list)
     frames: list[ShotFrame] = Field(default_factory=list)
     shift_id: str | None = None
 
@@ -209,6 +249,8 @@ class ShiftRecord(BaseModel):
     depth: Depth | None = None
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
+    genre: Genre | None = None
+    vantage: Vantage | None = None
     topic: str = ""
     rails: Rails | None = None
     error: str | None = None
