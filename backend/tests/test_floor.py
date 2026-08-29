@@ -15,8 +15,8 @@ def test_floor_html_has_no_publish_button() -> None:
         assert page.status_code == 200
         assert "publish" not in page.text.lower()
         assert "oc-hormuz-decade" in page.text or "hormuz" in page.text.lower()
-        assert "No depth chosen = no run" in page.text
-        assert "No cut chosen = no run" in page.text
+        assert "Any missing pick = no run" in page.text
+        assert "No platform chosen = no run" in page.text
         assert "checked=" not in FLOOR_HTML
         assert "checked>" not in FLOOR_HTML
 

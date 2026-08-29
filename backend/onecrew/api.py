@@ -11,8 +11,14 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from onecrew import config
-from onecrew.cut import CutRequiredError, cuts_payload, require_cut
-from onecrew.depth import DepthRequiredError, depths_payload, require_depth
+from onecrew.cut import cuts_payload
+from onecrew.depth import depths_payload
+from onecrew.picks import (
+    PickError,
+    leans_payload,
+    platforms_payload,
+    require_picks,
+)
 from onecrew.floor import FLOOR_HTML
 from onecrew.rails import assess_rails
 from onecrew.seed import ensure_seeded, reset_floor
@@ -58,8 +64,10 @@ def require_shift_token(x_shift_token: str | None = Header(default=None)) -> Non
 
 class ShiftRequest(BaseModel):
     topic: str = Field(default="")
+    platform: str | None = Field(default=None)
     depth: str | None = Field(default=None)
     cut: str | None = Field(default=None)
+    script_lean: str | None = Field(default=None)
     goal: str = Field(
         default="Research the topic inside the chosen depth. Write a timeline. Do not post."
     )
@@ -96,9 +104,21 @@ def health() -> dict[str, Any]:
             "imagen_calls": ledger.imagen_calls,
         },
         "posts": False,
-        "depths": depths_payload(),
+        "platforms": platforms_payload(),
         "cuts": cuts_payload(),
+        "depths": depths_payload(),
+        "script_leans": leans_payload(),
     }
+
+
+@app.get("/api/platforms")
+def list_platforms() -> dict[str, Any]:
+    return {"platforms": platforms_payload(), "default": None}
+
+
+@app.get("/api/cuts")
+def list_cuts() -> dict[str, Any]:
+    return {"cuts": cuts_payload(), "default": None}
 
 
 @app.get("/api/depths")
@@ -106,9 +126,9 @@ def list_depths() -> dict[str, Any]:
     return {"depths": depths_payload(), "default": None}
 
 
-@app.get("/api/cuts")
-def list_cuts() -> dict[str, Any]:
-    return {"cuts": cuts_payload(), "default": None}
+@app.get("/api/script-leans")
+def list_script_leans() -> dict[str, Any]:
+    return {"script_leans": leans_payload(), "default": None}
 
 
 @app.get("/api/packets")
@@ -151,14 +171,23 @@ async def start_shift(
 ) -> dict[str, Any]:
     require_shift_token(x_shift_token)
     try:
-        depth = require_depth(body.depth)
-        cut = require_cut(body.cut)
-    except (DepthRequiredError, CutRequiredError) as exc:
+        platform, cut, depth, script_lean = require_picks(
+            body.platform, body.cut, body.depth, body.script_lean
+        )
+    except PickError as exc:
         raise HTTPException(400, str(exc)) from exc
     from onecrew.agent.shift import open_shift, run_shift
 
     topic = (body.topic or body.goal).strip()
-    shift = open_shift(body.goal, packet_id=body.packet_id, depth=depth, cut=cut, topic=topic)
+    shift = open_shift(
+        body.goal,
+        packet_id=body.packet_id,
+        platform=platform,
+        cut=cut,
+        depth=depth,
+        script_lean=script_lean,
+        topic=topic,
+    )
     await run_shift(body.goal, packet_id=body.packet_id, shift=shift, board=body.board)
     return shift.model_dump()
 

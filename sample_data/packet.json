@@ -1,10 +1,12 @@
 {
   "id": "oc-hormuz-decade",
   "topic": "Explain what's going on with the Hormuz strait",
+  "platform": "youtube",
   "depth": "decade",
   "cut": "one_time_short_episode",
+  "script_lean": "centered_independent",
   "hook": "Explain what's going on with the Hormuz strait",
-  "script": "Open on a tanker in the strait. Cut to 2018. Show the oil-share number. Hold the panic frame as mainstream, not a source. End on the missing link.",
+  "script": "Straight read. Platform youtube. Cut one_time_short_episode. The United States withdrew from the JCPOA, tightening the Iran file around the Gulf. Grounded. Independent missing. [jcpoa-2018] A large share of seaborne oil still transits the Strait of Hormuz. Grounded. Propaganda yes, issuer OPEC. Not independent. [hormuz-share] Any Hormuz scare means oil crashes the world overnight. Mainstream, not a source. Source lean missing. [oil-panic] Producer states treat an open Hormuz as an oil-market given. Mainstream, not a source. Source lean industry. [producer-frame] Hormuz has already been mined shut under a hidden navy treaty. Tagged fringe, never sold as fact. [secret-closure] Centered note: some source lean fields are missing. Fringe stays on the list. Not hidden to match a centered ask. Propaganda stays marked. Not hidden.",
   "status": "ready",
   "receipt": {
     "packet_id": "oc-hormuz-decade",

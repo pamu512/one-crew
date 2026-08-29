@@ -1,3 +1,3 @@
-"""One Crew — research companion for a one-person shop. Never posts."""
+"""One Crew — research companion. Script plus cited sources. Never posts."""
 
 __version__ = "1.0.0"

@@ -1,6 +1,8 @@
 # One Crew
 
-One Crew is a research companion for a one-person shop. You decide how far back and how long the piece is. The crew returns a write-once timeline with stamps (grounded / mainstream / fringe, lean, interests, source independence, vested interest, propaganda) and causal links only when Parallel sourced them. Missing stays missing.
+Pick platform, length, depth, then how you want it to lean. You get a script and cited sources.
+
+One Crew is a research companion. It returns a **script** plus a write-once source list. You choose the four picks. The crew does not post.
 
 **Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. The floor never posts.**
 
@@ -8,31 +10,35 @@ One Crew is a research companion for a one-person shop. You decide how far back 
 
 ## Front door
 
-1. **Topic** — e.g. "Explain what's going on with the Hormuz strait".
-2. **Depth** (required, no default): 1y / 2-3y / 5y / decade / few decades / pre-1980 pre-internet.
-3. **Cut** (required, no default): `tiktok` | `youtube_shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`.
+Required picks, in this order, before any Parallel or Imagen spend. No defaults. Any missing pick = no run.
 
-No depth chosen = no run. No cut chosen = no run. GET never spends Parallel or Imagen.
+1. **Platform** — `tiktok` | `youtube` | `youtube_shorts` | `instagram` | `podcast`
+2. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`
+3. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
+4. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
 
-The receipt and any boards are sized to that cut. A TikTok packet is not a doc packet. A documentary depth+cut can be a long timeline.
+Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
 
-Boards stay optional after the timeline — Imagen from the script/timeline plus Parallel refs, never a collage. The floor never posts.
+The floor writes the **script** in the requested lean, sized to platform + length, with citations pointing at those rows.
+
+Requested script lean does **not** restamp sources. Unhinged / fringe voice still cannot invent sources or mark propaganda as grounded. Centered_independent still must show missing when Parallel missed. Do not hide fringe or propaganda to match a centered ask. Do not invent a lobby to match a far-right / far-left ask.
+
+Boards stay optional after the script. The floor never posts.
 
 ![Architecture](docs/architecture.svg)
 
 ## Who it's for
 
-A one-person shop that needs a receipt before they cut. Sample first-open packet: **oc-hormuz-decade** (topic Hormuz, depth=decade, cut=`one_time_short_episode`).
+A one-person shop that needs a script with receipts. Sample first-open packet: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent).
 
 ## How it works
 
-1. First-open is the seeded `oc-hormuz-decade` packet: Hormuz topic, decade window, short-episode cut, grounded cause, mainstream lean present or missing honestly, fringe tagged, not-independent OPEC row marked propaganda, missing causal link. GET never calls Parallel or Imagen.
-2. A live shift is `POST /api/shifts` and requires `SHIFT_TOKEN` + `X-Shift-Token` **and** a depth **and** a cut. Unset token → 403. No depth or no cut → 400. No spend.
+1. First-open shows the four picks, a script with citations, and a source list with mixed stamps. GET never calls Parallel or Imagen.
+2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all four picks. Unset token → 403. Any missing pick → 400. No spend.
 3. **Google ADK** crew: researcher then optional boarder, on **Vertex Gemini 3.5 Flash**.
-4. Write-once receipt. Second stamp is an error. Causal links are grounded only if Parallel sourced the link; otherwise missing. Do not invent a 40-year chain.
-5. Each event row is stamped exactly one of: **grounded** (Parallel URL on the row), **mainstream** (widely repeated, may be bias, not a source), **fringe** (included and tagged, never sold as fact). Lean / interests / who_repeats, independent / vested_interest, and propaganda are Parallel-sourced or `missing`. Gemini must not stamp propaganda from tone.
-6. Missing Parallel, Vertex, or Imagen — or a pre-1980 miss → fail-closed HOLD.
-7. The floor has no publish control. Nothing is posted.
+4. Write-once receipt. Script lean cannot change a source stamp.
+5. Missing Parallel, Vertex, or Imagen — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed.
+6. The floor has no publish control. Nothing is posted.
 
 ## How to run locally
 
@@ -49,7 +55,7 @@ pip install -r backend/requirements.txt
 PYTHONPATH=backend python -m onecrew
 ```
 
-Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the Hormuz decade short-episode timeline. The floor has no publish button.
+Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the Hormuz script and the cited source list. The floor has no publish button.
 
 ```bash
 PYTHONPATH=backend python -m onecrew &
@@ -61,7 +67,7 @@ curl -s http://127.0.0.1:43158/api/packets | python -m json.tool | head
 # curl -s -X POST http://127.0.0.1:43158/api/shifts \
 #   -H 'content-type: application/json' \
 #   -H "X-Shift-Token: $SHIFT_TOKEN" \
-#   -d '{"topic":"Explain what is going on with the Hormuz strait","depth":"decade","cut":"one_time_short_episode"}'
+#   -d '{"topic":"Explain what is going on with the Hormuz strait","platform":"youtube","cut":"one_time_short_episode","depth":"decade","script_lean":"centered_independent"}'
 ```
 
 ### Tests
@@ -71,7 +77,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Tests lock the companion front door (depth + cut before spend), write-once receipts, causal links, stamps, hit+miss, GET-never-spends, POST 403, HOLD, and the Hormuz seed.
+Tests lock: no run without all four picks; script lean cannot change a source stamp; unhinged lean still fail-closed on missing Parallel.
 
 ### ADK web (optional)
 
@@ -130,11 +136,10 @@ Leave `SHIFT_TOKEN` unset on the public service so `POST /api/shifts` is 403. Th
 
 ```
 sample_data/packet.json    first-open oc-hormuz-decade
-sample_data/frames/        seeded shot boards, sized to the cut
+sample_data/frames/        optional boards, sized to the cut
 backend/onecrew/           FastAPI + ADK crew + receipt lock
 backend/tests/             locks
 docs/architecture.svg
-docs/architecture.png
 DEMO.md
 LICENSE
 ```

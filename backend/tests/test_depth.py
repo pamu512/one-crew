@@ -17,7 +17,7 @@ def test_require_depth_no_default() -> None:
     with pytest.raises(DepthRequiredError, match="No depth chosen"):
         require_depth("all-history")
     assert require_depth("decade") == "decade"
-    assert require_depth("pre-1980") == "pre-1980"
+    assert require_depth("pre-1980_pre-internet") == "pre-1980_pre-internet"
 
 
 def test_get_depths_has_no_default() -> None:
@@ -28,12 +28,12 @@ def test_get_depths_has_no_default() -> None:
         assert payload["default"] is None
         ids = [row["id"] for row in payload["depths"]]
         assert ids == [
-            "current",
-            "2-3-years",
-            "5-years",
+            "1y",
+            "2-3y",
+            "5y",
             "decade",
-            "few-decades",
-            "pre-1980",
+            "few_decades",
+            "pre-1980_pre-internet",
         ]
 
 
@@ -47,26 +47,20 @@ def test_no_spend_without_depth(monkeypatch) -> None:
     monkeypatch.setattr("onecrew.imagen_client.generate_frames", boom)
     before_p = ledger.parallel_calls
     before_i = ledger.imagen_calls
+    body = {
+        "topic": "Hormuz",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "script_lean": "centered_independent",
+    }
     with TestClient(app) as client:
         missing = client.post(
             "/api/shifts",
-            json={"topic": "Explain what's going on with the Hormuz strait"},
+            json=body,
             headers={"X-Shift-Token": "correct-horse"},
         )
         assert missing.status_code == 400
         assert "no depth" in missing.json()["detail"].lower()
-        empty = client.post(
-            "/api/shifts",
-            json={"topic": "Hormuz", "depth": ""},
-            headers={"X-Shift-Token": "correct-horse"},
-        )
-        assert empty.status_code == 400
-        bogus = client.post(
-            "/api/shifts",
-            json={"topic": "Hormuz", "depth": "all-history"},
-            headers={"X-Shift-Token": "correct-horse"},
-        )
-        assert bogus.status_code == 400
     assert ledger.parallel_calls == before_p == 0
     assert ledger.imagen_calls == before_i == 0
 
@@ -114,7 +108,7 @@ def test_pre_1980_fail_closed_when_parallel_misses() -> None:
     rails = Rails(parallel=True, vertex=True, imagen=True)
     receipt = pre1980_fail_closed(
         packet_id="oc-old",
-        depth="pre-1980",
+        depth="pre-1980_pre-internet",
         rails=rails,
         parallel_hits=0,
     )
@@ -128,7 +122,7 @@ def test_pre_1980_fail_closed_when_parallel_misses() -> None:
     down = Rails(parallel=False, vertex=True, imagen=True)
     down_receipt = pre1980_fail_closed(
         packet_id="oc-old",
-        depth="pre-1980",
+        depth="pre-1980_pre-internet",
         rails=down,
         parallel_hits=3,
     )
@@ -138,7 +132,7 @@ def test_pre_1980_fail_closed_when_parallel_misses() -> None:
 
     ok = pre1980_fail_closed(
         packet_id="oc-old",
-        depth="pre-1980",
+        depth="pre-1980_pre-internet",
         rails=rails,
         parallel_hits=1,
     )

@@ -5,6 +5,7 @@ import json
 from onecrew import config
 from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt, ShotFrame
 from onecrew.receipt import write_receipt
+from onecrew.script import write_script
 from onecrew.store import store
 
 CFR_JCPOA = "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
@@ -12,10 +13,7 @@ OPEC_URL = "https://www.opec.org/"
 
 SEED_TOPIC = "Explain what's going on with the Hormuz strait"
 SEED_HOOK = SEED_TOPIC
-SEED_SCRIPT = (
-    "Open on a tanker in the strait. Cut to 2018. Show the oil-share number. "
-    "Hold the panic frame as mainstream, not a source. End on the missing link."
-)
+SEED_SCRIPT = ""  # written from the receipt after stamps; lean does not restamp.
 
 
 def seed_findings() -> list[Finding]:
@@ -135,8 +133,10 @@ def build_seed_packet() -> Packet:
     packet = Packet(
         id=config.SEED_PACKET_ID,
         topic=SEED_TOPIC,
+        platform="youtube",
         depth="decade",
         cut="one_time_short_episode",
+        script_lean="centered_independent",
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",
@@ -149,7 +149,7 @@ def build_seed_packet() -> Packet:
         causal_links=seed_links(),
         disposition="READY",
     )
-    return write_receipt(packet, receipt)
+    return write_script(write_receipt(packet, receipt))
 
 
 def load_sample_packet() -> Packet:

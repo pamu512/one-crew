@@ -2,25 +2,19 @@ from __future__ import annotations
 
 from onecrew.models import CUTS, Cut
 
-CUT_LABELS: dict[Cut, str] = {
-    "tiktok": "tiktok",
-    "youtube_shorts": "youtube_shorts",
-    "weekly_update": "weekly_update",
-    "one_time_short_episode": "one_time_short_episode",
-    "full_length_documentary": "full_length_documentary",
-}
+CUT_LABELS: dict[Cut, str] = {key: key for key in CUTS}
 
-# Receipt + boards sized to the cut. A TikTok packet is not a doc packet.
+# Receipt + boards sized to the cut. A TikTok-length packet is not a doc packet.
 EVENT_CAP: dict[Cut, int] = {
-    "tiktok": 3,
-    "youtube_shorts": 4,
+    "tiktok-length": 3,
+    "shorts": 4,
     "weekly_update": 6,
     "one_time_short_episode": 8,
     "full_length_documentary": 40,
 }
 FRAME_COUNT: dict[Cut, int] = {
-    "tiktok": 2,
-    "youtube_shorts": 2,
+    "tiktok-length": 2,
+    "shorts": 2,
     "weekly_update": 3,
     "one_time_short_episode": 4,
     "full_length_documentary": 4,

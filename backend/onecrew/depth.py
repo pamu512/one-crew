@@ -4,13 +4,15 @@ from onecrew.models import DEPTHS, Depth, Rails, Receipt
 from onecrew.receipt import hold_receipt
 
 DEPTH_LABELS: dict[Depth, str] = {
-    "current": "1y",
-    "2-3-years": "2-3y",
-    "5-years": "5y",
+    "1y": "1y",
+    "2-3y": "2-3y",
+    "5y": "5y",
     "decade": "decade",
-    "few-decades": "few decades",
-    "pre-1980": "pre-1980 / pre-internet",
+    "few_decades": "few_decades",
+    "pre-1980_pre-internet": "pre-1980_pre-internet",
 }
+
+PRE1980 = "pre-1980_pre-internet"
 
 
 class DepthRequiredError(ValueError):
@@ -36,7 +38,7 @@ def pre1980_fail_closed(
     parallel_hits: int,
 ) -> Receipt | None:
     """pre-1980 still HOLDs if Parallel misses. Do not invent a 40-year chain."""
-    if depth != "pre-1980":
+    if depth != PRE1980:
         return None
     if rails.parallel and parallel_hits > 0:
         return None

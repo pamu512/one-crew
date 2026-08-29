@@ -5,14 +5,16 @@ import uuid
 
 from onecrew import config
 from onecrew.agent.tools import findings_from_parallel_rows, frames_from_script
-from onecrew.cut import CutRequiredError, frame_count, require_cut, size_findings
-from onecrew.depth import DepthRequiredError, pre1980_fail_closed, require_depth
+from onecrew.cut import frame_count, require_cut, size_findings
+from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
 from onecrew.imagen_client import ImagenDownError, generate_frames
 from onecrew.models import Depth, Packet, Rails, Receipt, ShiftRecord, utcnow
 from onecrew.parallel_client import ParallelDownError, search
+from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
+from onecrew.script import write_script
 from onecrew.seed import reset_floor
 from onecrew.store import store
 
@@ -23,12 +25,15 @@ def open_shift(
     goal: str,
     *,
     packet_id: str | None = None,
+    platform: str | None = None,
     depth: str | None = None,
     cut: str | None = None,
+    script_lean: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
-    chosen = require_depth(depth)
-    chosen_cut = require_cut(cut)
+    chosen_platform, chosen_cut, chosen_depth, chosen_lean = require_picks(
+        platform, cut, depth, script_lean
+    )
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
     rails = assess_rails()
@@ -41,8 +46,10 @@ def open_shift(
         engine=f"adk+{config.GEMINI_MODEL}" if live else "receipt-stamp",
         model=config.GEMINI_MODEL if live else "none",
         packet_id=packet_id,
-        depth=chosen,
+        platform=chosen_platform,
+        depth=chosen_depth,
         cut=chosen_cut,
+        script_lean=chosen_lean,
         topic=topic or goal,
         rails=rails,
         store_backend=store.backend,
@@ -123,20 +130,19 @@ def _board(packet: Packet, rails: Rails) -> list:
 
 
 def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
-    """Spend path. Caller already checked token + depth + cut. One write at the end."""
-    if shift.depth is None:
-        raise DepthRequiredError("No depth chosen = no run")
-    if shift.cut is None:
-        raise CutRequiredError("No cut chosen = no run")
+    """Spend path. Caller already checked token + all four picks."""
+    require_picks(shift.platform, shift.cut, shift.depth, shift.script_lean)
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
     fresh = Packet(
         id=existing.id,
         topic=shift.topic or existing.topic or existing.hook,
+        platform=shift.platform,
         depth=shift.depth,
         cut=shift.cut,
+        script_lean=shift.script_lean,
         hook=shift.topic or existing.hook,
-        script=existing.script,
+        script="",
         status="running",
         shift_id=shift.id,
     )
@@ -150,6 +156,7 @@ def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
             or hold_receipt(fresh.id, rails),
         )
         attach_frames(fresh, [], rails=rails)
+        write_script(fresh)
         store.upsert_packet(fresh)
         return fresh
 
@@ -157,10 +164,12 @@ def run_live_packet(shift: ShiftRecord, *, board: bool = False) -> Packet:
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
         attach_frames(fresh, [], rails=rails)
+        write_script(fresh)
         store.upsert_packet(fresh)
         return fresh
 
     write_receipt(fresh, receipt)
+    write_script(fresh)
     if not board:
         store.upsert_packet(fresh)
         return fresh
@@ -185,12 +194,22 @@ async def run_shift(
     packet_id: str | None = None,
     shift: ShiftRecord | None = None,
     board: bool = False,
+    platform: str | None = None,
     depth: str | None = None,
     cut: str | None = None,
+    script_lean: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     if shift is None:
-        shift = open_shift(goal, packet_id=packet_id, depth=depth, cut=cut, topic=topic)
+        shift = open_shift(
+            goal,
+            packet_id=packet_id,
+            platform=platform,
+            depth=depth,
+            cut=cut,
+            script_lean=script_lean,
+            topic=topic,
+        )
     try:
         packet = run_live_packet(shift, board=board)
         shift.status = "completed"

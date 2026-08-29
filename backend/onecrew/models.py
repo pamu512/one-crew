@@ -9,13 +9,22 @@ Stamp = Literal["grounded", "mainstream", "fringe"]
 ParallelStatus = Literal["hit", "miss", "n/a"]
 Independent = Literal["yes", "no", "missing"]
 Propaganda = Literal["yes", "no", "missing"]
-Depth = Literal["current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980"]
+Depth = Literal["1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet"]
 Cut = Literal[
-    "tiktok",
-    "youtube_shorts",
+    "tiktok-length",
+    "shorts",
     "weekly_update",
     "one_time_short_episode",
     "full_length_documentary",
+]
+Platform = Literal["tiktok", "youtube", "youtube_shorts", "instagram", "podcast"]
+ScriptLean = Literal[
+    "centered_independent",
+    "left",
+    "right",
+    "far_right",
+    "far_left",
+    "unhinged_fringe",
 ]
 LinkStamp = Literal["grounded", "missing"]
 Disposition = Literal["READY", "HOLD"]
@@ -25,13 +34,22 @@ ShiftStatus = Literal["running", "completed", "failed"]
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
 PROPAGANDA = frozenset({"yes", "no", "missing"})
-DEPTHS = ("current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980")
+DEPTHS = ("1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet")
 CUTS = (
-    "tiktok",
-    "youtube_shorts",
+    "tiktok-length",
+    "shorts",
     "weekly_update",
     "one_time_short_episode",
     "full_length_documentary",
+)
+PLATFORMS = ("tiktok", "youtube", "youtube_shorts", "instagram", "podcast")
+SCRIPT_LEANS = (
+    "centered_independent",
+    "left",
+    "right",
+    "far_right",
+    "far_left",
+    "unhinged_fringe",
 )
 MISSING = "missing"
 
@@ -144,8 +162,10 @@ class Receipt(BaseModel):
 class Packet(BaseModel):
     id: str
     topic: str = ""
+    platform: Platform | None = None
     depth: Depth | None = None
     cut: Cut | None = None
+    script_lean: ScriptLean | None = None
     hook: str
     script: str
     status: PacketStatus = "ready"
@@ -163,8 +183,10 @@ class ShiftRecord(BaseModel):
     engine: str
     model: str
     packet_id: str
+    platform: Platform | None = None
     depth: Depth | None = None
     cut: Cut | None = None
+    script_lean: ScriptLean | None = None
     topic: str = ""
     rails: Rails | None = None
     error: str | None = None

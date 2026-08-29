@@ -8,30 +8,23 @@ One Crew
 
 ## Tagline
 
-A research companion for a one-person shop. You pick the window and the cut. The floor never posts.
+Pick platform, length, depth, then how you want it to lean. You get a script and cited sources.
 
 ## Text description
 
-One Crew is a research companion for a one-person shop. You type a topic, then choose how far back and how long the piece is. Depth is required (1y / 2-3y / 5y / decade / few decades / pre-1980 pre-internet). Cut is required (tiktok, youtube_shorts, weekly_update, one_time_short_episode, full_length_documentary). No depth or no cut = no run. The receipt and any boards are sized to that cut. A TikTok packet is not a doc packet. A documentary depth+cut can be a long timeline.
+One Crew is a research companion that returns a script plus cited sources. Before any Parallel or Imagen spend you pick, in order: platform (tiktok, youtube, youtube_shorts, instagram, podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary), depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet), and script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe). No defaults. Any missing pick = no run.
 
-The researcher calls the official Parallel Web Python SDK and writes a timeline once. Each event is stamped grounded, mainstream, or fringe, plus lean, interests, source independence, vested interest, and propaganda — Parallel-sourced or missing. Causal links are grounded only if Parallel sourced the link; otherwise missing. Missing stays missing.
-
-Boards stay optional after the timeline, from the script/timeline plus Parallel refs — never a collage. If Parallel, Vertex, or Imagen is down — or pre-1980 misses — the packet HOLDs. GET is seeded (`oc-hormuz-decade`) and never spends. POST that spends is token-gated. The floor never posts.
+The researcher writes a timeline once and stamps each source. The floor writes the script in the requested lean, sized to platform and length, with citations pointing at those rows. Script lean does not restamp sources. Unhinged voice cannot invent sources or mark propaganda as grounded. Centered_independent still shows missing when Parallel missed. Boards stay optional after the script. The floor never posts.
 
 ## Features and functionality
 
-- Research companion front door: topic + required depth + required cut (no defaults)
-- Receipt and boards sized to the cut; TikTok is not a doc packet
+- Four required picks: platform, length, depth, script lean
+- Script plus cited sources, sized to platform + length
+- Script lean does not restamp sources
 - Write-once Parallel timeline
-- Causal links: grounded only if Parallel sourced; else missing
-- Stamps: grounded / mainstream / fringe
-- Mainstream lean / interests / who_repeats: Parallel-sourced or missing
-- Cited sources: independent yes/no/missing and vested_interest, Parallel-sourced or missing
-- Propaganda yes/no/missing: Parallel-sourced named issuer or missing; not Gemini tone
-- Hit and miss on the same receipt
-- Optional boards after the timeline, never a collage
-- Fail-closed HOLD when rails are down or pre-1980 misses
-- GET never spends; POST spend is token-gated, depth-gated, and cut-gated
+- Stamps: grounded / mainstream / fringe, source lean, interests, independent, vested_interest, propaganda
+- Causal links grounded only if Parallel sourced
+- GET never spends; POST is token-gated and pick-gated
 - Floor never posts
 - Gemini ADK crew on Vertex 3.5 Flash
 
