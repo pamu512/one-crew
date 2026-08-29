@@ -41,6 +41,10 @@ def test_seeded_fringe_nasa_miss() -> None:
 
 
 def test_seeded_four_shot_frames() -> None:
+    import xml.etree.ElementTree as ET
+
+    from onecrew import config
+
     packet = seed_first_open()
     assert len(packet.frames) == 4
     assert {f.id for f in packet.frames} == {
@@ -52,6 +56,9 @@ def test_seeded_four_shot_frames() -> None:
     for frame in packet.frames:
         assert frame.shot.strip()
         assert "mood" not in frame.shot.lower()
+        svg = (config.FRAMES_DIR / f"{frame.id}.svg").read_bytes()
+        assert all(b >= 32 or b in (9, 10, 13) for b in svg)
+        ET.fromstring(svg)
 
 
 def test_seeded_receipt_has_parallel_hit_and_miss() -> None:

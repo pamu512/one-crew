@@ -118,7 +118,7 @@ def get_frame(frame_id: str) -> Response:
     path = config.FRAMES_DIR / name
     if not path.is_file():
         raise HTTPException(404, "frame file missing")
-    return Response(content=path.read_bytes(), media_type="image/svg+xml")
+    return Response(content=path.read_bytes(), media_type="image/svg+xml; charset=utf-8")
 
 
 @app.get("/api/shifts")
