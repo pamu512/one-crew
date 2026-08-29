@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="NASA miss shot">
+  <rect width="640" height="360" fill="#16110d"/>
+  <rect x="70" y="50" width="500" height="240" rx="8" fill="#2a1c18" stroke="#e8b4a0" stroke-width="2"/>
+  <rect x="90" y="70" width="460" height="36" rx="4" fill="#1e1712" stroke="#6a5340"/>
+  <text x="104" y="94" fill="#9a8470" font-family="ui-monospace, monospace" font-size="14">search: NASA pickle juice</text>
+  <text x="90" y="150" fill="#e8b4a0" font-family="ui-monospace, monospace" font-size="14">FRINGE / MISS</text>
+  <text x="90" y="184" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20">0 results</text>
+  <text x="90" y="216" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Empty board. Not a NASA seal. Never sold as fact.</text>
+  <text x="70" y="330" fill="#e8b4a0" font-family="ui-monospace, monospace" font-size="14">nasa-empty</text>
+</svg>

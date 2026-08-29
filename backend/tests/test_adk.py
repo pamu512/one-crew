@@ -1,0 +1,19 @@
+from pathlib import Path
+
+from onecrew import config
+from onecrew.agent.adk_agents import build_root_agent
+from onecrew.parallel_client import search
+
+
+def test_adk_crew_builds_with_vertex_flash() -> None:
+    assert config.GEMINI_MODEL == "gemini-3.5-flash"
+    src = Path(config.__file__).read_text()
+    assert "gemini-3.5-flash" in src
+    agent = build_root_agent()
+    assert agent.name == "one_crew"
+    names = [child.name for child in agent.sub_agents]
+    assert names == ["researcher", "boarder"]
+    assert "floor" not in names
+    client_src = Path(search.__code__.co_filename).read_text()
+    assert "from parallel import Parallel" in client_src
+    assert "client.search(" in client_src

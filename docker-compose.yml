@@ -1,0 +1,16 @@
+services:
+  onecrew:
+    build: .
+    ports:
+      - "43158:8080"
+    environment:
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-true}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      ONECREW_PORT: "8080"
+    volumes:
+      - onecrew-data:/app/data
+
+volumes:
+  onecrew-data:

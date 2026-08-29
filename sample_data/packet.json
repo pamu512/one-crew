@@ -1,0 +1,72 @@
+{
+  "id": "oc-pickle-debt",
+  "hook": "Pickle juice at 3am is a ranking cheat code — NASA even studied it.",
+  "script": "Open on the fridge. Pour the brine. Cut to the microwave clock at 3:07. Show the ranking on the phone. End on the empty NASA search — do not sell it as fact.",
+  "status": "ready",
+  "receipt": {
+    "packet_id": "oc-pickle-debt",
+    "written": true,
+    "findings": [
+      {
+        "id": "ranking-hit",
+        "claim": "Pickle juice sodium ranks with common sports drinks in published recovery tables.",
+        "stamp": "grounded",
+        "parallel_url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/",
+        "parallel_status": "hit",
+        "note": "Parallel URL on this row."
+      },
+      {
+        "id": "3am-kitchen",
+        "claim": "A 3am kitchen pickle-juice shot is a hangover ranking hack.",
+        "stamp": "mainstream",
+        "parallel_url": null,
+        "parallel_status": "n/a",
+        "note": "Widely repeated, may be bias, not a source."
+      },
+      {
+        "id": "nasa-miss",
+        "claim": "NASA studied pickle juice for astronaut cramps.",
+        "stamp": "fringe",
+        "parallel_url": null,
+        "parallel_status": "miss",
+        "note": "Parallel miss. Included and tagged fringe. Never sold as fact."
+      }
+    ],
+    "disposition": "READY",
+    "hold_reason": null,
+    "invented_source": false,
+    "collage": false,
+    "invented_stamp": false
+  },
+  "frames": [
+    {
+      "id": "jar-pour",
+      "shot": "Close-up: refrigerator pickle jar, brine pouring into a shot glass.",
+      "source_refs": ["https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/"],
+      "image_href": "/api/frames/jar-pour",
+      "imagen": false
+    },
+    {
+      "id": "kitchen-3am",
+      "shot": "Single overhead bulb, kitchen sink, 3:07 on the microwave.",
+      "source_refs": [],
+      "image_href": "/api/frames/kitchen-3am",
+      "imagen": false
+    },
+    {
+      "id": "ranking-phone",
+      "shot": "Phone in hand showing the Parallel ranking URL. Not a stock collage.",
+      "source_refs": ["https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/"],
+      "image_href": "/api/frames/ranking-phone",
+      "imagen": false
+    },
+    {
+      "id": "nasa-empty",
+      "shot": "Search board: NASA pickle juice — no hit. Empty results, not a NASA seal.",
+      "source_refs": [],
+      "image_href": "/api/frames/nasa-empty",
+      "imagen": false
+    }
+  ],
+  "shift_id": null
+}
