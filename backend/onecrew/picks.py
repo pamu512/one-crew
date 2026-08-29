@@ -12,6 +12,10 @@ from onecrew.models import (
 )
 
 
+class TopicRequiredError(ValueError):
+    """No topic chosen = no run."""
+
+
 class PlatformRequiredError(ValueError):
     """No platform chosen = no run."""
 
@@ -21,11 +25,19 @@ class ScriptLeanRequiredError(ValueError):
 
 
 PickError = (
+    TopicRequiredError,
     PlatformRequiredError,
     CutRequiredError,
     DepthRequiredError,
     ScriptLeanRequiredError,
 )
+
+
+def require_topic(raw: str | None) -> str:
+    chosen = (raw or "").strip()
+    if not chosen:
+        raise TopicRequiredError("No topic chosen = no run")
+    return chosen
 
 
 def require_platform(raw: str | None) -> Platform:
@@ -43,13 +55,15 @@ def require_script_lean(raw: str | None) -> ScriptLean:
 
 
 def require_picks(
+    topic: str | None,
     platform: str | None,
     cut: str | None,
     depth: str | None,
     script_lean: str | None,
-) -> tuple[Platform, Cut, Depth, ScriptLean]:
-    """Order: platform, length, depth, script lean. Any missing pick = no run."""
+) -> tuple[str, Platform, Cut, Depth, ScriptLean]:
+    """Order: topic, platform, length, depth, script lean. Any missing pick = no run."""
     return (
+        require_topic(topic),
         require_platform(platform),
         require_cut(cut),
         require_depth(depth),

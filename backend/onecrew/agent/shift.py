@@ -31,8 +31,8 @@ def open_shift(
     script_lean: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
-    chosen_platform, chosen_cut, chosen_depth, chosen_lean = require_picks(
-        platform, cut, depth, script_lean
+    chosen_topic, chosen_platform, chosen_cut, chosen_depth, chosen_lean = require_picks(
+        topic, platform, cut, depth, script_lean
     )
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
@@ -50,7 +50,7 @@ def open_shift(
         depth=chosen_depth,
         cut=chosen_cut,
         script_lean=chosen_lean,
-        topic=topic or goal,
+        topic=chosen_topic,
         rails=rails,
         store_backend=store.backend,
     )
@@ -133,7 +133,7 @@ def _board(packet: Packet, rails: Rails) -> list:
 
 def run_live_packet(shift: ShiftRecord) -> Packet:
     """Spend path. Picks → sources → script → storyboard. Boards are not optional."""
-    require_picks(shift.platform, shift.cut, shift.depth, shift.script_lean)
+    require_picks(shift.topic, shift.platform, shift.cut, shift.depth, shift.script_lean)
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
     fresh = Packet(

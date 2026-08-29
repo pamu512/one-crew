@@ -8,7 +8,9 @@ from onecrew.models import MISSING
 from onecrew.picks import (
     PlatformRequiredError,
     ScriptLeanRequiredError,
+    TopicRequiredError,
     require_picks,
+    require_topic,
 )
 from onecrew.script import write_script
 from onecrew.seed import seed_first_open
@@ -27,17 +29,28 @@ def _all(**overrides):
     return body
 
 
-def test_no_run_without_all_four_picks(monkeypatch) -> None:
+def test_no_run_without_all_five_picks(monkeypatch) -> None:
     monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
 
     def boom(*_a, **_k):
-        raise AssertionError("spent without all four picks")
+        raise AssertionError("spent without all five picks")
 
     monkeypatch.setattr("onecrew.parallel_client.search", boom)
     monkeypatch.setattr("onecrew.imagen_client.generate_frames", boom)
     before_p = ledger.parallel_calls
+    before_i = ledger.imagen_calls
     with TestClient(app) as client:
         headers = {"X-Shift-Token": "correct-horse"}
+        empty_topic = client.post("/api/shifts", json=_all(topic=""), headers=headers)
+        assert empty_topic.status_code == 400
+        assert "topic" in empty_topic.json()["detail"].lower()
+        whitespace = client.post("/api/shifts", json=_all(topic="   "), headers=headers)
+        assert whitespace.status_code == 400
+        assert "topic" in whitespace.json()["detail"].lower()
+        omitted = {k: v for k, v in _all().items() if k != "topic"}
+        missing_topic = client.post("/api/shifts", json=omitted, headers=headers)
+        assert missing_topic.status_code == 400
+        assert "topic" in missing_topic.json()["detail"].lower()
         missing_platform = client.post("/api/shifts", json=_all(platform=None), headers=headers)
         assert missing_platform.status_code == 400
         assert "platform" in missing_platform.json()["detail"].lower()
@@ -51,10 +64,18 @@ def test_no_run_without_all_four_picks(monkeypatch) -> None:
         assert missing_lean.status_code == 400
         assert "lean" in missing_lean.json()["detail"].lower()
     assert ledger.parallel_calls == before_p == 0
+    assert ledger.imagen_calls == before_i == 0
+    with pytest.raises(TopicRequiredError, match="No topic chosen"):
+        require_topic("")
+    with pytest.raises(TopicRequiredError, match="No topic chosen"):
+        require_topic("   ")
+    assert require_topic("  Hormuz  ") == "Hormuz"
+    with pytest.raises(TopicRequiredError, match="No topic chosen"):
+        require_picks(None, "youtube", "one_time_short_episode", "decade", "left")
     with pytest.raises(PlatformRequiredError):
-        require_picks(None, "one_time_short_episode", "decade", "left")
+        require_picks("Hormuz", None, "one_time_short_episode", "decade", "left")
     with pytest.raises(ScriptLeanRequiredError):
-        require_picks("youtube", "one_time_short_episode", "decade", None)
+        require_picks("Hormuz", "youtube", "one_time_short_episode", "decade", None)
 
 
 def test_script_lean_cannot_change_a_source_stamp() -> None:
