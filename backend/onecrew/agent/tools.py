@@ -108,7 +108,7 @@ def frames_from_script(packet: Packet, refs: list[str]) -> list[ShotFrame]:
     return [
         ShotFrame(
             id="tanker-lane",
-            shot="Tanker in a narrow lane, land on both sides. Not a mood dump.",
+            shot="Tanker in a narrow lane, land on both sides.",
             source_refs=refs,
             image_href="/api/frames/tanker-lane",
             imagen=True,

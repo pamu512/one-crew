@@ -99,7 +99,7 @@ def seed_frames() -> list[ShotFrame]:
     return [
         ShotFrame(
             id="tanker-lane",
-            shot="Tanker in a narrow lane, land on both sides. Not a mood dump.",
+            shot="Tanker in a narrow lane, land on both sides.",
             source_refs=[OPEC_URL],
             image_href="/api/frames/tanker-lane",
             imagen=False,
