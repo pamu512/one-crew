@@ -6,6 +6,7 @@ import uuid
 from onecrew import config
 from onecrew.agent.tools import findings_from_parallel_rows
 from onecrew.board import write_board
+from onecrew.collision import stamp_collisions
 from onecrew.cut import size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
@@ -163,6 +164,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             or hold_receipt(fresh.id, rails),
         )
         write_script(fresh)
+        stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
@@ -171,12 +173,14 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
         write_script(fresh)
+        stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
 
     write_receipt(fresh, receipt)
     write_script(fresh)
+    stamp_collisions(fresh, rails)
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)

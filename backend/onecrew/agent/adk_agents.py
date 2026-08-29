@@ -50,7 +50,8 @@ Otherwise missing. Do not call something propaganda from tone.
 propaganda=yes does not drop the row, does not hide fringe, and does not replace grounded.
 The same receipt MUST show a Parallel hit AND a Parallel miss.
 If Parallel is down: HOLD. No new stamps. No invented lean. No invented independence. No invented chain.
-The floor writes a timed VO from the receipt, then a shot list from that VO. You do not skip the boarder.
+The floor writes a timed VO from the receipt, then searches Parallel for existing YouTube/docs/news/films whose narration matches that VO, then a shot list from that VO. You do not skip the boarder.
+Collision is a match list, not a clearance. Do not rewrite the VO to copy a hit. Do not drop a beat. Do not invent a colliding title. collision=no only after Parallel searched and returned no media hit. Parallel down → collision fields missing. Fiction frame lines are not searched as published facts.
 You do not post. You do not publish.
 """
 

@@ -66,7 +66,7 @@ FLOOR_HTML = """<!DOCTYPE html>
   <header>
     <div>
       <div class="brand">One Crew</div>
-      <div class="sub">Research companion. Timed VO plus cited sources. Floor never posts.</div>
+      <div class="sub">Research companion. Timed VO, cited sources, collision list. Floor never posts.</div>
     </div>
     <div class="badges" id="badges"></div>
   </header>
@@ -246,6 +246,16 @@ FLOOR_HTML = """<!DOCTYPE html>
         <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.genre || "none"} / ${packet.vantage || "none"}</p>
         <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
+        <div class="brand" style="margin:16px 0 8px">Existing media · collision</div>
+        <p class="note">Match list of videos/docs/films with the same or near script. Not a copyright clearance. The floor does not post.</p>
+        ${(packet.beats || []).map(b => `
+          <div class="finding">
+            <div class="stamp ${b.collision === "yes" ? "fringe" : "missing"}">collision · ${b.collision || "missing"}${b.collision_kind && b.collision_kind !== "missing" ? " · " + b.collision_kind : ""}</div>
+            <p>${b.id}</p>
+            ${b.collision_url ? `<div class="url">${b.collision_url}</div>` : ""}
+            ${b.collision_title && b.collision_title !== "missing" ? `<div class="note">${b.collision_title}</div>` : ""}
+          </div>`).join("")}
+        <p class="${packet.collision_disposition === "HOLD" ? "hold" : "note"}">${packet.collision_disposition || "HOLD"} ${packet.collision_hold_reason || ""}</p>
         <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
         <div class="brand" style="margin:16px 0 8px">Cited sources</div>
         ${findings}

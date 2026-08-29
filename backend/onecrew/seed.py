@@ -4,6 +4,7 @@ import json
 
 from onecrew import config
 from onecrew.board import apply_seed_placeholders, write_shot_list
+from onecrew.collision import hold_collisions
 from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt
 from onecrew.receipt import write_receipt
 from onecrew.script import write_script
@@ -120,6 +121,7 @@ def build_seed_packet() -> Packet:
         disposition="READY",
     )
     packet = write_script(write_receipt(packet, receipt))
+    hold_collisions(packet)
     packet.frames = apply_seed_placeholders(write_shot_list(packet))
     return packet
 

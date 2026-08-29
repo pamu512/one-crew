@@ -334,6 +334,7 @@ def write_script(packet: Packet) -> Packet:
     duration = scene_seconds(cut) if cut else 12
     close_s = 180 if long_form else 0
     hours = long_form
+    prior = {beat.id: beat for beat in packet.beats}
     beats: list[ScriptBeat] = []
     cursor = 0
     scene_total = len(rows) + (1 if long_form and receipt.causal_links else 0)
@@ -367,6 +368,14 @@ def write_script(packet: Packet) -> Packet:
                 )
             )
             cursor += close_s
+    for beat in beats:
+        old = prior.get(beat.id)
+        if old is None:
+            continue
+        beat.collision = old.collision
+        beat.collision_url = old.collision_url
+        beat.collision_title = old.collision_title
+        beat.collision_kind = old.collision_kind
     lines = [
         f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.genre or 'nonfiction'} · {packet.vantage or 'global_overview'}",
         "",

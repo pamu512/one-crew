@@ -9,6 +9,8 @@ Stamp = Literal["grounded", "mainstream", "fringe"]
 ParallelStatus = Literal["hit", "miss", "n/a"]
 Independent = Literal["yes", "no", "missing"]
 Propaganda = Literal["yes", "no", "missing"]
+Collision = Literal["yes", "no", "missing"]
+CollisionKind = Literal["same_script", "near_script", "missing"]
 Depth = Literal["1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet"]
 Cut = Literal[
     "tiktok-length",
@@ -48,6 +50,8 @@ ShiftStatus = Literal["running", "completed", "failed"]
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
 PROPAGANDA = frozenset({"yes", "no", "missing"})
+COLLISIONS = frozenset({"yes", "no", "missing"})
+COLLISION_KINDS = frozenset({"same_script", "near_script", "missing"})
 DEPTHS = ("1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet")
 CUTS = (
     "tiktok-length",
@@ -184,6 +188,20 @@ class ScriptBeat(BaseModel):
     vo: str
     finding_ids: list[str] = Field(default_factory=list)
     frame: str = ""
+    collision: Collision = MISSING
+    collision_url: str | None = None
+    collision_title: str = MISSING
+    collision_kind: CollisionKind = MISSING
+
+
+class CollisionRow(BaseModel):
+    """Existing media whose script/narration matches a VO beat. Not a clearance."""
+
+    beat_id: str
+    collision: Collision = MISSING
+    url: str | None = None
+    title: str = MISSING
+    kind: CollisionKind = MISSING
 
 
 class ShotFrame(BaseModel):
@@ -234,6 +252,9 @@ class Packet(BaseModel):
     beats: list[ScriptBeat] = Field(default_factory=list)
     frames: list[ShotFrame] = Field(default_factory=list)
     shift_id: str | None = None
+    collisions: list[CollisionRow] = Field(default_factory=list)
+    collision_disposition: Disposition = "HOLD"
+    collision_hold_reason: str | None = None
 
 
 class ShiftRecord(BaseModel):
