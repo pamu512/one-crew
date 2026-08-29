@@ -9,6 +9,7 @@ from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt
 from onecrew.receipt import write_receipt
 from onecrew.script import write_script
 from onecrew.store import store
+from onecrew.tell import SEED_TELL
 
 CFR_JCPOA = "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
 OPEC_URL = "https://www.opec.org/"
@@ -106,8 +107,7 @@ def build_seed_packet() -> Packet:
         depth="decade",
         cut="one_time_short_episode",
         script_lean="centered_independent",
-        genre="nonfiction",
-        vantage="global_overview",
+        tell=SEED_TELL,
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",

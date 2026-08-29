@@ -4,12 +4,14 @@ from onecrew.board import write_shot_list
 from onecrew.models import MISSING
 from onecrew.script import write_script
 from onecrew.seed import seed_first_open
+from onecrew.tell import SEED_TELL
+
+FAMILY_TELL = "One family in Bandar Abbas, kitchen radio on"
 
 
-def _tell(*, genre: str, vantage: str, cut: str, lean: str = "centered_independent"):
+def _tell(*, tell: str, cut: str, lean: str = "centered_independent"):
     packet = seed_first_open()
-    packet.genre = genre
-    packet.vantage = vantage
+    packet.tell = tell
     packet.cut = cut
     packet.script_lean = lean
     packet.receipt = copy.deepcopy(packet.receipt)
@@ -28,7 +30,7 @@ def _scenes(packet) -> list[str]:
 
 
 def test_feature_family_is_a_full_screenplay_not_six_beats() -> None:
-    packet = _tell(genre="drama", vantage="one_family", cut="feature_film")
+    packet = _tell(tell=FAMILY_TELL, cut="feature_film")
     scenes = _scenes(packet)
     assert len(scenes) >= 8
     assert len(packet.frames) >= 20
@@ -41,8 +43,8 @@ def test_feature_family_is_a_full_screenplay_not_six_beats() -> None:
     assert "exploded" not in packet.script.lower()
     assert all("receipt card" not in f.shot.lower() for f in packet.frames)
     assert any(f.shot_no >= 20 for f in packet.frames)
-    left = _tell(genre="drama", vantage="one_family", cut="feature_film", lean="left")
-    right = _tell(genre="drama", vantage="one_family", cut="feature_film", lean="right")
+    left = _tell(tell=FAMILY_TELL, cut="feature_film", lean="left")
+    right = _tell(tell=FAMILY_TELL, cut="feature_film", lean="right")
     stamps = lambda p: [(f.id, f.stamp, f.propaganda, f.lean) for f in p.receipt.findings]
     assert stamps(left) == stamps(right) == stamps(packet)
     assert len(_scenes(left)) >= 8 and len(_scenes(right)) >= 8
@@ -50,7 +52,7 @@ def test_feature_family_is_a_full_screenplay_not_six_beats() -> None:
 
 
 def test_nonfiction_episode_is_narrator_led_and_thick() -> None:
-    packet = _tell(genre="nonfiction", vantage="global_overview", cut="one_time_short_episode")
+    packet = _tell(tell=SEED_TELL, cut="one_time_short_episode")
     scenes = _scenes(packet)
     assert len(scenes) >= 8
     assert len(packet.beats) > len(packet.receipt.findings)
@@ -73,7 +75,7 @@ def test_nonfiction_episode_is_narrator_led_and_thick() -> None:
 
 
 def test_tiktok_short_is_complete_not_three_pasted_claims() -> None:
-    packet = _tell(genre="nonfiction", vantage="global_overview", cut="tiktok-length")
+    packet = _tell(tell=SEED_TELL, cut="tiktok-length")
     packet.platform = "tiktok"
     write_script(packet)
     packet.frames = write_shot_list(packet)
@@ -84,8 +86,8 @@ def test_tiktok_short_is_complete_not_three_pasted_claims() -> None:
 
 
 def test_skinny_one_beat_per_finding_is_gone() -> None:
-    episode = _tell(genre="nonfiction", vantage="global_overview", cut="one_time_short_episode")
-    feature = _tell(genre="drama", vantage="one_family", cut="feature_film")
+    episode = _tell(tell=SEED_TELL, cut="one_time_short_episode")
+    feature = _tell(tell=FAMILY_TELL, cut="feature_film")
     assert len(episode.beats) >= len(episode.receipt.findings) * 2
     assert len(feature.beats) >= 16
     assert len(feature.frames) >= 20

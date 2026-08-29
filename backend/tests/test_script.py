@@ -31,8 +31,7 @@ def _packet(*, platform: str, cut: str, lean: str) -> Packet:
         cut=cut,
         depth="decade",
         script_lean=lean,
-        genre="nonfiction",
-        vantage="global_overview",
+        tell="Narrator-led global overview of the US and Iran",
     )
     receipt = Receipt(
         packet_id=packet.id,

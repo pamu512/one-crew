@@ -11,13 +11,12 @@ platform (tiktok, youtube, youtube_shorts, instagram_reels, instagram_stories, i
 length/cut (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary, feature_film),
 depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet),
 script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe),
-tell: genre (nonfiction, horror, war, historical, musical, drama, thriller) and vantage (global_overview, one_family, one_ship).
-nonfiction is documentaries and news. No invented family, ship, or crew. VO is a host/reporter read from the receipt.
-Fiction genres are feature films. Invent the frame (names, rooms, a family, a ship) only there. Label it (frame). Never stamp a frame as grounded.
-full_length_documentary and weekly_update require genre=nonfiction. A thriller documentary is rejected.
-feature_film requires a fiction genre. A nonfiction feature is rejected; that is a documentary.
-tiktok-length, shorts, and one_time_short_episode may be either. Genre and vantage are still required.
-On nonfiction, vantage organizes the news/doc. Subjects come from the receipt. Do not invent a mother in Bandar Abbas on a news piece.
+tell (required free text). Examples, not a closed list: narrator-led global overview; one family in Bandar Abbas; thriller on a tanker; weekly news desk, host only; historical drama through one port family.
+Pairing is the cut, not a parse of tell. Do not reject because tell contains thriller or drama.
+full_length_documentary and weekly_update are always nonfiction: host/reporter VO from the receipt, no invented characters, even if tell says family thriller.
+feature_film is always fiction: invent a frame from whatever they typed. Label it (frame). Never stamp a frame as grounded.
+tiktok-length, shorts, and one_time_short_episode: news tell → no invented people; story tell → invent frame labeled (frame).
+On news/doc, subjects come from the receipt. Do not invent a mother in Bandar Abbas if Parallel did not name her.
 Any missing pick = no run. Do not default.
 Size the timeline and script to platform + length.
 Script lean is the voice of the SCRIPT only. It does not restamp sources.

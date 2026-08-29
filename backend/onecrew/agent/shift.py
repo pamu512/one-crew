@@ -30,8 +30,7 @@ def open_shift(
     depth: str | None = None,
     cut: str | None = None,
     script_lean: str | None = None,
-    genre: str | None = None,
-    vantage: str | None = None,
+    tell: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     (
@@ -40,9 +39,8 @@ def open_shift(
         chosen_cut,
         chosen_depth,
         chosen_lean,
-        chosen_genre,
-        chosen_vantage,
-    ) = require_picks(topic, platform, cut, depth, script_lean, genre, vantage)
+        chosen_tell,
+    ) = require_picks(topic, platform, cut, depth, script_lean, tell)
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
     rails = assess_rails()
@@ -59,8 +57,7 @@ def open_shift(
         depth=chosen_depth,
         cut=chosen_cut,
         script_lean=chosen_lean,
-        genre=chosen_genre,
-        vantage=chosen_vantage,
+        tell=chosen_tell,
         topic=chosen_topic,
         rails=rails,
         store_backend=store.backend,
@@ -135,8 +132,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         shift.cut,
         shift.depth,
         shift.script_lean,
-        shift.genre,
-        shift.vantage,
+        shift.tell,
     )
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
@@ -147,8 +143,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         depth=shift.depth,
         cut=shift.cut,
         script_lean=shift.script_lean,
-        genre=shift.genre,
-        vantage=shift.vantage,
+        tell=shift.tell,
         hook=shift.topic or existing.hook,
         script="",
         status="running",
@@ -197,8 +192,7 @@ async def run_shift(
     depth: str | None = None,
     cut: str | None = None,
     script_lean: str | None = None,
-    genre: str | None = None,
-    vantage: str | None = None,
+    tell: str | None = None,
     topic: str = "",
 ) -> ShiftRecord:
     if shift is None:
@@ -209,8 +203,7 @@ async def run_shift(
             depth=depth,
             cut=cut,
             script_lean=script_lean,
-            genre=genre,
-            vantage=vantage,
+            tell=tell,
             topic=topic,
         )
     try:

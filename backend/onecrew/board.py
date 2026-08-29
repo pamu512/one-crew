@@ -8,6 +8,7 @@ from onecrew import config
 from onecrew.cut import frame_count, require_cut
 from onecrew.imagen_client import ImagenDownError, generate_frames
 from onecrew.models import Finding, Packet, Rails, ScriptBeat, ShotFrame
+from onecrew.tell import invents_frame, tell_lane
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -53,10 +54,13 @@ def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
     prefix = f"{beat.camera}, " if beat.camera else ""
     if beat.kind == "action" and beat.vo.strip():
         return f"{prefix}{beat.vo}".strip()
-    if (packet.genre or "nonfiction") != "nonfiction":
-        if packet.vantage == "one_family":
+    if invents_frame(cut=packet.cut, tell=packet.tell or ""):
+        lane = tell_lane(packet.tell)
+        if lane == "family":
             return prefix + _family_shot(beat)
-        if packet.vantage == "one_ship":
+        if lane == "pilot":
+            return prefix + _pilot_shot(beat)
+        if lane == "ship":
             return prefix + _ship_shot(beat)
         return prefix + "Map-table room, radio on, a paper Gulf chart. No collage. Not a receipt card."
     blob = " ".join([beat.id, beat.vo] + [f.claim for f in rows]).lower()
@@ -99,6 +103,21 @@ def _family_shot(beat: ScriptBeat) -> str:
     if "jcpoa-to-houthi" in blob or "arrow" in blob:
         return "Kitchen table, two dates on scrap paper, no arrow drawn."
     return "Family kitchen in Bandar Abbas, radio on, evening light."
+
+
+def _pilot_shot(beat: ScriptBeat) -> str:
+    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
+    if beat.id == "jcpoa-2018" or "2018" in blob:
+        return "Night-watch chair, 2018 note under a lamp, glass on the lane."
+    if "mine" in blob or "secret-closure" in blob:
+        return "Retired pilot at the glass. Dark water. No mines visible."
+    if "lane" in blob or "hormuz-share" in blob:
+        return "Night watch glass, open Hormuz lane, hull unhit."
+    if "crash" in blob or "oil-panic" in blob:
+        return "Watch room radio on. No fire and no blast."
+    if "explosion" in blob or "heading" in blob:
+        return "Watch clipboard with two dates. No explosion on screen."
+    return "Night watch. Retired pilot at the window. Threat only."
 
 
 def _ship_shot(beat: ScriptBeat) -> str:

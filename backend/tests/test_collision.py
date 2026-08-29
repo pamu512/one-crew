@@ -167,8 +167,8 @@ def test_fiction_frame_is_not_searched(monkeypatch) -> None:
 
     monkeypatch.setattr("onecrew.collision.search", capture)
     packet = seed_first_open()
-    packet.genre = "drama"
-    packet.vantage = "one_family"
+    packet.tell = "One family in Bandar Abbas, kitchen radio on"
+    packet.cut = "feature_film"
     write_script(packet)
     assert "Leila" in packet.script
     stamp_collisions(packet, Rails(parallel=True, vertex=True, imagen=True))

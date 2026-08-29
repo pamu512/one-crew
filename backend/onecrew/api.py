@@ -16,12 +16,11 @@ from onecrew.cut import cuts_payload
 from onecrew.depth import depths_payload
 from onecrew.picks import (
     PickError,
-    genres_payload,
     leans_payload,
     platforms_payload,
     require_picks,
-    vantages_payload,
 )
+from onecrew.tell import tell_examples_payload
 from onecrew.floor import FLOOR_HTML
 from onecrew.rails import assess_rails
 from onecrew.seed import ensure_seeded, reset_floor
@@ -63,8 +62,7 @@ class ShiftRequest(BaseModel):
     depth: str | None = Field(default=None)
     cut: str | None = Field(default=None)
     script_lean: str | None = Field(default=None)
-    genre: str | None = Field(default=None)
-    vantage: str | None = Field(default=None)
+    tell: str | None = Field(default=None)
     goal: str = Field(
         default="Research the topic inside the chosen depth. Write a timeline. Do not post."
     )
@@ -104,8 +102,7 @@ def health() -> dict[str, Any]:
         "cuts": cuts_payload(),
         "depths": depths_payload(),
         "script_leans": leans_payload(),
-        "genres": genres_payload(),
-        "vantages": vantages_payload(),
+        "tell_examples": tell_examples_payload(),
     }
 
 
@@ -129,14 +126,9 @@ def list_script_leans() -> dict[str, Any]:
     return {"script_leans": leans_payload(), "default": None}
 
 
-@app.get("/api/genres")
-def list_genres() -> dict[str, Any]:
-    return {"genres": genres_payload(), "default": None}
-
-
-@app.get("/api/vantages")
-def list_vantages() -> dict[str, Any]:
-    return {"vantages": vantages_payload(), "default": None}
+@app.get("/api/tell-examples")
+def list_tell_examples() -> dict[str, Any]:
+    return {"examples": tell_examples_payload(), "default": None}
 
 
 @app.get("/api/packets")
@@ -177,14 +169,13 @@ async def start_shift(
 ) -> dict[str, Any]:
     require_shift_token(x_shift_token)
     try:
-        topic, platform, cut, depth, script_lean, genre, vantage = require_picks(
+        topic, platform, cut, depth, script_lean, tell = require_picks(
             body.topic,
             body.platform,
             body.cut,
             body.depth,
             body.script_lean,
-            body.genre,
-            body.vantage,
+            body.tell,
         )
     except PickError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -197,8 +188,7 @@ async def start_shift(
         cut=cut,
         depth=depth,
         script_lean=script_lean,
-        genre=genre,
-        vantage=vantage,
+        tell=tell,
         topic=topic,
     )
     await run_shift(body.goal, packet_id=body.packet_id, shift=shift)

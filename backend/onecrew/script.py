@@ -4,7 +4,7 @@ import re
 
 from onecrew.cut import event_cap, is_long_cut, require_cut
 from onecrew.models import MISSING, Finding, Packet, ScriptBeat
-from onecrew.picks import require_tell_pairing
+from onecrew.tell import invents_frame, tell_lane
 
 
 def _cite(finding_id: str) -> str:
@@ -211,20 +211,14 @@ def _vo_mine(lean: str, *, long_form: bool) -> str:
 
 
 def _invents_frame(packet: Packet) -> bool:
-    return (packet.genre or "nonfiction") != "nonfiction"
+    return invents_frame(cut=packet.cut, tell=packet.tell or "")
 
 
 def _frame_for(packet: Packet, finding: Finding, lean: str) -> str:
     """Invented room/character only. Labeled (frame). Never a grounded fact."""
     if not _invents_frame(packet):
         return ""
-    vantage = packet.vantage or "global_overview"
-    theme = _theme(finding)
-    if vantage == "one_ship":
-        return _ship_frame(theme, lean)
-    if vantage == "one_family":
-        return _family_frame(theme, lean)
-    return _map_table_frame(theme, lean)
+    return _frame_for_theme(_theme(finding), tell_lane(packet.tell), lean)
 
 
 def _family_frame(theme: str, lean: str) -> str:
@@ -295,9 +289,12 @@ def _close_vo(link_claim: str, lean: str, cite: list[str]) -> str:
 def _close_frame(packet: Packet) -> str:
     if not _invents_frame(packet):
         return ""
-    if packet.vantage == "one_ship":
+    lane = tell_lane(packet.tell)
+    if lane == "pilot":
+        return "The retired pilot does not log a sourced explosion. The watch just keeps the heading. (frame) "
+    if lane == "ship":
         return "Reza does not log a sourced explosion. The watch just keeps the heading. (frame) "
-    if packet.vantage == "one_family":
+    if lane == "family":
         return "Leila does not draw an arrow between two dates on the kitchen paper. (frame) "
     return "No arrow gets drawn on the map table. (frame) "
 
@@ -340,7 +337,13 @@ def _durs(tier: str) -> dict[str, int]:
 
 
 def _slugs(theme: str, *, fiction: bool, vantage: str, n: int) -> list[str]:
-    if fiction and vantage == "one_family":
+    if fiction and vantage == "pilot":
+        return [
+            "INT. NIGHT WATCH / BRIDGE - NIGHT",
+            "INT. WATCH CHAIR - NIGHT",
+            "EXT. DARK LANE FROM THE GLASS - NIGHT",
+        ][:n]
+    if fiction and vantage == "family":
         family = {
             "jcpoa": [
                 "INT. BANDAR ABBAS KITCHEN - NIGHT",
@@ -373,7 +376,7 @@ def _slugs(theme: str, *, fiction: bool, vantage: str, n: int) -> list[str]:
             "INT. KITCHEN TABLE - NIGHT",
             "INT. SINK - NIGHT",
         ])[:n]
-    if fiction and vantage == "one_ship":
+    if fiction and vantage == "ship":
         ship = {
             "jcpoa": [
                 "INT. TANKER BRIDGE - NIGHT",
@@ -443,10 +446,26 @@ def _action_line(theme: str, *, fiction: bool, vantage: str, lean: str, finding:
     return f"Photoreal B-roll of the cited beat: {finding.claim.rstrip('.')}."
 
 
+def _pilot_frame(theme: str, lean: str) -> str:
+    if theme == "jcpoa":
+        return "The retired pilot pins a 2018 note under the night-watch lamp. (frame)"
+    if theme == "oil_lane":
+        return "From the glass he can see an open lane. No blast. (frame)"
+    if theme == "panic":
+        return "The mess radio talks crash. The hull stays quiet. (frame)"
+    if theme == "producer":
+        return "Shore radio talks like the lane is a given. The pilot does not change the watch for a frame. (frame)"
+    if theme == "mine_rumor":
+        return "Someone repeats a mine-treaty rumor. The retired pilot does not change heading for a rumor. (frame)"
+    return "The retired pilot keeps the night watch. A hit is a scene they fear, not a fact they have. (frame)"
+
+
 def _frame_for_theme(theme: str, vantage: str, lean: str) -> str:
-    if vantage == "one_ship":
+    if vantage == "pilot":
+        return _pilot_frame(theme, lean)
+    if vantage == "ship":
         return _ship_frame(theme, lean)
-    if vantage == "one_family":
+    if vantage == "family":
         return _family_frame(theme, lean)
     return _map_table_frame(theme, lean)
 
@@ -473,9 +492,11 @@ def _interview_line(theme: str, finding: Finding) -> str:
 
 
 def _dialogue(theme: str, vantage: str, lean: str, fact: str) -> str:
-    if vantage == "one_ship":
+    if vantage == "pilot":
+        name = "THE RETIRED PILOT"
+    elif vantage == "ship":
         name = "REZA"
-    elif vantage == "one_family":
+    elif vantage == "family":
         name = "LEILA"
     else:
         name = "NARRATOR"
@@ -537,8 +558,6 @@ def write_script(packet: Packet) -> Packet:
         return packet
     lean = packet.script_lean or "centered_independent"
     cut = require_cut(packet.cut) if packet.cut else None
-    if cut:
-        require_tell_pairing(cut, packet.genre or "nonfiction")
     rows = list(receipt.findings)
     if cut:
         rows = rows[: event_cap(cut, packet.platform)]
@@ -547,7 +566,7 @@ def write_script(packet: Packet) -> Packet:
     hours = long_form
     durs = _durs(tier)
     fiction = _invents_frame(packet)
-    vantage = packet.vantage or "global_overview"
+    vantage = tell_lane(packet.tell)
     per = {"short": 1, "episode": 2, "doc": 4, "feature": 3}[tier]
     with_open = tier != "short"
     with_close = tier != "short" and bool(receipt.causal_links)
@@ -560,19 +579,23 @@ def write_script(packet: Packet) -> Packet:
     first = rows[0]
     if with_open:
         open_slug = (
-            "INT. BANDAR ABBAS KITCHEN - EVENING"
-            if fiction and vantage == "one_family"
+            "INT. NIGHT WATCH / BRIDGE - DUSK"
+            if fiction and vantage == "pilot"
+            else "INT. BANDAR ABBAS KITCHEN - EVENING"
+            if fiction and vantage == "family"
             else "INT. TANKER BRIDGE - DUSK"
-            if fiction and vantage == "one_ship"
+            if fiction and vantage == "ship"
             else "INT. MAP-TABLE ROOM - EVENING"
             if fiction
             else "STUDIO — COLD OPEN"
         )
         open_action = (
-            "Leila at the Bandar Abbas sink. Evening. The radio is already on. (frame)"
-            if fiction and vantage == "one_family"
+            "The retired pilot takes the night watch. Dusk. The glass is already up. (frame)"
+            if fiction and vantage == "pilot"
+            else "Leila at the Bandar Abbas sink. Evening. The radio is already on. (frame)"
+            if fiction and vantage == "family"
             else "Reza at the bridge window. Dusk. The lane is ahead. No blast. (frame)"
-            if fiction and vantage == "one_ship"
+            if fiction and vantage == "ship"
             else "A narrator at a map table. Radio on. No collage. (frame)"
             if fiction
             else "Host at a map table. Gulf chart on the wall. No invented family."
@@ -659,10 +682,12 @@ def write_script(packet: Packet) -> Packet:
         cite = [fid for fid in (link.from_id, link.to_id) if fid in known]
         if cite:
             close_slug = (
-                "INT. KITCHEN TABLE - NIGHT"
-                if fiction and vantage == "one_family"
+                "INT. WATCH CLIPBOARD - NIGHT"
+                if fiction and vantage == "pilot"
+                else "INT. KITCHEN TABLE - NIGHT"
+                if fiction and vantage == "family"
                 else "INT. BRIDGE / CLIPBOARD - NIGHT"
-                if fiction and vantage == "one_ship"
+                if fiction and vantage == "ship"
                 else "INT. MAP-TABLE ROOM - NIGHT"
                 if fiction
                 else "STUDIO — THE HOLE"
@@ -700,7 +725,7 @@ def write_script(packet: Packet) -> Packet:
         beat.collision_title = old.collision_title
         beat.collision_kind = old.collision_kind
     lines = [
-        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.genre or 'nonfiction'} · {packet.vantage or 'global_overview'}",
+        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.tell or 'missing'}",
         "",
     ]
     last_act = None

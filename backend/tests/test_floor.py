@@ -19,9 +19,17 @@ def test_floor_html_has_no_publish_button() -> None:
         assert "Topic — pick 1, required" in page.text
         assert "No topic chosen = no run" in page.text
         assert "No platform chosen = no run" in page.text
-        assert "No genre chosen = no run" in page.text
-        assert "No vantage chosen = no run" in page.text
-        assert "Tell · genre — pick 6, required" in page.text
+        assert "No tell chosen = no run" in page.text
+        assert "Tell — pick 6, required free text" in page.text
+        assert "Narrator-led global overview of the US and Iran" in page.text
+        assert "One family in Bandar Abbas, kitchen radio on" in page.text
+        assert "Thriller on a tanker crossing Hormuz that might get hit" in page.text
+        assert "Weekly news desk, host only" in page.text
+        assert "Historical drama through one port family" in page.text
+        assert "name=\"genre\"" not in FLOOR_HTML
+        assert "name=\"vantage\"" not in FLOOR_HTML
+        assert 'id="tell"' in FLOOR_HTML
+        assert "<textarea" in FLOOR_HTML
         assert "checked=" not in FLOOR_HTML
         assert "checked>" not in FLOOR_HTML
 

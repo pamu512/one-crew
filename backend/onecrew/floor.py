@@ -84,10 +84,15 @@ FLOOR_HTML = """<!DOCTYPE html>
       <div class="depths" id="depths"></div>
       <label>Script lean — required (does not restamp sources)</label>
       <div class="depths" id="leans"></div>
-      <label>Tell · genre — pick 6, required</label>
-      <div class="depths" id="genres"></div>
-      <label>Tell · vantage — required</label>
-      <div class="depths" id="vantages"></div>
+      <label for="tell">Tell — pick 6, required free text</label>
+      <textarea id="tell" rows="3" placeholder="Narrator-led global overview of the US and Iran"></textarea>
+      <p class="note">Examples only — not the only allowed values:</p>
+      <p class="note">Narrator-led global overview of the US and Iran</p>
+      <p class="note">One family in Bandar Abbas, kitchen radio on</p>
+      <p class="note">Thriller on a tanker crossing Hormuz that might get hit</p>
+      <p class="note">Weekly news desk, host only</p>
+      <p class="note">Historical drama through one port family</p>
+      <p class="note">Documentary / weekly_update stay news: host VO, no invented people, even if you type a family thriller. Feature invents a frame from whatever you typed.</p>
       <label for="token">Shift token (spend only)</label>
       <input id="token" type="password" autocomplete="off"/>
       <button id="research" type="button" disabled>Write script</button>
@@ -133,21 +138,6 @@ FLOOR_HTML = """<!DOCTYPE html>
       {id:"far_left", label:"far_left"},
       {id:"unhinged_fringe", label:"unhinged_fringe"}
     ];
-    const GENRES = [
-      {id:"nonfiction", label:"nonfiction"},
-      {id:"horror", label:"horror"},
-      {id:"war", label:"war"},
-      {id:"historical", label:"historical"},
-      {id:"musical", label:"musical"},
-      {id:"drama", label:"drama"},
-      {id:"thriller", label:"thriller"}
-    ];
-    const VANTAGES = [
-      {id:"global_overview", label:"global_overview"},
-      {id:"one_family", label:"one_family"},
-      {id:"one_ship", label:"one_ship"}
-    ];
-
     function chosenRadio(name) {
       const el = document.querySelector('input[name="' + name + '"]:checked');
       return el ? el.value : "";
@@ -159,29 +149,17 @@ FLOOR_HTML = """<!DOCTYPE html>
       const cut = chosenRadio("cut");
       const depth = chosenRadio("depth");
       const lean = chosenRadio("script_lean");
-      const genre = chosenRadio("genre");
-      const vantage = chosenRadio("vantage");
+      const tell = document.getElementById("tell").value.trim();
       const btn = document.getElementById("research");
       const live = window.__shiftsOn === true;
-      btn.disabled = !topic || !platform || !cut || !depth || !lean || !genre || !vantage || !live;
+      btn.disabled = !topic || !platform || !cut || !depth || !lean || !tell || !live;
       const msg = document.getElementById("desk-msg");
       if (!topic) { msg.textContent = "No topic chosen = no run."; return; }
       if (!platform) { msg.textContent = "No platform chosen = no run."; return; }
       if (!cut) { msg.textContent = "No cut chosen = no run."; return; }
       if (!depth) { msg.textContent = "No depth chosen = no run."; return; }
       if (!lean) { msg.textContent = "No script lean chosen = no run."; return; }
-      if (!genre) { msg.textContent = "No genre chosen = no run."; return; }
-      if (!vantage) { msg.textContent = "No vantage chosen = no run."; return; }
-      if ((cut === "full_length_documentary" || cut === "weekly_update") && genre !== "nonfiction") {
-        btn.disabled = true;
-        msg.textContent = "A thriller documentary is rejected. Documentary and weekly_update require nonfiction.";
-        return;
-      }
-      if (cut === "feature_film" && genre === "nonfiction") {
-        btn.disabled = true;
-        msg.textContent = "A nonfiction feature is rejected. Use full_length_documentary.";
-        return;
-      }
+      if (!tell) { msg.textContent = "No tell chosen = no run."; return; }
       msg.textContent = live
         ? "Six picks locked. Research spends Parallel only after this."
         : "Live spend off. Token-gate still on spend.";
@@ -244,7 +222,7 @@ FLOOR_HTML = """<!DOCTYPE html>
       document.getElementById("packet").innerHTML = `
         <div class="brand">${packet.id}</div>
         <h1 class="hook">${packet.topic || packet.hook}</h1>
-        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.genre || "none"} / ${packet.vantage || "none"}</p>
+        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.tell || "none"}</p>
         <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
         <div class="brand" style="margin:16px 0 8px">Existing media · collision</div>
@@ -275,8 +253,6 @@ FLOOR_HTML = """<!DOCTYPE html>
       renderRadios("cuts", "cut", CUTS);
       renderRadios("depths", "depth", DEPTHS);
       renderRadios("leans", "script_lean", LEANS);
-      renderRadios("genres", "genre", GENRES);
-      renderRadios("vantages", "vantage", VANTAGES);
       const health = await fetch("/api/health").then(r => r.json());
       window.__shiftsOn = !!(health.shifts && health.shifts.enabled);
       const badges = document.getElementById("badges");
@@ -311,15 +287,15 @@ FLOOR_HTML = """<!DOCTYPE html>
     }
 
     document.getElementById("topic").addEventListener("input", syncDesk);
+    document.getElementById("tell").addEventListener("input", syncDesk);
     document.getElementById("research").addEventListener("click", async () => {
       const platform = chosenRadio("platform");
       const cut = chosenRadio("cut");
       const depth = chosenRadio("depth");
       const script_lean = chosenRadio("script_lean");
-      const genre = chosenRadio("genre");
-      const vantage = chosenRadio("vantage");
       const topic = document.getElementById("topic").value.trim();
-      if (!topic || !platform || !cut || !depth || !script_lean || !genre || !vantage) {
+      const tell = document.getElementById("tell").value.trim();
+      if (!topic || !platform || !cut || !depth || !script_lean || !tell) {
         document.getElementById("desk-msg").textContent = "Any missing pick = no run.";
         return;
       }
@@ -330,7 +306,7 @@ FLOOR_HTML = """<!DOCTYPE html>
           "content-type": "application/json",
           ...(token ? {"X-Shift-Token": token} : {})
         },
-        body: JSON.stringify({topic, platform, cut, depth, script_lean, genre, vantage, goal: topic || "Research the topic. Do not post."})
+        body: JSON.stringify({topic, platform, cut, depth, script_lean, tell, goal: topic || "Research the topic. Do not post."})
       });
       const text = await res.text();
       document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);
