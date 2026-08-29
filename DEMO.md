@@ -1,17 +1,17 @@
 # One Crew — 3 minute demo
 
-Record unedited. Show the timed VO and the cited sources. Do not post.
+Record unedited. Show the timed VO, the collision list, and the source stamps. Do not post.
 
-## 0:00–0:40 · Companion
+## 0:00–0:40 · What you see before you record
 
 Talk over the floor with `oc-hormuz-decade` already open.
 
-> Topic is pick 1. Then platform, length, depth, lean, and tell (genre + vantage). You get a timed VO, cited sources, and a shot list cut from that VO.
+> One Crew is a research companion for a one-person shop. Before you record you see a timed VO with citations, which lines already exist as someone else's media (collision yes / no / missing), and which sources are house organs, propaganda, fringe, or unsourced. You can see the risk on the page. We do not clear copyright. We do not give legal advice. A Parallel miss is not permission. Collision=missing means we did not get a search. The floor never posts.
 
-## 0:40–1:20 · Six picks + timed VO
+## 0:40–1:20 · VO, collisions, stamps
 
-1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview**. Seed stays a news short, not a feature. Same receipt can be told as short fiction (drama/one_family or thriller/one_ship) or as a `feature_film` with a fiction genre. Invented frame only on fiction genres, labeled `(frame)`. Documentary + thriller, or feature + nonfiction, is 400. Empty topic or tell = no run. Any missing pick = no run.
-2. Point at the **timed VO** and the **shot list** together — act/scene blocks with running timecodes, citations like `[jcpoa-2018]`. One shot per beat, not a leftover stills collage. Point at the **collision list** next to the script: existing media with the same or near narration, so the creator sees a Content ID risk before they record. Match list only. We do not clear copyright.
+1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview**. Seed stays a news short, not a feature. Seed collisions are `missing` because GET does not spend.
+2. Point at the **timed VO** and the **collision list** next to it. Then the **shot list** — one shot per beat, not a leftover stills collage. Citations like `[jcpoa-2018]`.
 3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
 4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.
 5. Point at **fringe** secret-closure — still on the list. Centered ask did not hide it.
@@ -19,7 +19,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 
 ## 1:20–2:10 · Lean lock + floor
 
-1. Script lean does not restamp sources. Unhinged voice still cannot invent a source.
+1. Script lean does not restamp sources or collision URLs. Unhinged voice still cannot invent a source.
 2. The timed VO converted to a shot list. Boards are not optional. If Imagen is down, the shot list stays and images stay missing.
 3. No publish button. The floor never posts. **live spend off**.
 
@@ -35,15 +35,15 @@ GET never spends. POST without token is 403. POST with token and any missing pic
 
 ## 2:50–3:00 · Close
 
-Stay on the VO citation and the fringe row.
+Stay on a collision row and a fringe row.
 
-> The VO leaned. The stamps did not. The floor did not post.
+> You can see the risk. We did not clear it. The floor did not post.
 
 Stop.
 
 ## Prep
 
-- [ ] First-open shows six picks (topic first, tell last) + timed VO + shot list + mixed source list
+- [ ] First-open shows six picks + timed VO + collision list (`missing`) + mixed source list + shot list
 - [ ] No pick defaults
 - [ ] No publish control
 - [ ] Tests green

@@ -8,24 +8,24 @@ One Crew
 
 ## Tagline
 
-Pick topic, then platform, length, depth, lean, and how to tell it. You get a timed VO, cited sources, and a shot list cut from that VO.
+Before you record: a timed VO, a collision list, and source stamps you can see. We do not clear copyright.
 
 ## Text description
 
-One Crew is a research companion that returns a timed VO plus cited sources. Before any Parallel or Imagen spend you pick, in order: topic (free text, required; empty or whitespace = no run), then platform (tiktok, youtube, youtube_shorts, Instagram/Meta: instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, plus podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary, feature_film), depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet), script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe), and tell (genre: nonfiction, horror, war, historical, musical, drama, thriller; vantage: global_overview, one_family, one_ship). nonfiction is documentaries and news: host/reporter VO from the receipt, no invented family or ship. Fiction genres are feature films; frame invention is allowed only there and must be labeled (frame). full_length_documentary and weekly_update require nonfiction. feature_film requires a fiction genre. Illegal pairs are 400 and do not spend. Receipt stamps stay non-fiction. No defaults. Any missing pick = no run.
+One Crew is a research companion for a one-person shop. Before you record, you see (1) a timed VO with citations, (2) which lines already exist as someone else's media (collision yes / no / missing), and (3) which sources are house organs, propaganda, fringe, or unsourced. The point is you can see the risk on the page. We do not clear copyright. We do not give legal advice. We do not license footage. A Parallel miss is not permission. Collision=missing means we did not get a search, not that you are in the clear. The floor never posts, so we also do not publish the thing that would get you a claim.
 
-The researcher writes a timeline once and stamps each source. The floor writes a timed VO in the requested lean, sized to platform and length, with beats, timecodes, and citations pointing at those rows. After the VO exists, Parallel searches for existing YouTube videos, documentaries, news packages, and films whose script or narration is the same or substantially the same, so the creator sees collisions before they record. That is a match list, not a copyright clearance. Then a shot list is cut from that VO. TikTok/Shorts generate every beat. Episode/doc/feature generate one Imagen key frame per scene (capped at the event cap, never 400 images). Not a receipt-join. If Imagen or Vertex is down, the shot list stays and images stay missing. Script lean does not restamp sources or collisions. The floor never posts.
+Six picks are required before any Parallel or Imagen spend, no defaults: topic (free text; empty or whitespace = no run), platform (tiktok, youtube, youtube_shorts, Instagram/Meta surfaces, podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary, feature_film), depth, script lean (voice only), and tell (genre + vantage). nonfiction is news and documentaries. Fiction genres are features; frame invention is labeled (frame). Documentary/weekly_update require nonfiction; feature_film requires a fiction genre. Illegal pairs are 400 and do not spend.
+
+The researcher writes a timeline once and stamps each source. The floor writes the timed VO, then searches Parallel for existing YouTube / docs / news / films whose narration matches, then cuts a shot list from that VO. Hits stamp collision=yes with a sourced URL. A sourced miss is collision=no. Parallel down stays missing. Lean does not restamp. TikTok/Shorts generate every beat; episode/doc/feature generate one key frame per scene (event cap, never 400 images). If Imagen or Vertex is down, the shot list stays and images stay missing.
 
 ## Features and functionality
 
+- Before you record: timed VO, collision list, house-organ / propaganda / fringe / unsourced stamps
+- Match list only — not a copyright clearance, not legal advice, not a license
 - Six required picks: topic, platform, length, depth, script lean, tell (genre + vantage)
-- Timed VO plus cited sources plus a collision list plus a shot list cut from that VO
-- Collision search after VO: match list of existing media with the same script; not a copyright clearance
-- Boards are not optional; Imagen/Vertex down keeps the shot list and leaves images missing
-- Script lean does not restamp sources
+- Shot list cut from that VO; boards are not optional
+- Script lean does not restamp sources or collisions
 - Write-once Parallel timeline
-- Stamps: grounded / mainstream / fringe, source lean, interests, independent, vested_interest, propaganda
-- Causal links grounded only if Parallel sourced
 - GET never spends; POST is token-gated and pick-gated
 - Floor never posts
 - Gemini ADK crew on Vertex 3.5 Flash

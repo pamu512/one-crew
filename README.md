@@ -1,46 +1,41 @@
 # One Crew
 
-Pick topic, platform, length, depth, lean, then how to tell it. You get a timed VO, cited sources, and a shot list cut from that VO.
+One Crew is a research companion for a one-person shop. Before you record, you see:
 
-One Crew is a research companion. Six picks, then a write-once timeline, then a **timed VO**, then a **shot list** from that VO. Imagen fills key frames. Not a receipt-join. Not a leftover stills collage. The crew does not post.
+1. a timed VO with citations
+2. which lines already exist as someone else's media (`collision` yes / no / missing)
+3. which sources are house organs, propaganda, fringe, or unsourced
 
-**Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. The floor never posts.**
+The point is you can see the risk on the page. We do not clear copyright. We do not give legal advice. We do not license footage. A Parallel miss is not permission. `collision=missing` means we did not get a search, not that you are in the clear. The floor never posts, so we also do not publish the thing that would get you a claim.
 
-**License:** Apache-2.0
+**Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. License: Apache-2.0.**
 
-## Front door
+## Six picks
 
-Required picks, in this order, before any Parallel or Imagen spend. No defaults. Any missing pick = no run.
+Required, in this order, before any Parallel or Imagen spend. No defaults. Any missing pick = no run.
 
-1. **Topic** (free text, required, no default) — e.g. "Explain what's going on with the Hormuz strait". Empty or whitespace = no run.
-2. **Platform** (TikTok, YouTube, Instagram / Meta, podcast — no free-text, no default) — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
+1. **Topic** (free text) — e.g. "Explain what's going on with the Hormuz strait". Empty or whitespace = no run.
+2. **Platform** — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
 3. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary` | `feature_film`
 4. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
-5. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
-6. **Tell** (two required fields, no free-text genre) — genre: `nonfiction` | `horror` | `war` | `historical` | `musical` | `drama` | `thriller` · vantage: `global_overview` | `one_family` | `one_ship`. `nonfiction` is documentaries and news: host/reporter VO from the receipt, no invented family/ship/crew. Fiction genres are feature films: frame invention is allowed only there and must be labeled `(frame)`. Facts still cite receipt rows. Invented plot is never grounded. Empty genre or vantage = no run. Pairing fail-closed (400, no spend): `full_length_documentary` and `weekly_update` require `nonfiction`; `feature_film` requires a fiction genre. TikTok-length / shorts / one_time_short_episode may be either. On nonfiction, vantage organizes the news/doc around receipt subjects — do not invent a mother in Bandar Abbas if Parallel did not name her.
+5. **Script lean** (voice only; does not restamp) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
+6. **Tell** — genre `nonfiction` | `horror` | `war` | `historical` | `musical` | `drama` | `thriller` · vantage `global_overview` | `one_family` | `one_ship`
 
-Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
+`nonfiction` is news and documentaries: host VO from the receipt, no invented family or ship. Fiction genres are features: frame invention only there, labeled `(frame)`. Pairing fail-closed (400, no spend): documentary / weekly_update require `nonfiction`; `feature_film` requires a fiction genre. Shorts may be either. On nonfiction, vantage organizes receipt subjects — do not invent a mother in Bandar Abbas if Parallel did not name her.
 
-The floor writes a **timed VO** in the requested lean, sized to that surface + length, with beats, timecodes, and citations pointing at those rows. Lean changes the spoken wording, not the stamps. After the VO exists, Parallel searches for existing YouTube videos, documentaries, news packages, and films whose script, narration, or transcript is the same or substantially the same, so the creator sees collisions before they record. That list is a match list, not a copyright clearance. Hits stamp `collision=yes` with the sourced URL; a sourced miss is `collision=no`; Parallel down stays `missing`. Then a **shot list** is cut from that VO: one shot per beat/scene. TikTok / Shorts generate every beat. Episode / documentary / feature generate one Imagen key frame per scene — never 400 images (cap is the event cap, max 40 on a YouTube documentary or feature). The full shot list still shows. A Stories board is not a documentary board. A Reels board is not a YouTube long-form board. If Imagen or Vertex is down, the shot list stays and images stay missing — they are not invented. Boards are not optional.
+Then a write-once timeline (grounded / mainstream / fringe, house-organ, propaganda, causal links only when Parallel sourced them). Then the timed VO. Then the collision search. Then a shot list from that VO. TikTok / Shorts generate every beat; episode / documentary / feature generate one key frame per scene (event cap, max 40). Imagen or Vertex down keeps the shot list and leaves images missing. Lean does not restamp sources or collisions.
 
-Requested script lean does **not** restamp sources. Unhinged / fringe voice still cannot invent sources or mark propaganda as grounded. Centered_independent still must show missing when Parallel missed. Do not hide fringe or propaganda to match a centered ask. Do not invent a lobby to match a far-right / far-left ask.
-
-The floor never posts.
+Sample first-open: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview). Seed collisions stay `missing` — GET never spends.
 
 ![Architecture](docs/architecture.svg)
 
-## Who it's for
-
-A one-person shop that needs a script with receipts. Sample first-open packet: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview).
-
 ## How it works
 
-1. First-open shows the six picks (topic first, tell last), a timed Hormuz VO with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the shot list cut from that VO. GET never calls Parallel or Imagen.
-2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all six picks. Unset token → 403. Empty, whitespace, or omitted topic → 400. Empty genre or vantage → 400. Documentary + fiction genre → 400. Feature + nonfiction → 400. Any missing pick → 400. No spend.
-3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**. Flow is picks → timeline + sources → timed VO → collision search → shot list.
-4. Write-once receipt. Script lean cannot change a source stamp.
-5. Missing Parallel — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed. Missing Imagen/Vertex → shot list kept, images missing.
-6. The floor has no publish control. Nothing is posted.
+1. First-open shows the six picks, the Hormuz VO, source stamps, collision fields (`missing` until a live search), and the shot list. GET never calls Parallel or Imagen.
+2. `POST /api/shifts` needs `SHIFT_TOKEN` + `X-Shift-Token` and all six picks. Unset token → 403. Bad pairing or any missing pick → 400. No spend.
+3. **Google ADK** crew on **Vertex Gemini 3.5 Flash**: picks → timeline → timed VO → collision search → shot list.
+4. Parallel down, or a pre-1980 miss → fail-closed HOLD. Collision rail down → every collision field `missing`, never `collision=no`. Unhinged lean still cannot invent a source.
+5. The floor has no publish control. Nothing is posted.
 
 ## How to run locally
 
@@ -57,7 +52,7 @@ pip install -r backend/requirements.txt
 PYTHONPATH=backend python -m onecrew
 ```
 
-Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the timed Hormuz VO, the cited sources, and the shot list. The floor has no publish button.
+Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the timed Hormuz VO, the collision list, and the cited sources. The floor has no publish button.
 
 ```bash
 PYTHONPATH=backend python -m onecrew &
@@ -79,7 +74,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Tests lock: no run without all six picks (empty/whitespace/omitted topic or tell is 400 and does not spend); documentary+thriller and feature_film+nonfiction are 400 and do not spend; feature_film+drama+one_family writes a labeled fiction frame on the same stamps; right vs left VO wording differs and stamps stay identical; same receipt can be told as nonfiction/global, drama/one_family, and thriller/one_ship; nonfiction+one_family does not invent a family; thriller does not claim a sourced explosion; TikTok VO is short and an episode has running timecodes; every beat cites a finding id; invented frame is labeled `(frame)`; HOLD writes an empty script and does not invent a family; Parallel down leaves collision missing (never collision=no / never "cleared"); a Hormuz doc URL hit stamps collision=yes on that beat without restamping findings; lean does not change a collision URL.
+Locks: six picks or no run; documentary+thriller and feature+nonfiction are 400; fiction frame stays labeled; lean does not restamp sources or collision URLs; Parallel down leaves collision `missing` (never `no`); a Hormuz doc URL hit stamps `collision=yes` on that beat; GET never spends; POST without token is 403; floor never posts.
 
 ### ADK web (optional)
 
@@ -148,4 +143,4 @@ LICENSE
 
 ## What this is not
 
-Not a publisher. Not a collage toy. The floor does not post.
+Not a publisher. Not a clearance desk. Not legal advice. The floor does not post.
