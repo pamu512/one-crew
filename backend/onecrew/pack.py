@@ -30,6 +30,34 @@ def hits_accounted(hit_urls: list[str], packet: Packet) -> bool:
     return all(url in cited or url in left for url in hit_urls if url)
 
 
+def require_hits_accounted(hit_urls: list[str], packet: Packet) -> None:
+    if not hits_accounted(hit_urls, packet):
+        raise PackInvalidError("silent drop of a Parallel hit")
+
+
+def leftover_hit_exclusions(
+    rows: list,
+    kept_urls: set[str],
+    *,
+    reason: str,
+    detail: str,
+) -> list[Exclusion]:
+    """Cite Parallel hits that did not make the findings list. Never invent a title."""
+    if reason not in EXCLUSION_REASONS:
+        raise PackInvalidError("exclusion reason is not on the closed list")
+    out: list[Exclusion] = []
+    seen: set[str] = set()
+    for item in rows:
+        url = getattr(item, "url", None)
+        if not url or url in kept_urls or url in seen:
+            continue
+        seen.add(url)
+        title = (getattr(item, "title", None) or "").strip()
+        # ponytail: Parallel title or the URL. Never invent a page name.
+        out.append(Exclusion(what=title or url, reason=reason, detail=detail, url=url))
+    return out
+
+
 def validate_exclusions(packet: Packet) -> None:
     receipt = packet.receipt
     known_claims = {f.claim for f in (receipt.findings if receipt else [])}
@@ -155,9 +183,11 @@ def _argument_prose(packet: Packet) -> str:
     return " ".join(parts)
 
 
-def write_research_pack(packet: Packet) -> Packet:
+def write_research_pack(packet: Packet, hit_urls: list[str] | None = None) -> Packet:
     """Always-written thesis. Lean/tone/tell do not rewrite stamps."""
     validate_exclusions(packet)
+    if hit_urls is not None:
+        require_hits_accounted(hit_urls, packet)
     receipt = packet.receipt
     held = receipt.disposition == "HOLD" if receipt else False
     hold_line = ""
@@ -242,8 +272,10 @@ def write_research_pack(packet: Packet) -> Packet:
     lines.extend(["", "## Left out / not included", ""])
     if packet.exclusions:
         for row in packet.exclusions:
-            url = f" {row.url}" if row.url else ""
-            lines.append(f"{row.what}{url} was left out. reason={row.reason}. {row.detail}".rstrip())
+            url = row.url or "no URL"
+            lines.append(
+                f"Left out: {row.what}. URL: {url}. reason={row.reason}. {row.detail}".rstrip()
+            )
     else:
         lines.append("No exclusion rows. Hits were not silently dropped.")
     lines.extend(

@@ -15,7 +15,7 @@ from onecrew.parallel_client import ParallelDownError, search
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
-from onecrew.pack import write_research_pack
+from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.script import write_script
 from onecrew.seed import reset_floor
 from onecrew.store import store
@@ -70,11 +70,15 @@ def open_shift(
     return shift
 
 
-def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
+def _row_urls(rows: list) -> list[str]:
+    return [url for url in (getattr(row, "url", None) for row in rows) if url]
+
+
+def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list[Exclusion], list[str]]:
     if not rails.parallel:
         held = hold_receipt(packet.id, rails)
         pre = pre1980_fail_closed(packet_id=packet.id, depth=depth, rails=rails, parallel_hits=0)
-        return pre or held
+        return (pre or held), [], []
     try:
         hit = search(
             objective=f"Timeline for {packet.topic or packet.hook} inside depth={depth}",
@@ -86,11 +90,17 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
         )
     except ParallelDownError:
         down = rails.model_copy(update={"parallel": False})
-        return pre1980_fail_closed(
-            packet_id=packet.id, depth=depth, rails=down, parallel_hits=0
-        ) or hold_receipt(packet.id, down)
+        return (
+            pre1980_fail_closed(
+                packet_id=packet.id, depth=depth, rails=down, parallel_hits=0
+            )
+            or hold_receipt(packet.id, down),
+            [],
+            [],
+        )
     hit_rows = list(getattr(hit, "results", None) or [])
     miss_rows = list(getattr(miss, "results", None) or [])
+    hit_urls = _row_urls(hit_rows) + _row_urls(miss_rows)
     hit_url = getattr(hit_rows[0], "url", None) if hit_rows else None
     hit_title = getattr(hit_rows[0], "title", None) or MISSING if hit_rows else MISSING
     pre = pre1980_fail_closed(
@@ -100,9 +110,21 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
         parallel_hits=len(hit_rows),
     )
     if pre:
-        return pre
+        leftover = leftover_hit_exclusions(
+            hit_rows + miss_rows,
+            set(),
+            reason="outside_depth",
+            detail="Outside the pre-1980 window that held. Not silently dropped.",
+        )
+        return pre, leftover, hit_urls
     if not hit_url:
-        return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
+        leftover = leftover_hit_exclusions(
+            hit_rows + miss_rows,
+            set(),
+            reason="no_url",
+            detail="Parallel row without a usable URL. Not silently dropped.",
+        )
+        return hold_receipt(packet.id, rails.model_copy(update={"parallel": False})), leftover, hit_urls
     findings = findings_from_parallel_rows(
         hit_url=hit_url,
         hit_title=hit_title,
@@ -111,17 +133,39 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
         miss_claim=f"Fringe claim about {packet.topic or packet.hook}",
     )
     if not findings:
-        return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
+        leftover = leftover_hit_exclusions(
+            hit_rows + miss_rows,
+            set(),
+            reason="other",
+            detail="Parallel hit did not become a finding. Not silently dropped.",
+        )
+        return hold_receipt(packet.id, rails.model_copy(update={"parallel": False})), leftover, hit_urls
     if packet.cut:
         findings = size_findings(findings, packet.cut, packet.platform)
+    kept_urls = {f.parallel_url for f in findings if f.parallel_url}
+    leftover = leftover_hit_exclusions(
+        hit_rows,
+        kept_urls,
+        reason="duplicate",
+        detail="Same timeline search; not stamped as a finding.",
+    ) + leftover_hit_exclusions(
+        miss_rows,
+        kept_urls,
+        reason="other",
+        detail="Returned on the fringe search; not added as a source.",
+    )
     # ponytail: live causal_links stay empty unless Parallel sourced a this-led-to-that URL.
     # Seed shows one missing link; do not invent a 40-year chain here.
-    return Receipt(
-        packet_id=packet.id,
-        written=False,
-        findings=findings,
-        causal_links=[],
-        disposition="READY",
+    return (
+        Receipt(
+            packet_id=packet.id,
+            written=False,
+            findings=findings,
+            causal_links=[],
+            disposition="READY",
+        ),
+        leftover,
+        hit_urls,
     )
 
 
@@ -176,17 +220,19 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                 detail="Parallel rail down. No invented source.",
             )
         ]
-        write_research_pack(fresh)
+        write_research_pack(fresh, hit_urls=[])
         store.upsert_packet(fresh)
         return fresh
 
-    receipt = _research(fresh, rails, shift.depth)
+    receipt, leftover, hit_urls = _research(fresh, rails, shift.depth)
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
         write_script(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
-        if not fresh.exclusions:
+        if leftover:
+            fresh.exclusions = leftover
+        elif not fresh.exclusions:
             fresh.exclusions = [
                 Exclusion(
                     what="Live Parallel search",
@@ -194,7 +240,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                     detail=receipt.hold_reason or "Receipt HOLD. No invented source.",
                 )
             ]
-        write_research_pack(fresh)
+        write_research_pack(fresh, hit_urls=hit_urls)
         store.upsert_packet(fresh)
         return fresh
 
@@ -204,7 +250,8 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
-    write_research_pack(fresh)
+    fresh.exclusions = leftover
+    write_research_pack(fresh, hit_urls=hit_urls)
     store.upsert_packet(fresh)
     return fresh
 
