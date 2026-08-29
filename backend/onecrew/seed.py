@@ -42,6 +42,9 @@ def seed_findings() -> list[Finding]:
             independent="no",
             independent_url=OPEC_URL,
             vested_interest=MISSING,
+            propaganda="yes",
+            propaganda_url=OPEC_URL,
+            propaganda_issuer="OPEC",
         ),
         Finding(
             id="oil-panic",

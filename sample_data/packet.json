@@ -26,6 +26,9 @@
         "independent_url": null,
         "vested_interest": "missing",
         "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
         "when": "2018"
       },
       {
@@ -45,6 +48,9 @@
         "independent_url": "https://www.opec.org/",
         "vested_interest": "missing",
         "vested_interest_url": null,
+        "propaganda": "yes",
+        "propaganda_url": "https://www.opec.org/",
+        "propaganda_issuer": "OPEC",
         "when": "2018-2024"
       },
       {
@@ -64,6 +70,9 @@
         "independent_url": null,
         "vested_interest": "missing",
         "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
         "when": "2023-2024"
       },
       {
@@ -87,6 +96,9 @@
         "independent_url": null,
         "vested_interest": "missing",
         "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
         "when": "2018-2024"
       },
       {
@@ -106,6 +118,9 @@
         "independent_url": null,
         "vested_interest": "missing",
         "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
         "when": "decade"
       }
     ],

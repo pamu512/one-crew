@@ -3,6 +3,7 @@ from __future__ import annotations
 from onecrew.models import (
     INDEPENDENT,
     MISSING,
+    PROPAGANDA,
     STAMPS,
     CausalLink,
     Finding,
@@ -68,6 +69,34 @@ def validate_source_stake(finding: Finding) -> None:
     if finding.independent == MISSING and finding.independent_url:
         raise ReceiptInvalidError("independent=missing cannot carry a Parallel URL")
     _validate_attr("vested_interest", finding.vested_interest, finding.vested_interest_url)
+    validate_propaganda(finding)
+
+
+def validate_propaganda(finding: Finding) -> None:
+    """propaganda yes/no only from a Parallel hit. Gemini must not stamp from tone."""
+    if finding.propaganda not in PROPAGANDA:
+        raise ReceiptInvalidError("propaganda must be yes, no, or missing")
+    issuer = (finding.propaganda_issuer or "").strip()
+    if finding.propaganda == "yes":
+        if not _url_ok(finding.propaganda_url):
+            raise ReceiptInvalidError(
+                "cannot stamp propaganda=yes without a Parallel hit naming the issuer"
+            )
+        if not issuer or issuer == MISSING:
+            raise ReceiptInvalidError(
+                "cannot stamp propaganda=yes without a Parallel hit naming the issuer"
+            )
+        return
+    if finding.propaganda == "no":
+        if not _url_ok(finding.propaganda_url):
+            raise ReceiptInvalidError("propaganda=no requires a Parallel hit; otherwise missing")
+        if issuer and issuer != MISSING:
+            raise ReceiptInvalidError("propaganda=no has no campaign issuer")
+        return
+    if finding.propaganda_url:
+        raise ReceiptInvalidError("propaganda=missing cannot carry a Parallel URL")
+    if issuer and issuer != MISSING:
+        raise ReceiptInvalidError("propaganda=missing cannot carry an issuer")
 
 
 def validate_causal_link(link: CausalLink) -> None:

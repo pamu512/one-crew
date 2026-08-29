@@ -132,6 +132,7 @@ FLOOR_HTML = """<!DOCTYPE html>
         <div class="finding">
           <div class="stamp ${f.stamp}">${f.stamp} · ${f.parallel_status}${f.when ? " · " + f.when : ""}</div>
           ${f.independent === "no" ? `<div class="stamp fringe">not independent</div>` : ""}
+          ${f.propaganda === "yes" ? `<div class="stamp fringe">propaganda</div>` : ""}
           <p>${f.claim}</p>
           ${f.parallel_url ? `<div class="url">${f.parallel_url}</div>` : ""}
           <div class="note">${f.note}</div>
@@ -140,6 +141,7 @@ FLOOR_HTML = """<!DOCTYPE html>
           <div class="note">who_repeats: ${Array.isArray(f.who_repeats) ? f.who_repeats.join(", ") : (f.who_repeats || "missing")}${f.who_repeats_url ? " · " + f.who_repeats_url : ""}</div>
           <div class="note">independent: ${f.independent || "missing"}${f.independent_url ? " · " + f.independent_url : ""}</div>
           <div class="note">vested_interest: ${Array.isArray(f.vested_interest) ? f.vested_interest.join(", ") : (f.vested_interest || "missing")}${f.vested_interest_url ? " · " + f.vested_interest_url : ""}</div>
+          <div class="note">propaganda: ${f.propaganda || "missing"}${f.propaganda_issuer && f.propaganda_issuer !== "missing" ? " · " + f.propaganda_issuer : ""}${f.propaganda_url ? " · " + f.propaganda_url : ""}</div>
         </div>`;
     }
 

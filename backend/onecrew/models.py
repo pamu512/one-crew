@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 Stamp = Literal["grounded", "mainstream", "fringe"]
 ParallelStatus = Literal["hit", "miss", "n/a"]
 Independent = Literal["yes", "no", "missing"]
+Propaganda = Literal["yes", "no", "missing"]
 Depth = Literal["current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980"]
 LinkStamp = Literal["grounded", "missing"]
 Disposition = Literal["READY", "HOLD"]
@@ -16,6 +17,7 @@ ShiftStatus = Literal["running", "completed", "failed"]
 
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
+PROPAGANDA = frozenset({"yes", "no", "missing"})
 DEPTHS = ("current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980")
 MISSING = "missing"
 
@@ -78,6 +80,10 @@ class Finding(BaseModel):
     independent_url: str | None = None
     vested_interest: str | list[str] = MISSING
     vested_interest_url: str | None = None
+    # Campaign line. Parallel-sourced issuer or missing. Not Gemini tone.
+    propaganda: Propaganda = MISSING
+    propaganda_url: str | None = None
+    propaganda_issuer: str = MISSING
     when: str = ""
 
 

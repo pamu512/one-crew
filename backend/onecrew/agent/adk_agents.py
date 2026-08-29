@@ -26,6 +26,11 @@ On every cited Parallel URL stamp independent (yes|no|missing) and vested_intere
 Fill those only from a Parallel hit about ownership or funding. Otherwise missing.
 A grounded house organ stays grounded and must show independent=no in the receipt, not only in a note.
 Do not invent a parent, investor, or conflict.
+On every event/source row stamp propaganda (yes|no|missing).
+yes only if Parallel sourced that this item is a state, party, military, or organized campaign line, with the named issuer on the row.
+no only if Parallel sourced that it is not.
+Otherwise missing. Do not call something propaganda from tone.
+propaganda=yes does not drop the row, does not hide fringe, and does not replace grounded.
 The same receipt MUST show a Parallel hit AND a Parallel miss.
 If Parallel or Vertex is down: HOLD. No new stamps. No invented lean. No invented independence. No invented chain.
 You do not post. You do not publish.

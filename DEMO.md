@@ -12,7 +12,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 
 1. Point at **depth = decade**. No radio is pre-selected on a new run. No depth = no run.
 2. Point at **grounded** jcpoa-2018 — Parallel URL on the row. independent is `missing`.
-3. Point at **hormuz-share** — still grounded, and the floor says **not independent**.
+3. Point at **hormuz-share** — still grounded, the floor says **not independent** and **propaganda**, issuer OPEC. Other rows show propaganda `missing`, not clean.
 4. Point at **mainstream** oil-panic — lean / interests are `missing`. Then **producer-frame** — those fields present, Parallel URL on each, lean is not the stamp.
 5. Point at **fringe** secret-closure — Parallel miss, never sold as fact.
 6. Point at the **causal link** jcpoa-to-houthi — stamp `missing`. Not invented.

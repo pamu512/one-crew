@@ -26,6 +26,7 @@ GET is seeded (`oc-hormuz-decade`) and never spends Parallel or Imagen. POST tha
 - Stamps: grounded / mainstream / fringe
 - Mainstream lean / interests / who_repeats: Parallel-sourced or missing
 - Cited sources: independent yes/no/missing and vested_interest, Parallel-sourced or missing
+- Propaganda yes/no/missing: Parallel-sourced named issuer or missing; not Gemini tone
 - Hit and miss on the same receipt
 - Four shot frames from script + Parallel refs, after the receipt
 - Fail-closed HOLD when rails are down or pre-1980 misses
