@@ -3,47 +3,50 @@ from __future__ import annotations
 import json
 
 from onecrew import config
-from onecrew.models import MISSING, Finding, Packet, Receipt, ShotFrame
+from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt, ShotFrame
 from onecrew.receipt import write_receipt
 from onecrew.store import store
 
-PPI_URL = "https://www.ilovepickles.org/"
+CFR_JCPOA = "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
+OPEC_URL = "https://www.opec.org/"
 
-SEED_HOOK = "Pickle juice at 3am is a ranking cheat code — NASA even studied it."
+SEED_TOPIC = "Explain what's going on with the Hormuz strait"
+SEED_HOOK = SEED_TOPIC
 SEED_SCRIPT = (
-    "Open on the fridge. Pour the brine. Cut to the microwave clock at 3:07. "
-    "Show the ranking on the phone. End on the empty NASA search — do not sell it as fact."
+    "Open on a tanker in the strait. Cut to 2018. Show the oil-share number. "
+    "Hold the panic frame as mainstream, not a source. End on the missing link."
 )
 
 
 def seed_findings() -> list[Finding]:
     return [
         Finding(
-            id="ranking-hit",
-            claim=(
-                "Pickle juice sodium ranks with common sports drinks in published recovery tables."
-            ),
+            id="jcpoa-2018",
+            when="2018",
+            claim="The United States withdrew from the JCPOA, tightening the Iran file around the Gulf.",
             stamp="grounded",
-            parallel_url="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/",
+            parallel_url=CFR_JCPOA,
             parallel_status="hit",
             note="Parallel URL on this row.",
             independent=MISSING,
             vested_interest=MISSING,
         ),
         Finding(
-            id="trade-hit",
-            claim="Pickle Packers International publishes pickle nutrition and usage material for the trade.",
+            id="hormuz-share",
+            when="2018-2024",
+            claim="A large share of seaborne oil still transits the Strait of Hormuz.",
             stamp="grounded",
-            parallel_url=PPI_URL,
+            parallel_url=OPEC_URL,
             parallel_status="hit",
             note="Parallel URL on this row.",
             independent="no",
-            independent_url=PPI_URL,
+            independent_url=OPEC_URL,
             vested_interest=MISSING,
         ),
         Finding(
-            id="3am-kitchen",
-            claim="A 3am kitchen pickle-juice shot is a hangover ranking hack.",
+            id="oil-panic",
+            when="2023-2024",
+            claim="Any Hormuz scare means oil crashes the world overnight.",
             stamp="mainstream",
             parallel_url=None,
             parallel_status="n/a",
@@ -53,25 +56,24 @@ def seed_findings() -> list[Finding]:
             who_repeats=MISSING,
         ),
         Finding(
-            id="industry-recovery",
-            claim="Pickle juice is a branded recovery category the pickle trade pushes as sports nutrition.",
+            id="producer-frame",
+            when="2018-2024",
+            claim="Producer states treat an open Hormuz as an oil-market given.",
             stamp="mainstream",
             parallel_url=None,
             parallel_status="n/a",
             note="Widely repeated, may be bias, not a source.",
             lean="industry",
-            lean_url=PPI_URL,
-            interests=["Pickle Packers International"],
-            interests_url=PPI_URL,
-            who_repeats=["Pickle Packers International"],
-            who_repeats_url=PPI_URL,
-            independent="no",
-            independent_url=PPI_URL,
-            vested_interest=MISSING,
+            lean_url=OPEC_URL,
+            interests=["OPEC"],
+            interests_url=OPEC_URL,
+            who_repeats=["OPEC"],
+            who_repeats_url=OPEC_URL,
         ),
         Finding(
-            id="nasa-miss",
-            claim="NASA studied pickle juice for astronaut cramps.",
+            id="secret-closure",
+            when="decade",
+            claim="Hormuz has already been mined shut under a hidden navy treaty.",
             stamp="fringe",
             parallel_url=None,
             parallel_status="miss",
@@ -80,34 +82,47 @@ def seed_findings() -> list[Finding]:
     ]
 
 
+def seed_links() -> list[CausalLink]:
+    return [
+        CausalLink(
+            id="jcpoa-to-houthi",
+            from_id="jcpoa-2018",
+            to_id="oil-panic",
+            claim="The 2018 JCPOA exit caused the 2023-2024 Hormuz panic.",
+            stamp=MISSING,
+            parallel_url=None,
+        )
+    ]
+
+
 def seed_frames() -> list[ShotFrame]:
     return [
         ShotFrame(
-            id="jar-pour",
-            shot="Close-up: refrigerator pickle jar, brine pouring into a shot glass.",
-            source_refs=["https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/"],
-            image_href="/api/frames/jar-pour",
+            id="tanker-lane",
+            shot="Tanker in a narrow lane, land on both sides. Not a mood dump.",
+            source_refs=[OPEC_URL],
+            image_href="/api/frames/tanker-lane",
             imagen=False,
         ),
         ShotFrame(
-            id="kitchen-3am",
-            shot="Single overhead bulb, kitchen sink, 3:07 on the microwave.",
+            id="strait-map",
+            shot="Chart table with a strait map and a 2018 date chip.",
+            source_refs=[CFR_JCPOA],
+            image_href="/api/frames/strait-map",
+            imagen=False,
+        ),
+        ShotFrame(
+            id="oil-share",
+            shot="Phone showing the Parallel oil-share URL. Not a collage.",
+            source_refs=[OPEC_URL],
+            image_href="/api/frames/oil-share",
+            imagen=False,
+        ),
+        ShotFrame(
+            id="link-empty",
+            shot="Timeline board: JCPOA to panic — causal link missing. No invented chain.",
             source_refs=[],
-            image_href="/api/frames/kitchen-3am",
-            imagen=False,
-        ),
-        ShotFrame(
-            id="ranking-phone",
-            shot="Phone in hand showing the Parallel ranking URL. Not a stock collage.",
-            source_refs=["https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/"],
-            image_href="/api/frames/ranking-phone",
-            imagen=False,
-        ),
-        ShotFrame(
-            id="nasa-empty",
-            shot="Search board: NASA pickle juice — no hit. Empty results, not a NASA seal.",
-            source_refs=[],
-            image_href="/api/frames/nasa-empty",
+            image_href="/api/frames/link-empty",
             imagen=False,
         ),
     ]
@@ -116,6 +131,8 @@ def seed_frames() -> list[ShotFrame]:
 def build_seed_packet() -> Packet:
     packet = Packet(
         id=config.SEED_PACKET_ID,
+        topic=SEED_TOPIC,
+        depth="decade",
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",
@@ -125,6 +142,7 @@ def build_seed_packet() -> Packet:
         packet_id=packet.id,
         written=False,
         findings=seed_findings(),
+        causal_links=seed_links(),
         disposition="READY",
     )
     return write_receipt(packet, receipt)
@@ -138,7 +156,7 @@ def load_sample_packet() -> Packet:
 
 
 def seed_first_open() -> Packet:
-    """Stamp the first-open packet. No Parallel. No Imagen."""
+    """Stamp the first-open Hormuz decade packet. No Parallel. No Imagen."""
     packet = build_seed_packet()
     store.replace_packets([packet])
     return packet

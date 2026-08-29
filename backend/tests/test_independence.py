@@ -3,7 +3,7 @@ import pytest
 from onecrew.floor import FLOOR_HTML
 from onecrew.models import MISSING, Finding
 from onecrew.receipt import ReceiptInvalidError, validate_finding
-from onecrew.seed import PPI_URL, seed_first_open
+from onecrew.seed import OPEC_URL, seed_first_open
 
 
 def _grounded(**kwargs) -> Finding:
@@ -46,14 +46,14 @@ def test_independence_missing_stays_missing() -> None:
 
 def test_grounded_house_organ_stays_grounded_and_not_independent() -> None:
     packet = seed_first_open()
-    house = next(f for f in packet.receipt.findings if f.id == "trade-hit")
+    house = next(f for f in packet.receipt.findings if f.id == "hormuz-share")
     assert house.stamp == "grounded"
-    assert house.parallel_url == PPI_URL
+    assert house.parallel_url == OPEC_URL
     assert house.independent == "no"
-    assert house.independent_url == PPI_URL
+    assert house.independent_url == OPEC_URL
     assert house.vested_interest == MISSING
-    ncbi = next(f for f in packet.receipt.findings if f.id == "ranking-hit")
-    assert ncbi.stamp == "grounded"
-    assert ncbi.independent == MISSING
-    assert ncbi.vested_interest == MISSING
+    jcpoa = next(f for f in packet.receipt.findings if f.id == "jcpoa-2018")
+    assert jcpoa.stamp == "grounded"
+    assert jcpoa.independent == MISSING
+    assert jcpoa.vested_interest == MISSING
     assert "not independent" in FLOOR_HTML

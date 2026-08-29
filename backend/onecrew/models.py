@@ -8,12 +8,15 @@ from pydantic import BaseModel, Field
 Stamp = Literal["grounded", "mainstream", "fringe"]
 ParallelStatus = Literal["hit", "miss", "n/a"]
 Independent = Literal["yes", "no", "missing"]
+Depth = Literal["current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980"]
+LinkStamp = Literal["grounded", "missing"]
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
 ShiftStatus = Literal["running", "completed", "failed"]
 
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
+DEPTHS = ("current", "2-3-years", "5-years", "decade", "few-decades", "pre-1980")
 MISSING = "missing"
 
 
@@ -75,6 +78,18 @@ class Finding(BaseModel):
     independent_url: str | None = None
     vested_interest: str | list[str] = MISSING
     vested_interest_url: str | None = None
+    when: str = ""
+
+
+class CausalLink(BaseModel):
+    """This-led-to-that. Grounded only if Parallel sourced the link. Else missing."""
+
+    id: str
+    from_id: str
+    to_id: str
+    claim: str
+    stamp: LinkStamp
+    parallel_url: str | None = None
 
 
 class ShotFrame(BaseModel):
@@ -95,6 +110,7 @@ class Receipt(BaseModel):
     collage: bool = False
     invented_stamp: bool = False
     invented_lean: bool = False
+    causal_links: list[CausalLink] = Field(default_factory=list)
 
     @property
     def parallel_hit(self) -> bool:
@@ -107,6 +123,8 @@ class Receipt(BaseModel):
 
 class Packet(BaseModel):
     id: str
+    topic: str = ""
+    depth: Depth | None = None
     hook: str
     script: str
     status: PacketStatus = "ready"
@@ -124,6 +142,8 @@ class ShiftRecord(BaseModel):
     engine: str
     model: str
     packet_id: str
+    depth: Depth | None = None
+    topic: str = ""
     rails: Rails | None = None
     error: str | None = None
     store_backend: str = "memory"

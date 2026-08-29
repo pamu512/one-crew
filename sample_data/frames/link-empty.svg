@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="Missing causal link">
+  <rect width="640" height="360" fill="#1a1410"/>
+  <rect x="60" y="80" width="180" height="70" rx="8" fill="#241c16" stroke="#3d4a2e"/>
+  <text x="80" y="122" fill="#c8e6a0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">JCPOA 2018</text>
+  <path d="M250 115 H390" stroke="#6a5340" stroke-width="2" stroke-dasharray="8 8"/>
+  <text x="292" y="104" fill="#f0c27a" font-family="ui-monospace, monospace" font-size="12">missing</text>
+  <rect x="400" y="80" width="180" height="70" rx="8" fill="#241c16" stroke="#5a4630"/>
+  <text x="424" y="122" fill="#f0d48a" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">oil panic</text>
+  <text x="60" y="220" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="18">link-empty</text>
+  <text x="60" y="248" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Causal link missing. No invented chain.</text>
+</svg>

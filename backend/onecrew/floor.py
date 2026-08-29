@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# Bedroom-studio floor. No publish control. GET-only surface.
+# Bedroom-studio floor. Topic + required depth. No publish control. GET-only until POST /shift.
 
 FLOOR_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -40,6 +40,7 @@ FLOOR_HTML = """<!DOCTYPE html>
     .stamp.grounded { color: var(--grounded); }
     .stamp.mainstream { color: var(--mainstream); }
     .stamp.fringe { color: var(--fringe); }
+    .stamp.missing { color: var(--hold); }
     .url { font-size: 12px; color: #d8c4a8; word-break: break-all; }
     .note { font-size: 12px; color: var(--muted); }
     .frames { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -47,27 +48,142 @@ FLOOR_HTML = """<!DOCTYPE html>
     .frame img { width: 100%; height: 140px; object-fit: cover; display: block; background: #0c0a08; }
     .frame p { font-size: 12px; color: var(--muted); margin: 8px 10px 10px; }
     .hold { color: var(--hold); }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+    textarea, input[type="password"] {
+      width: 100%; background: #120e0b; color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px; font: inherit;
+    }
+    .depths { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+    .depths label { display: flex; gap: 8px; align-items: center; margin: 0; color: var(--fg); font-size: 13px; }
+    button {
+      background: #2a2118; color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 12px; font: inherit; cursor: pointer;
+    }
+    button:disabled { opacity: .45; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <header>
     <div>
       <div class="brand">One Crew</div>
-      <div class="sub">Researcher + boarder. Floor never posts.</div>
+      <div class="sub">Research is the front door. Floor never posts.</div>
     </div>
     <div class="badges" id="badges"></div>
   </header>
   <main>
     <section class="card">
-      <div class="brand">First-open</div>
-      <p class="script">Seeded packet. GET does not spend Parallel or Imagen. The floor never posts.</p>
+      <div class="brand">Desk</div>
+      <p class="script">Type a topic. Choose one depth. No depth = no run. GET does not spend. The floor never posts.</p>
+      <label for="topic">Topic</label>
+      <textarea id="topic" rows="3" placeholder="Explain what's going on with the Hormuz strait"></textarea>
+      <label>Depth — one only, required</label>
+      <div class="depths" id="depths"></div>
+      <label for="token">Shift token (spend only)</label>
+      <input id="token" type="password" autocomplete="off"/>
+      <button id="research" type="button" disabled>Research timeline</button>
+      <p class="script" id="desk-msg">No depth chosen = no run.</p>
       <p class="script" id="health"></p>
     </section>
-    <section class="card" id="packet">Loading oc-pickle-debt…</section>
+    <section class="card" id="packet">Loading oc-hormuz-decade…</section>
   </main>
   <script>
+    const DEPTHS = [
+      {id:"current", label:"current (past year)"},
+      {id:"2-3-years", label:"2-3 years"},
+      {id:"5-years", label:"5 years"},
+      {id:"decade", label:"decade"},
+      {id:"few-decades", label:"few decades"},
+      {id:"pre-1980", label:"pre-1980 / pre-internet (all the way back)"}
+    ];
+
+    function chosenDepth() {
+      const el = document.querySelector('input[name="depth"]:checked');
+      return el ? el.value : "";
+    }
+
+    function syncDesk() {
+      const depth = chosenDepth();
+      const btn = document.getElementById("research");
+      const live = window.__shiftsOn === true;
+      btn.disabled = !depth || !live;
+      document.getElementById("desk-msg").textContent = !depth
+        ? "No depth chosen = no run."
+        : (live ? "Depth locked. Research spends Parallel only after this." : "Live spend off. Token-gate still on spend.");
+    }
+
+    function renderDepths() {
+      const root = document.getElementById("depths");
+      root.innerHTML = "";
+      DEPTHS.forEach(d => {
+        const lab = document.createElement("label");
+        const inp = document.createElement("input");
+        inp.type = "radio";
+        inp.name = "depth";
+        inp.value = d.id;
+        inp.addEventListener("change", syncDesk);
+        lab.appendChild(inp);
+        lab.appendChild(document.createTextNode(d.label));
+        root.appendChild(lab);
+      });
+    }
+
+    function findingHtml(f) {
+      return `
+        <div class="finding">
+          <div class="stamp ${f.stamp}">${f.stamp} · ${f.parallel_status}${f.when ? " · " + f.when : ""}</div>
+          ${f.independent === "no" ? `<div class="stamp fringe">not independent</div>` : ""}
+          <p>${f.claim}</p>
+          ${f.parallel_url ? `<div class="url">${f.parallel_url}</div>` : ""}
+          <div class="note">${f.note}</div>
+          <div class="note">lean: ${f.lean || "missing"}${f.lean_url ? " · " + f.lean_url : ""}</div>
+          <div class="note">interests: ${Array.isArray(f.interests) ? f.interests.join(", ") : (f.interests || "missing")}${f.interests_url ? " · " + f.interests_url : ""}</div>
+          <div class="note">who_repeats: ${Array.isArray(f.who_repeats) ? f.who_repeats.join(", ") : (f.who_repeats || "missing")}${f.who_repeats_url ? " · " + f.who_repeats_url : ""}</div>
+          <div class="note">independent: ${f.independent || "missing"}${f.independent_url ? " · " + f.independent_url : ""}</div>
+          <div class="note">vested_interest: ${Array.isArray(f.vested_interest) ? f.vested_interest.join(", ") : (f.vested_interest || "missing")}${f.vested_interest_url ? " · " + f.vested_interest_url : ""}</div>
+        </div>`;
+    }
+
+    function linkHtml(l) {
+      return `
+        <div class="finding">
+          <div class="stamp ${l.stamp}">link · ${l.stamp}</div>
+          <p>${l.claim}</p>
+          <div class="note">${l.from_id} → ${l.to_id}</div>
+          ${l.parallel_url ? `<div class="url">${l.parallel_url}</div>` : `<div class="note">causal link missing — not invented</div>`}
+        </div>`;
+    }
+
+    function renderPacket(packet) {
+      const rec = packet.receipt || {};
+      const findings = (rec.findings || []).map(findingHtml).join("");
+      const links = (rec.causal_links || []).map(linkHtml).join("");
+      const frames = (packet.frames || []).map(fr => `
+        <div class="frame">
+          <img src="${fr.image_href}" alt="${fr.shot}"/>
+          <p>${fr.shot}</p>
+        </div>`).join("");
+      document.getElementById("packet").innerHTML = `
+        <div class="brand">${packet.id}</div>
+        <h1 class="hook">${packet.topic || packet.hook}</h1>
+        <p class="script">depth: ${packet.depth || "none"}</p>
+        <p class="script">${packet.script}</p>
+        <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
+        <div class="brand" style="margin:16px 0 8px">Timeline</div>
+        ${findings}
+        <div class="brand" style="margin:16px 0 8px">Causal links</div>
+        ${links || `<p class="note">No Parallel-sourced link. Missing, not invented.</p>`}
+        <div class="brand" style="margin:16px 0 8px">Four shot frames</div>
+        <div class="frames">${frames}</div>
+      `;
+      if (packet.topic && !document.getElementById("topic").value) {
+        document.getElementById("topic").value = packet.topic;
+      }
+    }
+
     async function load() {
+      renderDepths();
       const health = await fetch("/api/health").then(r => r.json());
+      window.__shiftsOn = !!(health.shifts && health.shifts.enabled);
       const badges = document.getElementById("badges");
       badges.innerHTML = "";
       if (!health.shifts.enabled) {
@@ -90,40 +206,35 @@ FLOOR_HTML = """<!DOCTYPE html>
       });
       document.getElementById("health").textContent =
         "model " + health.model + " · store " + health.store + " · floor does not post";
+      syncDesk();
 
       const body = await fetch("/api/packets").then(r => r.json());
       const packet = (body.packets || [])[0];
-      const root = document.getElementById("packet");
-      if (!packet) { root.textContent = "No packet."; return; }
-      const rec = packet.receipt || {};
-      const findings = (rec.findings || []).map(f => `
-        <div class="finding">
-          <div class="stamp ${f.stamp}">${f.stamp} · ${f.parallel_status}</div>
-          ${f.independent === "no" ? `<div class="stamp fringe">not independent</div>` : ""}
-          <p>${f.claim}</p>
-          ${f.parallel_url ? `<div class="url">${f.parallel_url}</div>` : ""}
-          <div class="note">${f.note}</div>
-          <div class="note">lean: ${f.lean || "missing"}${f.lean_url ? " · " + f.lean_url : ""}</div>
-          <div class="note">interests: ${Array.isArray(f.interests) ? f.interests.join(", ") : (f.interests || "missing")}${f.interests_url ? " · " + f.interests_url : ""}</div>
-          <div class="note">who_repeats: ${Array.isArray(f.who_repeats) ? f.who_repeats.join(", ") : (f.who_repeats || "missing")}${f.who_repeats_url ? " · " + f.who_repeats_url : ""}</div>
-          <div class="note">independent: ${f.independent || "missing"}${f.independent_url ? " · " + f.independent_url : ""}</div>
-          <div class="note">vested_interest: ${Array.isArray(f.vested_interest) ? f.vested_interest.join(", ") : (f.vested_interest || "missing")}${f.vested_interest_url ? " · " + f.vested_interest_url : ""}</div>
-        </div>`).join("");
-      const frames = (packet.frames || []).map(fr => `
-        <div class="frame">
-          <img src="${fr.image_href}" alt="${fr.shot}"/>
-          <p>${fr.shot}</p>
-        </div>`).join("");
-      root.innerHTML = `
-        <div class="brand">${packet.id}</div>
-        <h1 class="hook">${packet.hook}</h1>
-        <p class="script">${packet.script}</p>
-        <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
-        ${findings}
-        <div class="brand" style="margin:16px 0 8px">Four shot frames</div>
-        <div class="frames">${frames}</div>
-      `;
+      if (!packet) { document.getElementById("packet").textContent = "No packet."; return; }
+      renderPacket(packet);
     }
+
+    document.getElementById("research").addEventListener("click", async () => {
+      const depth = chosenDepth();
+      if (!depth) {
+        document.getElementById("desk-msg").textContent = "No depth chosen = no run.";
+        return;
+      }
+      const topic = document.getElementById("topic").value.trim();
+      const token = document.getElementById("token").value.trim();
+      const res = await fetch("/api/shifts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? {"X-Shift-Token": token} : {})
+        },
+        body: JSON.stringify({topic, depth, board: false, goal: topic || "Research the topic. Do not post."})
+      });
+      const text = await res.text();
+      document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);
+      if (res.ok) load();
+    });
+
     load().catch(err => {
       document.getElementById("packet").textContent = "API unreachable. python -m onecrew";
       console.error(err);

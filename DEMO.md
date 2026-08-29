@@ -4,21 +4,23 @@ Record unedited. Show the receipt. Do not post.
 
 ## 0:00–0:40 · Problem
 
-Talk over the floor with `oc-pickle-debt` already open.
+Talk over the floor with `oc-hormuz-decade` already open.
 
-> Bedroom creators paste a hook and then invent sources. One Crew stamps a write-once receipt. Grounded needs a Parallel URL. Mainstream is not a source. Fringe is tagged and never sold as fact.
+> Bedroom creators type a topic. The desk asks depth before any spend. One Crew writes a timeline once. Causal links are grounded only if Parallel sourced them. Otherwise the link is missing.
 
 ## 0:40–1:20 · Receipt
 
-1. Point at **grounded** ranking hit — Parallel URL on the row. independent / vested_interest are `missing`.
-2. Point at **trade-hit** — still grounded, and the floor says **not independent**.
-3. Point at **mainstream** 3am-kitchen — lean / interests / who_repeats are `missing`. Then **industry-recovery** — those fields present, Parallel URL on each, lean is not the stamp.
-4. Point at **fringe** NASA miss — Parallel miss, never sold as fact.
-5. Same receipt: a hit **and** a miss.
+1. Point at **depth = decade**. No radio is pre-selected on a new run. No depth = no run.
+2. Point at **grounded** jcpoa-2018 — Parallel URL on the row. independent is `missing`.
+3. Point at **hormuz-share** — still grounded, and the floor says **not independent**.
+4. Point at **mainstream** oil-panic — lean / interests are `missing`. Then **producer-frame** — those fields present, Parallel URL on each, lean is not the stamp.
+5. Point at **fringe** secret-closure — Parallel miss, never sold as fact.
+6. Point at the **causal link** jcpoa-to-houthi — stamp `missing`. Not invented.
+7. Same receipt: a hit **and** a miss.
 
 ## 1:20–2:10 · Board + floor
 
-1. Four shot frames. Real setups, not a mood dump.
+1. Four shot frames. Real setups, not a mood dump. Boards come after the receipt.
 2. There is no publish button. The floor never posts.
 3. Rail badges: Parallel / Vertex / Imagen missing on a local box. **live spend off**.
 
@@ -27,21 +29,22 @@ Talk over the floor with `oc-pickle-debt` already open.
 ```bash
 PYTHONPATH=backend pytest backend/tests -q
 curl -s http://127.0.0.1:43158/api/health
-curl -s -X POST http://127.0.0.1:43158/api/shifts -d '{}'
+curl -s -X POST http://127.0.0.1:43158/api/shifts -d '{"topic":"Hormuz"}'
 ```
 
-GET never spends. POST without `X-Shift-Token` is 403. If Parallel, Vertex, or Imagen is down: HOLD. No invented source.
+GET never spends. POST without `X-Shift-Token` is 403. POST with token and no depth is 400. If Parallel, Vertex, or Imagen is down: HOLD. pre-1980 still HOLDs if Parallel misses.
 
 ## 2:50–3:00 · Close
 
-Stay on the NASA miss row.
+Stay on the missing causal link.
 
-> Fringe stays tagged. The floor did not post.
+> The link is missing. The floor did not invent a chain. The floor did not post.
 
 Stop.
 
 ## Prep
 
-- [ ] First-open already shows `oc-pickle-debt`
+- [ ] First-open already shows `oc-hormuz-decade`
+- [ ] Depth picker has no default
 - [ ] No publish control on screen
 - [ ] Tests green

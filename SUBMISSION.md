@@ -8,26 +8,28 @@ One Crew
 
 ## Tagline
 
-Overnight researcher and board artist. Parallel receipts. Imagen shots. The floor never posts.
+Overnight researcher and board artist. Parallel timelines. Imagen shots. The floor never posts.
 
 ## Text description
 
-One Crew is for a bedroom YouTube / TikTok creator who pastes a short hook. The researcher calls the official Parallel Web Python SDK and writes a receipt once. Each finding is stamped exactly one of grounded (Parallel URL on the row), mainstream (widely repeated, may be bias, not a source), or fringe (included and tagged, never sold as fact). The same receipt must show a Parallel hit and a Parallel miss.
+One Crew is for a bedroom YouTube / TikTok creator who types a topic. The desk asks depth before any Parallel or Imagen spend — current, 2-3 years, 5 years, decade, few decades, or pre-1980. No depth chosen = no run. The researcher calls the official Parallel Web Python SDK and writes a timeline once. Each event is a row. Causal links are their own stamps: grounded only if Parallel sourced the link; otherwise the link is missing. Do not invent a 40-year chain.
 
-The boarder makes four real Imagen frames from the script plus those Parallel refs — not a mood dump. If Parallel, Vertex, or Imagen is down, the packet HOLDs. No invented source, no collage, no invented stamp.
+Each event is stamped exactly one of grounded (Parallel URL on the row), mainstream (widely repeated, may be bias, not a source), or fringe (included and tagged, never sold as fact). The same receipt must show a Parallel hit and a Parallel miss. Boards come after the receipt if the creator wants frames. If Parallel, Vertex, or Imagen is down — or pre-1980 misses — the packet HOLDs. No invented source, no collage, no invented stamp, no invented chain.
 
-GET is seeded (`oc-pickle-debt`) and never spends Parallel or Imagen. POST that spends is 403 unless `X-Shift-Token` matches `SHIFT_TOKEN`. The floor has no publish control.
+GET is seeded (`oc-hormuz-decade`) and never spends Parallel or Imagen. POST that spends is 403 unless `X-Shift-Token` matches `SHIFT_TOKEN`. Depth is required on that POST. The floor has no publish control.
 
 ## Features and functionality
 
-- Write-once Parallel receipt
+- Topic front door + required depth picker (no default)
+- Write-once Parallel timeline
+- Causal links: grounded only if Parallel sourced; else missing
 - Stamps: grounded / mainstream / fringe
 - Mainstream lean / interests / who_repeats: Parallel-sourced or missing
 - Cited sources: independent yes/no/missing and vested_interest, Parallel-sourced or missing
 - Hit and miss on the same receipt
-- Four shot frames from script + Parallel refs
-- Fail-closed HOLD when rails are down
-- GET never spends; POST spend is token-gated
+- Four shot frames from script + Parallel refs, after the receipt
+- Fail-closed HOLD when rails are down or pre-1980 misses
+- GET never spends; POST spend is token-gated and depth-gated
 - Floor never posts
 - Gemini ADK crew on Vertex 3.5 Flash
 
@@ -43,7 +45,7 @@ GET is seeded (`oc-pickle-debt`) and never spends Parallel or Imagen. POST that 
 
 ## Other data sources used
 
-Seeded first-open packet `oc-pickle-debt` in `sample_data/packet.json`. No creator accounts. No secrets.
+Seeded first-open packet `oc-hormuz-decade` in `sample_data/packet.json`. No creator accounts. No secrets.
 
 ## Google SDK used
 

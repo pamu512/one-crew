@@ -63,7 +63,7 @@ def findings_from_parallel_rows(
         return []
     return [
         Finding(
-            id="ranking-hit",
+            id="timeline-hit",
             claim=hit_claim,
             stamp="grounded",
             parallel_url=hit_url,
@@ -76,7 +76,7 @@ def findings_from_parallel_rows(
             vested_interest=MISSING,
         ),
         Finding(
-            id="3am-kitchen",
+            id="timeline-frame",
             claim=mainstream_claim,
             stamp="mainstream",
             parallel_url=None,
@@ -89,7 +89,7 @@ def findings_from_parallel_rows(
             vested_interest=MISSING,
         ),
         Finding(
-            id="nasa-miss",
+            id="timeline-miss",
             claim=miss_claim,
             stamp="fringe",
             parallel_url=None,
@@ -107,31 +107,31 @@ def findings_from_parallel_rows(
 def frames_from_script(packet: Packet, refs: list[str]) -> list[ShotFrame]:
     return [
         ShotFrame(
-            id="jar-pour",
-            shot="Close-up: refrigerator pickle jar, brine pouring into a shot glass.",
+            id="tanker-lane",
+            shot="Tanker in a narrow lane, land on both sides. Not a mood dump.",
             source_refs=refs,
-            image_href="/api/frames/jar-pour",
+            image_href="/api/frames/tanker-lane",
             imagen=True,
         ),
         ShotFrame(
-            id="kitchen-3am",
-            shot="Single overhead bulb, kitchen sink, 3:07 on the microwave.",
-            source_refs=[],
-            image_href="/api/frames/kitchen-3am",
-            imagen=True,
-        ),
-        ShotFrame(
-            id="ranking-phone",
-            shot="Phone in hand showing the Parallel ranking URL. Not a stock collage.",
+            id="strait-map",
+            shot="Chart table with a strait map and a 2018 date chip.",
             source_refs=refs,
-            image_href="/api/frames/ranking-phone",
+            image_href="/api/frames/strait-map",
             imagen=True,
         ),
         ShotFrame(
-            id="nasa-empty",
-            shot="Search board: NASA pickle juice — no hit. Empty results, not a NASA seal.",
+            id="oil-share",
+            shot="Phone showing the Parallel oil-share URL. Not a collage.",
+            source_refs=refs,
+            image_href="/api/frames/oil-share",
+            imagen=True,
+        ),
+        ShotFrame(
+            id="link-empty",
+            shot="Timeline board: causal link missing. No invented chain.",
             source_refs=[],
-            image_href="/api/frames/nasa-empty",
+            image_href="/api/frames/link-empty",
             imagen=True,
         ),
     ]

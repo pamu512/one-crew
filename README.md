@@ -6,18 +6,18 @@ Overnight researcher and board artist for one-person YouTube / TikTok studios. P
 
 **License:** Apache-2.0
 
-You paste a short hook. The researcher calls the official `parallel-web` Python SDK and writes a receipt **once**. Each finding is stamped exactly one of: **grounded** (Parallel URL on the row), **mainstream** (widely repeated, may be bias, not a source), **fringe** (included and tagged, never sold as fact). Mainstream rows also carry **lean**, **interests**, and **who_repeats** as separate fields — filled only from a Parallel hit, otherwise `missing`. Lean is not the stamp. Widely repeated is not who_repeats. Every cited Parallel URL also stamps **independent** (`yes` / `no` / `missing`) and **vested_interest** — Parallel-sourced ownership only. A grounded house organ stays grounded and shows **not independent** on the floor. The same receipt must show a Parallel **hit** and a Parallel **miss**. The boarder then makes four real Imagen shots from the script plus those Parallel refs — not a mood dump. If Parallel, Vertex, or Imagen is down: **HOLD**. No invented source, no collage, no invented stamp, no invented lean.
+You type a topic. The desk asks **depth** before any Parallel or Imagen spend — one of current / 2-3 years / 5 years / decade / few decades / pre-1980. No depth chosen = no run. The researcher then writes a receipt **once**: a timeline of events inside that window. Causal links are their own stamps — **grounded** only if Parallel sourced the link, otherwise **missing**. Do not invent a 40-year chain. Each event row is stamped exactly one of: **grounded** (Parallel URL on the row), **mainstream** (widely repeated, may be bias, not a source), **fringe** (included and tagged, never sold as fact). Mainstream rows also carry **lean**, **interests**, and **who_repeats** as separate fields — filled only from a Parallel hit, otherwise `missing`. Lean is not the stamp. Every cited Parallel URL also stamps **independent** (`yes` / `no` / `missing`) and **vested_interest** — Parallel-sourced ownership only. A grounded house organ stays grounded and shows **not independent** on the floor. The same receipt must show a Parallel **hit** and a Parallel **miss**. Boards come after the receipt if the creator wants frames. If Parallel, Vertex, or Imagen is down — or pre-1980 misses: **HOLD**. No invented source, collage, stamp, lean, or causal chain.
 
 ![Architecture](docs/architecture.svg)
 
 ## Who it's for
 
-A bedroom creator who needs receipts before they cut. Sample first-open packet: **oc-pickle-debt**.
+A bedroom creator who needs receipts before they cut. Sample first-open packet: **oc-hormuz-decade**.
 
 ## How it works
 
-1. First-open is the seeded `oc-pickle-debt` packet (grounded ranking hit, mainstream 3am-kitchen, fringe NASA miss, four shot frames). GET never calls Parallel or Imagen.
-2. A live shift is `POST /api/shifts` and requires `SHIFT_TOKEN` + `X-Shift-Token`. Unset token → 403.
+1. First-open is the seeded `oc-hormuz-decade` packet (Hormuz topic, depth=decade, grounded cause, mainstream lean present or missing honestly, fringe tagged, not-independent source, missing causal link, four shot frames). GET never calls Parallel or Imagen.
+2. A live shift is `POST /api/shifts` and requires `SHIFT_TOKEN` + `X-Shift-Token` **and** a depth. Unset token → 403. No depth → 400. No spend.
 3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**.
 4. Write-once receipt. Second stamp is an error.
 5. Missing Parallel, Vertex, or Imagen → fail-closed HOLD.
@@ -38,7 +38,7 @@ pip install -r backend/requirements.txt
 PYTHONPATH=backend python -m onecrew
 ```
 
-Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the receipt on `oc-pickle-debt`. The floor has no publish button.
+Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the Hormuz decade timeline. The floor has no publish button.
 
 ```bash
 PYTHONPATH=backend python -m onecrew &
@@ -50,7 +50,7 @@ curl -s http://127.0.0.1:43158/api/packets | python -m json.tool | head
 # curl -s -X POST http://127.0.0.1:43158/api/shifts \
 #   -H 'content-type: application/json' \
 #   -H "X-Shift-Token: $SHIFT_TOKEN" \
-#   -d '{"goal":"Research the hook. Do not post."}'
+#   -d '{"topic":"Explain what is going on with the Hormuz strait","depth":"decade"}'
 ```
 
 ### Tests
@@ -60,7 +60,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-31 tests lock write-once receipts, stamps, hit+miss, GET-never-spends, POST 403, HOLD, and the seed packet.
+Tests lock write-once receipts, depth-before-spend, causal links, stamps, hit+miss, GET-never-spends, POST 403, HOLD, and the Hormuz seed.
 
 ### ADK web (optional)
 
@@ -118,10 +118,10 @@ Leave `SHIFT_TOKEN` unset on the public service so `POST /api/shifts` is 403. Th
 ## Repository map
 
 ```
-sample_data/packet.json    first-open oc-pickle-debt
+sample_data/packet.json    first-open oc-hormuz-decade
 sample_data/frames/        four seeded shot boards
 backend/onecrew/           FastAPI + ADK crew + receipt lock
-backend/tests/             31 locks
+backend/tests/             locks
 docs/architecture.svg
 docs/architecture.png
 DEMO.md

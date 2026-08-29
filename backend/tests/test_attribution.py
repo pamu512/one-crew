@@ -2,7 +2,7 @@ import pytest
 
 from onecrew.models import MISSING, Finding
 from onecrew.receipt import ReceiptInvalidError, validate_finding
-from onecrew.seed import PPI_URL, seed_first_open
+from onecrew.seed import OPEC_URL, seed_first_open
 
 
 def _mainstream(**kwargs) -> Finding:
@@ -60,8 +60,8 @@ def test_missing_stays_missing() -> None:
 
 def test_seeded_mainstream_present_and_missing_attribution() -> None:
     packet = seed_first_open()
-    missing = next(f for f in packet.receipt.findings if f.id == "3am-kitchen")
-    present = next(f for f in packet.receipt.findings if f.id == "industry-recovery")
+    missing = next(f for f in packet.receipt.findings if f.id == "oil-panic")
+    present = next(f for f in packet.receipt.findings if f.id == "producer-frame")
     assert missing.stamp == "mainstream"
     assert missing.lean == MISSING
     assert missing.interests == MISSING
@@ -69,11 +69,11 @@ def test_seeded_mainstream_present_and_missing_attribution() -> None:
     assert present.stamp == "mainstream"
     assert present.lean == "industry"
     assert present.lean != present.stamp
-    assert present.lean_url == PPI_URL
-    assert present.interests == ["Pickle Packers International"]
-    assert present.interests_url == PPI_URL
-    assert present.who_repeats == ["Pickle Packers International"]
-    assert present.who_repeats_url == PPI_URL
+    assert present.lean_url == OPEC_URL
+    assert present.interests == ["OPEC"]
+    assert present.interests_url == OPEC_URL
+    assert present.who_repeats == ["OPEC"]
+    assert present.who_repeats_url == OPEC_URL
     fringe = next(f for f in packet.receipt.findings if f.stamp == "fringe")
     assert fringe.stamp != "grounded"
     assert "never sold as fact" in fringe.note.lower()

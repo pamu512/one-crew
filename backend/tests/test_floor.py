@@ -14,7 +14,10 @@ def test_floor_html_has_no_publish_button() -> None:
         page = client.get("/")
         assert page.status_code == 200
         assert "publish" not in page.text.lower()
-        assert "oc-pickle-debt" in page.text or "pickle" in page.text.lower()
+        assert "oc-hormuz-decade" in page.text or "hormuz" in page.text.lower()
+        assert "No depth chosen = no run" in page.text
+        assert "checked=" not in FLOOR_HTML
+        assert "checked>" not in FLOOR_HTML
 
 
 def test_no_publish_route() -> None:

@@ -1,6 +1,16 @@
 from __future__ import annotations
 
-from onecrew.models import INDEPENDENT, MISSING, STAMPS, Finding, Packet, Rails, Receipt, ShotFrame
+from onecrew.models import (
+    INDEPENDENT,
+    MISSING,
+    STAMPS,
+    CausalLink,
+    Finding,
+    Packet,
+    Rails,
+    Receipt,
+    ShotFrame,
+)
 
 GROUNDED = "grounded"
 MAINSTREAM = "mainstream"
@@ -60,6 +70,18 @@ def validate_source_stake(finding: Finding) -> None:
     _validate_attr("vested_interest", finding.vested_interest, finding.vested_interest_url)
 
 
+def validate_causal_link(link: CausalLink) -> None:
+    """A causal link without a Parallel hit cannot be grounded. Do not invent a chain."""
+    if link.stamp == GROUNDED:
+        if not _url_ok(link.parallel_url):
+            raise ReceiptInvalidError("causal link without a Parallel hit cannot be grounded")
+        return
+    if link.stamp != MISSING:
+        raise ReceiptInvalidError("causal link stamp is grounded or missing")
+    if link.parallel_url:
+        raise ReceiptInvalidError("missing causal link cannot carry a Parallel URL")
+
+
 def validate_finding(finding: Finding) -> None:
     if finding.stamp not in STAMPS:
         raise ReceiptInvalidError(f"stamp must be exactly one of {sorted(STAMPS)}")
@@ -82,6 +104,8 @@ def validate_ready_receipt(receipt: Receipt) -> None:
         raise ReceiptInvalidError("READY receipt needs findings")
     for finding in receipt.findings:
         validate_finding(finding)
+    for link in receipt.causal_links:
+        validate_causal_link(link)
     if not receipt.parallel_hit or not receipt.parallel_miss:
         raise ReceiptInvalidError("same receipt MUST show a Parallel hit AND a Parallel miss")
     if receipt.invented_source or receipt.collage or receipt.invented_stamp or receipt.invented_lean:
@@ -104,6 +128,7 @@ def hold_receipt(packet_id: str, rails: Rails) -> Receipt:
         collage=False,
         invented_stamp=False,
         invented_lean=False,
+        causal_links=[],
     )
 
 
@@ -116,6 +141,8 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
     elif receipt.disposition == "HOLD":
         if receipt.findings:
             raise ReceiptInvalidError("HOLD must not invent stamps")
+        if receipt.causal_links:
+            raise ReceiptInvalidError("HOLD must not invent a causal chain")
         if receipt.invented_source or receipt.collage or receipt.invented_stamp or receipt.invented_lean:
             raise ReceiptInvalidError("HOLD forbids invented source, collage, stamp, or lean")
     else:

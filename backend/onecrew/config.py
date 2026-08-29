@@ -21,7 +21,7 @@ IMAGEN_MODEL = os.getenv("IMAGEN_MODEL", "imagen-3.0-generate-001")
 HOST = os.getenv("ONECREW_HOST", "0.0.0.0")
 PORT = int(os.getenv("ONECREW_PORT", "43158"))
 
-SEED_PACKET_ID = "oc-pickle-debt"
+SEED_PACKET_ID = "oc-hormuz-decade"
 
 
 def google_cloud_project() -> str:

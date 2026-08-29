@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from onecrew import config
+from onecrew.depth import DepthRequiredError, depths_payload, require_depth
 from onecrew.floor import FLOOR_HTML
 from onecrew.rails import assess_rails
 from onecrew.seed import ensure_seeded, reset_floor
@@ -20,10 +21,10 @@ from onecrew.store import store
 log = logging.getLogger("onecrew.api")
 
 FRAME_FILES = {
-    "jar-pour": "jar-pour.svg",
-    "kitchen-3am": "kitchen-3am.svg",
-    "ranking-phone": "ranking-phone.svg",
-    "nasa-empty": "nasa-empty.svg",
+    "tanker-lane": "tanker-lane.svg",
+    "strait-map": "strait-map.svg",
+    "oil-share": "oil-share.svg",
+    "link-empty": "link-empty.svg",
 }
 
 
@@ -31,7 +32,7 @@ FRAME_FILES = {
 async def lifespan(_app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     ensure_seeded()
-    log.info("Seeded oc-pickle-debt (no Parallel, no Imagen)")
+    log.info("Seeded oc-hormuz-decade (no Parallel, no Imagen)")
     yield
 
 
@@ -55,10 +56,13 @@ def require_shift_token(x_shift_token: str | None = Header(default=None)) -> Non
 
 
 class ShiftRequest(BaseModel):
+    topic: str = Field(default="")
+    depth: str | None = Field(default=None)
     goal: str = Field(
-        default="Research the hook. Stamp grounded / mainstream / fringe. Board four shots. Do not post."
+        default="Research the topic inside the chosen depth. Write a timeline. Do not post."
     )
     packet_id: str = Field(default=config.SEED_PACKET_ID)
+    board: bool = False
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -90,7 +94,13 @@ def health() -> dict[str, Any]:
             "imagen_calls": ledger.imagen_calls,
         },
         "posts": False,
+        "depths": depths_payload(),
     }
+
+
+@app.get("/api/depths")
+def list_depths() -> dict[str, Any]:
+    return {"depths": depths_payload(), "default": None}
 
 
 @app.get("/api/packets")
@@ -132,10 +142,15 @@ async def start_shift(
     x_shift_token: str | None = Header(default=None),
 ) -> dict[str, Any]:
     require_shift_token(x_shift_token)
+    try:
+        depth = require_depth(body.depth)
+    except DepthRequiredError as exc:
+        raise HTTPException(400, str(exc)) from exc
     from onecrew.agent.shift import open_shift, run_shift
 
-    shift = open_shift(body.goal, packet_id=body.packet_id)
-    await run_shift(body.goal, packet_id=body.packet_id, shift=shift)
+    topic = (body.topic or body.goal).strip()
+    shift = open_shift(body.goal, packet_id=body.packet_id, depth=depth, topic=topic)
+    await run_shift(body.goal, packet_id=body.packet_id, shift=shift, board=body.board)
     return shift.model_dump()
 
 

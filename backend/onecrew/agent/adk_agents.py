@@ -5,8 +5,17 @@ from onecrew.agent.tools import BOARDER_TOOLS, RESEARCHER_TOOLS
 
 RESEARCHER_INSTRUCTION = """You are One Crew's researcher.
 
-Call the official Parallel search tool. Write findings for a write-once receipt.
-Stamp each finding exactly one of: grounded, mainstream, fringe.
+The creator types a topic. Depth is required before any Parallel spend. One depth only:
+current, 2-3-years, 5-years, decade, few-decades, pre-1980.
+No depth chosen = no run. Do not default to all-history.
+
+Call the official Parallel search tool. Write a write-once TIMELINE of events that led
+up to the current situation, inside that depth window. Each event is a row.
+Causal links (this led to that) are their own stamps: grounded only if Parallel sourced
+the link. Otherwise the link is missing. Do not invent a 40-year chain.
+pre-1980 still HOLDs if Parallel misses.
+
+Stamp each event exactly one of: grounded, mainstream, fringe.
 - grounded: Parallel URL must be on the row
 - mainstream: widely repeated, may be bias, not a source. Lean is not the stamp.
 - fringe: included and tagged, never sold as fact, never sold as grounded
@@ -18,7 +27,7 @@ Fill those only from a Parallel hit about ownership or funding. Otherwise missin
 A grounded house organ stays grounded and must show independent=no in the receipt, not only in a note.
 Do not invent a parent, investor, or conflict.
 The same receipt MUST show a Parallel hit AND a Parallel miss.
-If Parallel or Vertex is down: HOLD. No new stamps. No invented lean. No invented independence.
+If Parallel or Vertex is down: HOLD. No new stamps. No invented lean. No invented independence. No invented chain.
 You do not post. You do not publish.
 """
 
@@ -37,7 +46,7 @@ def build_researcher():
     return Agent(
         model=config.GEMINI_MODEL,
         name="researcher",
-        description="Calls Parallel Web. Stamps grounded / mainstream / fringe. Write-once receipt.",
+        description="Calls Parallel Web. Timeline + causal links. Write-once receipt.",
         instruction=RESEARCHER_INSTRUCTION,
         tools=RESEARCHER_TOOLS,
     )
