@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="NASA miss shot">
+  <rect width="640" height="360" fill="#16110d"/>
+  <rect x="80" y="80" width="480" height="180" rx="8" fill="#1e1712" stroke="#e8b4a0"/>
+  <text x="100" y="120" fill="#e8b4a0" font-family="ui-monospace, monospace" font-size="12">FRINGE · MISS</text>
+  <text x="100" y="160" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">NASA pickle juice  no hit</text>
+  <text x="100" y="190" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Empty results. Not a NASA seal. Never sold as fact.</text>
+  <text x="80" y="300" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">nasa-empty</text>
+</svg>

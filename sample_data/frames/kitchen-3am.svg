@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="3am kitchen shot">
+  <rect width="640" height="360" fill="#100c09"/>
+  <circle cx="320" cy="70" r="36" fill="#f0d48a" fill-opacity="0.85"/>
+  <rect x="80" y="220" width="480" height="80" fill="#2a2118"/>
+  <rect x="480" y="40" width="90" height="40" rx="4" fill="#1a1410" stroke="#6a5340"/>
+  <text x="492" y="66" fill="#f0d48a" font-family="ui-monospace, monospace" font-size="18">3:07</text>
+  <text x="40" y="40" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">kitchen-3am</text>
+  <text x="40" y="340" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">Single bulb over the sink. Microwave clock.</text>
+</svg>
