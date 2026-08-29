@@ -4,6 +4,7 @@ import re
 
 from onecrew.cut import event_cap, is_long_cut, require_cut, scene_seconds
 from onecrew.models import Finding, Packet, ScriptBeat
+from onecrew.picks import require_tell_pairing
 
 
 def _cite(finding_id: str) -> str:
@@ -324,6 +325,8 @@ def write_script(packet: Packet) -> Packet:
         return packet
     lean = packet.script_lean or "centered_independent"
     cut = require_cut(packet.cut) if packet.cut else None
+    if cut:
+        require_tell_pairing(cut, packet.genre or "nonfiction")
     rows = list(receipt.findings)
     if cut:
         rows = rows[: event_cap(cut, packet.platform)]

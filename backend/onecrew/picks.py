@@ -3,7 +3,9 @@ from __future__ import annotations
 from onecrew.cut import CutRequiredError, require_cut
 from onecrew.depth import DepthRequiredError, require_depth
 from onecrew.models import (
+    FEATURE_CUTS,
     GENRES,
+    NONFICTION_CUTS,
     PLATFORMS,
     SCRIPT_LEANS,
     VANTAGES,
@@ -36,6 +38,10 @@ class VantageRequiredError(ValueError):
     """No vantage chosen = no run."""
 
 
+class TellPairingError(ValueError):
+    """Illegal cut + genre pair = no run."""
+
+
 PickError = (
     TopicRequiredError,
     PlatformRequiredError,
@@ -44,6 +50,7 @@ PickError = (
     ScriptLeanRequiredError,
     GenreRequiredError,
     VantageRequiredError,
+    TellPairingError,
 )
 
 
@@ -82,6 +89,20 @@ def require_vantage(raw: str | None) -> Vantage:
     return chosen  # type: ignore[return-value]
 
 
+def require_tell_pairing(cut: Cut, genre: Genre) -> None:
+    """Documentary/news cuts are nonfiction. Feature film is fiction. Fail closed."""
+    if cut in NONFICTION_CUTS and genre != "nonfiction":
+        raise TellPairingError(
+            "A thriller documentary is rejected. "
+            "full_length_documentary and weekly_update require genre=nonfiction"
+        )
+    if cut in FEATURE_CUTS and genre == "nonfiction":
+        raise TellPairingError(
+            "A nonfiction feature is rejected; that is a documentary. "
+            "Use full_length_documentary. feature_film requires a fiction genre"
+        )
+
+
 def require_picks(
     topic: str | None,
     platform: str | None,
@@ -92,14 +113,22 @@ def require_picks(
     vantage: str | None,
 ) -> tuple[str, Platform, Cut, Depth, ScriptLean, Genre, Vantage]:
     """Order: topic, platform, length, depth, script lean, tell. Any missing pick = no run."""
+    chosen_topic = require_topic(topic)
+    chosen_platform = require_platform(platform)
+    chosen_cut = require_cut(cut)
+    chosen_depth = require_depth(depth)
+    chosen_lean = require_script_lean(script_lean)
+    chosen_genre = require_genre(genre)
+    chosen_vantage = require_vantage(vantage)
+    require_tell_pairing(chosen_cut, chosen_genre)
     return (
-        require_topic(topic),
-        require_platform(platform),
-        require_cut(cut),
-        require_depth(depth),
-        require_script_lean(script_lean),
-        require_genre(genre),
-        require_vantage(vantage),
+        chosen_topic,
+        chosen_platform,
+        chosen_cut,
+        chosen_depth,
+        chosen_lean,
+        chosen_genre,
+        chosen_vantage,
     )
 
 

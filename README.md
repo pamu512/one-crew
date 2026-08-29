@@ -14,14 +14,14 @@ Required picks, in this order, before any Parallel or Imagen spend. No defaults.
 
 1. **Topic** (free text, required, no default) — e.g. "Explain what's going on with the Hormuz strait". Empty or whitespace = no run.
 2. **Platform** (TikTok, YouTube, Instagram / Meta, podcast — no free-text, no default) — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
-3. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`
+3. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary` | `feature_film`
 4. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
 5. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
-6. **Tell** (two required fields, no free-text genre) — genre: `nonfiction` | `horror` | `war` | `historical` | `musical` | `drama` | `thriller` · vantage: `global_overview` | `one_family` | `one_ship`. `nonfiction` is the straight research read. Empty genre or vantage = no run. The script may invent only the frame (names, rooms, a radio, a captain) and must label it `(frame)`. Receipt stamps stay non-fiction.
+6. **Tell** (two required fields, no free-text genre) — genre: `nonfiction` | `horror` | `war` | `historical` | `musical` | `drama` | `thriller` · vantage: `global_overview` | `one_family` | `one_ship`. `nonfiction` is documentaries and news: host/reporter VO from the receipt, no invented family/ship/crew. Fiction genres are feature films: frame invention is allowed only there and must be labeled `(frame)`. Facts still cite receipt rows. Invented plot is never grounded. Empty genre or vantage = no run. Pairing fail-closed (400, no spend): `full_length_documentary` and `weekly_update` require `nonfiction`; `feature_film` requires a fiction genre. TikTok-length / shorts / one_time_short_episode may be either. On nonfiction, vantage organizes the news/doc around receipt subjects — do not invent a mother in Bandar Abbas if Parallel did not name her.
 
 Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
 
-The floor writes a **timed VO** in the requested lean, sized to that surface + length, with beats, timecodes, and citations pointing at those rows. Lean changes the spoken wording, not the stamps. Then a **shot list** is cut from that VO: one shot per beat/scene. TikTok / Shorts generate every beat. Episode / documentary generate one Imagen key frame per scene — never 400 images (cap is the event cap, max 40 on a YouTube documentary). The full shot list still shows. A Stories board is not a documentary board. A Reels board is not a YouTube long-form board. If Imagen or Vertex is down, the shot list stays and images stay missing — they are not invented. Boards are not optional.
+The floor writes a **timed VO** in the requested lean, sized to that surface + length, with beats, timecodes, and citations pointing at those rows. Lean changes the spoken wording, not the stamps. Then a **shot list** is cut from that VO: one shot per beat/scene. TikTok / Shorts generate every beat. Episode / documentary / feature generate one Imagen key frame per scene — never 400 images (cap is the event cap, max 40 on a YouTube documentary or feature). The full shot list still shows. A Stories board is not a documentary board. A Reels board is not a YouTube long-form board. If Imagen or Vertex is down, the shot list stays and images stay missing — they are not invented. Boards are not optional.
 
 Requested script lean does **not** restamp sources. Unhinged / fringe voice still cannot invent sources or mark propaganda as grounded. Centered_independent still must show missing when Parallel missed. Do not hide fringe or propaganda to match a centered ask. Do not invent a lobby to match a far-right / far-left ask.
 
@@ -36,7 +36,7 @@ A one-person shop that needs a script with receipts. Sample first-open packet: *
 ## How it works
 
 1. First-open shows the six picks (topic first, tell last), a timed Hormuz VO with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the shot list cut from that VO. GET never calls Parallel or Imagen.
-2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all six picks. Unset token → 403. Empty, whitespace, or omitted topic → 400. Empty genre or vantage → 400. Any missing pick → 400. No spend.
+2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all six picks. Unset token → 403. Empty, whitespace, or omitted topic → 400. Empty genre or vantage → 400. Documentary + fiction genre → 400. Feature + nonfiction → 400. Any missing pick → 400. No spend.
 3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**. Flow is picks → timeline + sources → timed VO → shot list.
 4. Write-once receipt. Script lean cannot change a source stamp.
 5. Missing Parallel — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed. Missing Imagen/Vertex → shot list kept, images missing.
@@ -69,7 +69,7 @@ curl -s http://127.0.0.1:43158/api/packets | python -m json.tool | head
 # curl -s -X POST http://127.0.0.1:43158/api/shifts \
 #   -H 'content-type: application/json' \
 #   -H "X-Shift-Token: $SHIFT_TOKEN" \
-#   -d '{"topic":"Explain what is going on with the Hormuz strait","platform":"youtube","cut":"one_time_short_episode","depth":"decade","script_lean":"centered_independent"}'
+#   -d '{"topic":"Explain what is going on with the Hormuz strait","platform":"youtube","cut":"one_time_short_episode","depth":"decade","script_lean":"centered_independent","genre":"nonfiction","vantage":"global_overview"}'
 ```
 
 ### Tests
@@ -79,7 +79,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Tests lock: no run without all six picks (empty/whitespace/omitted topic or tell is 400 and does not spend); right vs left VO wording differs and stamps stay identical; same receipt can be told as nonfiction/global, drama/one_family, and thriller/one_ship; thriller does not claim a sourced explosion; TikTok VO is short and an episode has running timecodes; every beat cites a finding id; invented frame is labeled `(frame)`; HOLD writes an empty script and does not invent a family.
+Tests lock: no run without all six picks (empty/whitespace/omitted topic or tell is 400 and does not spend); documentary+thriller and feature_film+nonfiction are 400 and do not spend; feature_film+drama+one_family writes a labeled fiction frame on the same stamps; right vs left VO wording differs and stamps stay identical; same receipt can be told as nonfiction/global, drama/one_family, and thriller/one_ship; nonfiction+one_family does not invent a family; thriller does not claim a sourced explosion; TikTok VO is short and an episode has running timecodes; every beat cites a finding id; invented frame is labeled `(frame)`; HOLD writes an empty script and does not invent a family.
 
 ### ADK web (optional)
 

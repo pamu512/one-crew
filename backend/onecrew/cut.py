@@ -11,6 +11,7 @@ EVENT_CAP: dict[Cut, int] = {
     "weekly_update": 6,
     "one_time_short_episode": 8,
     "full_length_documentary": 40,
+    "feature_film": 40,
 }
 # Imagen spend cap = one image per short-form beat, or one key frame per
 # episode/doc scene. Never 400 calls. Actual spend is min(scenes, this cap).
@@ -20,6 +21,7 @@ FRAME_COUNT: dict[Cut, int] = {
     "weekly_update": 6,
     "one_time_short_episode": 8,
     "full_length_documentary": 40,
+    "feature_film": 40,
 }
 
 # Spoken-scene length. Short form is tens of seconds. Episode blocks ~8 min
@@ -31,9 +33,10 @@ SCENE_SECONDS: dict[Cut, int] = {
     "weekly_update": 30,
     "one_time_short_episode": 480,
     "full_length_documentary": 180,
+    "feature_film": 240,
 }
 
-LONG_CUTS = frozenset({"one_time_short_episode", "full_length_documentary"})
+LONG_CUTS = frozenset({"one_time_short_episode", "full_length_documentary", "feature_film"})
 
 # Script + storyboard sized to the Meta/TikTok/YouTube surface.
 PLATFORM_EVENT_CAP: dict[Platform, int] = {

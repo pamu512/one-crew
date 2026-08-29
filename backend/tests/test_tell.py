@@ -1,21 +1,25 @@
 import copy
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 from onecrew.api import app
 from onecrew.board import write_shot_list
 from onecrew.models import MISSING
+from onecrew.picks import TellPairingError, require_picks
 from onecrew.script import write_script
 from onecrew.seed import seed_first_open
 from onecrew.spend import ledger
 
 
-def _from_seed(*, genre: str, vantage: str, lean: str = "centered_independent"):
+def _from_seed(*, genre: str, vantage: str, lean: str = "centered_independent", cut: str | None = None):
     packet = seed_first_open()
     packet.genre = genre
     packet.vantage = vantage
     packet.script_lean = lean
+    if cut:
+        packet.cut = cut
     packet.receipt = copy.deepcopy(packet.receipt)
     write_script(packet)
     packet.frames = write_shot_list(packet)
@@ -26,18 +30,20 @@ def test_same_receipt_three_tells_stamps_identical() -> None:
     nf = _from_seed(genre="nonfiction", vantage="global_overview")
     family = _from_seed(genre="drama", vantage="one_family")
     ship = _from_seed(genre="thriller", vantage="one_ship")
+    feature = _from_seed(genre="drama", vantage="one_family", cut="feature_film")
     stamps = lambda p: [
         (f.id, f.stamp, f.propaganda, f.lean, f.independent)
         for f in p.receipt.findings
     ]
-    assert stamps(nf) == stamps(family) == stamps(ship)
+    assert stamps(nf) == stamps(family) == stamps(ship) == stamps(feature)
     assert {f.id for f in nf.receipt.findings} == {f.id for f in family.receipt.findings}
     assert nf.script != family.script != ship.script
     assert "Leila" in family.script and "Bandar Abbas" in family.script
     assert "(frame)" in family.script and "(frame)" in ship.script
     assert "(frame)" not in nf.script
     assert "Reza" in ship.script or "bridge" in ship.script.lower()
-    for packet in (nf, family, ship):
+    assert "Leila" in feature.script and "(frame)" in feature.script
+    for packet in (nf, family, ship, feature):
         for beat in packet.beats:
             assert beat.finding_ids
             for fid in beat.finding_ids:
@@ -46,6 +52,32 @@ def test_same_receipt_three_tells_stamps_identical() -> None:
         assert "[hormuz-share]" in packet.script
         oil = next(f for f in packet.receipt.findings if f.id == "oil-panic")
         assert oil.lean == MISSING
+
+
+def test_nonfiction_one_family_writes_receipt_only() -> None:
+    packet = _from_seed(genre="nonfiction", vantage="one_family")
+    assert "Leila" not in packet.script
+    assert "(frame)" not in packet.script
+    assert "Bandar Abbas" not in packet.script
+    shots = " ".join(f.shot.lower() for f in packet.frames)
+    assert "kitchen" not in shots or "bandar" not in shots
+
+
+def test_feature_film_drama_one_family_writes_fiction_frame() -> None:
+    packet = _from_seed(genre="drama", vantage="one_family", cut="feature_film")
+    assert packet.cut == "feature_film"
+    assert "Leila" in packet.script
+    assert "(frame)" in packet.script
+    assert "[jcpoa-2018]" in packet.script
+    seed = seed_first_open()
+    assert packet.receipt is not None and seed.receipt is not None
+    assert [
+        (f.id, f.stamp, f.propaganda, f.lean, f.independent)
+        for f in packet.receipt.findings
+    ] == [
+        (f.id, f.stamp, f.propaganda, f.lean, f.independent)
+        for f in seed.receipt.findings
+    ]
 
 
 def test_thriller_does_not_claim_a_sourced_explosion() -> None:
@@ -86,6 +118,103 @@ def test_hold_does_not_invent_a_family(monkeypatch) -> None:
     assert packet.script == ""
     assert packet.beats == []
     assert "Leila" not in packet.script
+
+
+def _shift_body(**overrides):
+    body = {
+        "topic": "Hormuz",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "depth": "decade",
+        "script_lean": "centered_independent",
+        "genre": "nonfiction",
+        "vantage": "global_overview",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_documentary_thriller_is_400_no_spend(monkeypatch) -> None:
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+
+    def boom(*_a, **_k):
+        raise AssertionError("spent on thriller documentary")
+
+    monkeypatch.setattr("onecrew.parallel_client.search", boom)
+    monkeypatch.setattr("onecrew.imagen_client.generate_frames", boom)
+    before_p = ledger.parallel_calls
+    before_i = ledger.imagen_calls
+    with TestClient(app) as client:
+        headers = {"X-Shift-Token": "correct-horse"}
+        doc = client.post(
+            "/api/shifts",
+            json=_shift_body(cut="full_length_documentary", genre="thriller", vantage="global_overview"),
+            headers=headers,
+        )
+        assert doc.status_code == 400
+        assert "thriller documentary" in doc.json()["detail"].lower()
+        weekly = client.post(
+            "/api/shifts",
+            json=_shift_body(cut="weekly_update", genre="drama", vantage="one_family"),
+            headers=headers,
+        )
+        assert weekly.status_code == 400
+    assert ledger.parallel_calls == before_p == 0
+    assert ledger.imagen_calls == before_i == 0
+    with pytest.raises(TellPairingError, match="thriller documentary"):
+        require_picks(
+            "Hormuz",
+            "youtube",
+            "full_length_documentary",
+            "decade",
+            "centered_independent",
+            "thriller",
+            "global_overview",
+        )
+    seed = seed_first_open()
+    seed.cut = "full_length_documentary"
+    seed.genre = "thriller"
+    with pytest.raises(TellPairingError, match="thriller documentary"):
+        write_script(seed)
+
+
+def test_feature_film_nonfiction_is_400_no_spend(monkeypatch) -> None:
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+
+    def boom(*_a, **_k):
+        raise AssertionError("spent on nonfiction feature")
+
+    monkeypatch.setattr("onecrew.parallel_client.search", boom)
+    monkeypatch.setattr("onecrew.imagen_client.generate_frames", boom)
+    before_p = ledger.parallel_calls
+    before_i = ledger.imagen_calls
+    with TestClient(app) as client:
+        rejected = client.post(
+            "/api/shifts",
+            json=_shift_body(cut="feature_film", genre="nonfiction", vantage="global_overview"),
+            headers={"X-Shift-Token": "correct-horse"},
+        )
+        assert rejected.status_code == 400
+        detail = rejected.json()["detail"].lower()
+        assert "nonfiction feature" in detail
+        assert "full_length_documentary" in detail
+    assert ledger.parallel_calls == before_p == 0
+    assert ledger.imagen_calls == before_i == 0
+    with pytest.raises(TellPairingError, match="nonfiction feature"):
+        require_picks(
+            "Hormuz",
+            "youtube",
+            "feature_film",
+            "decade",
+            "centered_independent",
+            "nonfiction",
+            "global_overview",
+        )
+    seed = seed_first_open()
+    seed.cut = "feature_film"
+    seed.genre = "nonfiction"
+    with pytest.raises(TellPairingError, match="nonfiction feature"):
+        write_script(seed)
 
 
 def test_empty_tell_does_not_spend(monkeypatch) -> None:

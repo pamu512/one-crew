@@ -16,6 +16,7 @@ Cut = Literal[
     "weekly_update",
     "one_time_short_episode",
     "full_length_documentary",
+    "feature_film",
 ]
 Platform = Literal[
     "tiktok",
@@ -54,6 +55,7 @@ CUTS = (
     "weekly_update",
     "one_time_short_episode",
     "full_length_documentary",
+    "feature_film",
 )
 PLATFORMS = (
     "tiktok",
@@ -84,6 +86,16 @@ GENRES = (
     "drama",
     "thriller",
 )
+FICTION_GENRES = (
+    "horror",
+    "war",
+    "historical",
+    "musical",
+    "drama",
+    "thriller",
+)
+NONFICTION_CUTS = ("weekly_update", "full_length_documentary")
+FEATURE_CUTS = ("feature_film",)
 VANTAGES = ("global_overview", "one_family", "one_ship")
 MISSING = "missing"
 

@@ -10,7 +10,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 
 ## 0:40–1:20 · Six picks + timed VO
 
-1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview**. Same receipt can be told as drama/one_family or thriller/one_ship. Invented frame only, labeled `(frame)`. Empty topic or tell = no run. Any missing pick = no run.
+1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview**. Seed stays a news short, not a feature. Same receipt can be told as short fiction (drama/one_family or thriller/one_ship) or as a `feature_film` with a fiction genre. Invented frame only on fiction genres, labeled `(frame)`. Documentary + thriller, or feature + nonfiction, is 400. Empty topic or tell = no run. Any missing pick = no run.
 2. Point at the **timed VO** and the **shot list** together — act/scene blocks with running timecodes, citations like `[jcpoa-2018]`. One shot per beat, not a leftover stills collage.
 3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
 4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.

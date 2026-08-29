@@ -114,7 +114,8 @@ FLOOR_HTML = """<!DOCTYPE html>
       {id:"shorts", label:"shorts"},
       {id:"weekly_update", label:"weekly_update"},
       {id:"one_time_short_episode", label:"one_time_short_episode"},
-      {id:"full_length_documentary", label:"full_length_documentary"}
+      {id:"full_length_documentary", label:"full_length_documentary"},
+      {id:"feature_film", label:"feature_film"}
     ];
     const DEPTHS = [
       {id:"1y", label:"1y"},
@@ -171,6 +172,16 @@ FLOOR_HTML = """<!DOCTYPE html>
       if (!lean) { msg.textContent = "No script lean chosen = no run."; return; }
       if (!genre) { msg.textContent = "No genre chosen = no run."; return; }
       if (!vantage) { msg.textContent = "No vantage chosen = no run."; return; }
+      if ((cut === "full_length_documentary" || cut === "weekly_update") && genre !== "nonfiction") {
+        btn.disabled = true;
+        msg.textContent = "A thriller documentary is rejected. Documentary and weekly_update require nonfiction.";
+        return;
+      }
+      if (cut === "feature_film" && genre === "nonfiction") {
+        btn.disabled = true;
+        msg.textContent = "A nonfiction feature is rejected. Use full_length_documentary.";
+        return;
+      }
       msg.textContent = live
         ? "Six picks locked. Research spends Parallel only after this."
         : "Live spend off. Token-gate still on spend.";
