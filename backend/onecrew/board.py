@@ -173,6 +173,12 @@ def persist_generated_image(frame_id: str, result: Any) -> str:
 
 def _shot_kind(line: str) -> str:
     blob = (line or "").lower()
+    # Event tape wins. A gulf map in the background of a 2018 announcement is still the event.
+    if any(
+        key in blob
+        for key in ("announcement", "tanker", "presser", "withdrawal", "podium", "jcpoa")
+    ):
+        return "event"
     if any(key in blob for key in ("troop-movement", "troop movement", "motion graphic", "animation")):
         return "motion_graphic"
     if any(key in blob for key in ("infographic", "chart", "gulf map", "wall map")):

@@ -57,6 +57,23 @@ def _fake_gen(called):
     return fake_gen
 
 
+def test_jcpoa_announcement_is_event_not_graphic() -> None:
+    from onecrew.board import _shot_kind, write_shot_list
+
+    assert (
+        _shot_kind("2018 announcement: a dated chyron on the JCPOA withdrawal, Gulf map on the wall behind the podium.")
+        == "event"
+    )
+    assert _shot_kind("Tanker in the Strait of Hormuz lane, land close on both sides, open water ahead.") == "event"
+    assert _shot_kind("Host at a Gulf map. A dated chyron waits.") == "infographic"
+    packet = seed_first_open()
+    shots = write_shot_list(packet)
+    announcements = [s for s in shots if "announcement" in s.shot.lower() or "withdrawal" in s.shot.lower()]
+    tankers = [s for s in shots if "tanker" in s.shot.lower()]
+    assert announcements and all(s.kind == "event" for s in announcements)
+    assert tankers and all(s.kind == "event" for s in tankers)
+
+
 def test_nonfiction_event_shot_never_imagen(monkeypatch) -> None:
     called = []
     monkeypatch.setattr("onecrew.board.search", _miss)
