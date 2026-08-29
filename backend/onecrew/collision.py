@@ -104,10 +104,23 @@ def stamp_collisions(packet: Packet, rails: Rails) -> Packet:
         return hold_collisions(packet)
     hits: list[CollisionRow] = []
     try:
+        cached: dict[str, tuple[str | None, str, list[str]]] = {}
         for beat in packet.beats:
+            if (beat.kind or "vo") != "vo":
+                continue
             query = search_text(beat, packet)
             if not query:
                 _clear_beat(beat)
+                continue
+            if query in cached:
+                url, title, excerpts = cached[query]
+                if url:
+                    hits.append(_apply_hit(beat, url, title, excerpts, query))
+                else:
+                    beat.collision = "no"
+                    beat.collision_url = None
+                    beat.collision_title = MISSING
+                    beat.collision_kind = MISSING
                 continue
             result = search(objective=COLLISION_OBJECTIVE, search_queries=[query])
             rows = list(getattr(result, "results", None) or [])
@@ -121,6 +134,7 @@ def stamp_collisions(packet: Packet, rails: Rails) -> Packet:
                     title = getattr(row, "title", None) or ""
                     excerpts = [str(x) for x in (getattr(row, "excerpts", None) or [])]
                     break
+            cached[query] = (url, title, excerpts)
             if url:
                 hits.append(_apply_hit(beat, url, title, excerpts, query))
                 continue

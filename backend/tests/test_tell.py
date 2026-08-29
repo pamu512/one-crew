@@ -46,8 +46,9 @@ def test_same_receipt_three_tells_stamps_identical() -> None:
     for packet in (nf, family, ship, feature):
         for beat in packet.beats:
             assert beat.finding_ids
-            for fid in beat.finding_ids:
-                assert f"[{fid}]" in beat.vo
+            if beat.kind == "vo":
+                for fid in beat.finding_ids:
+                    assert f"[{fid}]" in beat.vo
         assert "[secret-closure]" in packet.script
         assert "[hormuz-share]" in packet.script
         oil = next(f for f in packet.receipt.findings if f.id == "oil-panic")

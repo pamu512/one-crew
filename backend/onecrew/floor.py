@@ -238,7 +238,8 @@ FLOOR_HTML = """<!DOCTYPE html>
       const frames = (packet.frames || []).map(fr => `
         <div class="frame">
           ${fr.image_href ? `<img src="${fr.image_href}" alt="${fr.shot}"/>` : `<p class="note">Image missing. Shot list kept. Not invented.</p>`}
-          <p>${fr.shot}</p>
+          <p>${fr.shot_no ? "#" + fr.shot_no + " · " : ""}${fr.camera ? fr.camera + " · " : ""}${fr.shot}</p>
+          ${fr.line ? `<p class="note">${fr.line}</p>` : ""}
         </div>`).join("");
       document.getElementById("packet").innerHTML = `
         <div class="brand">${packet.id}</div>

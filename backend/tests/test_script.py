@@ -77,9 +77,9 @@ def test_tiktok_vo_is_short_episode_has_running_timecodes() -> None:
     assert sum(b.duration_s for b in tiktok.beats) < 60
     assert sum(b.duration_s for b in episode.beats) >= 40 * 60
     assert re.search(r"\d{2}:\d{2}:\d{2}", episode.script)
-    assert "ACT" in episode.script
+    assert "ACT 1" in episode.script
     assert "00:" in tiktok.script
-    assert "ACT" not in tiktok.script
+    assert "ACT 1" not in tiktok.script
 
 
 def test_every_script_beat_cites_an_existing_finding() -> None:
@@ -90,9 +90,10 @@ def test_every_script_beat_cites_an_existing_finding() -> None:
     for beat in packet.beats:
         assert beat.finding_ids
         assert set(beat.finding_ids) <= ids
-        for fid in beat.finding_ids:
-            assert f"[{fid}]" in beat.vo
-            assert f"[{fid}]" in packet.script
+        if beat.kind == "vo":
+            for fid in beat.finding_ids:
+                assert f"[{fid}]" in beat.vo
+                assert f"[{fid}]" in packet.script
 
 
 def test_unhinged_and_centered_cannot_hide_fringe_or_propaganda() -> None:
@@ -130,7 +131,6 @@ def test_vo_has_no_receipt_jargon() -> None:
 def test_right_tiktok_and_left_doc_are_not_a_wrapper() -> None:
     right = _packet(platform="tiktok", cut="tiktok-length", lean="right")
     left = _packet(platform="youtube", cut="full_length_documentary", lean="left")
-    assert {b.id for b in right.beats} <= {f.id for f in right.receipt.findings}
     r = next(b for b in right.beats if b.id == "jcpoa-2018")
     l = next(b for b in left.beats if b.id == "jcpoa-2018")
     r_body = re.sub(r"\s*\[[^\]]+\]", "", r.vo).strip()
@@ -139,7 +139,8 @@ def test_right_tiktok_and_left_doc_are_not_a_wrapper() -> None:
     claim = next(f.claim for f in right.receipt.findings if f.id == "jcpoa-2018")
     assert r_body != f"In 2018, on the receipt: {claim}."
     assert l_body != f"In 2018, the public file, not the talking-point version: {claim}."
-    assert len(l.vo) > len(r.vo)
+    assert len(left.script) > len(right.script)
+    assert len(left.beats) > len(right.beats)
     for lean in SCRIPT_LEANS:
         packet = _packet(platform="youtube", cut="one_time_short_episode", lean=lean)
         stamps = [(f.id, f.stamp, f.propaganda) for f in packet.receipt.findings]

@@ -11,7 +11,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 ## 0:40–1:20 · VO, collisions, stamps
 
 1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent · nonfiction · global_overview**. Seed stays a news short, not a feature. Seed collisions are `missing` because GET does not spend.
-2. Point at the **timed VO** and the **collision list** next to it. Then the **shot list** — one shot per beat, not a leftover stills collage. Citations like `[jcpoa-2018]`.
+2. Point at the **full script** (scenes, action, host VO — not six pasted claims) and the **collision list** next to it. Then the **frame-by-frame shot list**. Citations like `[jcpoa-2018]`.
 3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
 4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.
 5. Point at **fringe** secret-closure — still on the list. Centered ask did not hide it.

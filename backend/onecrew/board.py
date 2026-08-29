@@ -13,37 +13,52 @@ _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def write_shot_list(packet: Packet) -> list[ShotFrame]:
-    """One shot per script beat. Descriptions come from that VO, not leftover stills."""
+    """One shot per cut in the scene. Not one shot per receipt row. Not leftover stills."""
     if not packet.beats or not packet.script.strip():
         return []
     receipt = packet.receipt
     by_id = {f.id: f for f in (receipt.findings if receipt else [])}
     shots: list[ShotFrame] = []
+    shot_no = 0
+    last_scene = None
+    short = packet.cut in {"tiktok-length", "shorts"}
     for beat in packet.beats:
+        if beat.kind == "heading":
+            last_scene = beat.scene
+            continue
         rows = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         refs = [f.parallel_url for f in rows if f.parallel_url] or list(beat.finding_ids)
+        shot_no += 1
+        key = True if short else (beat.scene != last_scene or shot_no == 1)
+        last_scene = beat.scene
         shots.append(
             ShotFrame(
-                id=f"shot-{beat.id}",
+                id=f"shot-{shot_no:03d}-{beat.id}",
                 shot=_shot_line(beat, rows, packet),
                 source_refs=refs,
                 image_href="",
                 imagen=False,
                 beat_id=beat.id,
-                duration_s=beat.duration_s,
-                key_frame=True,
+                duration_s=max(1, beat.duration_s),
+                key_frame=key,
+                shot_no=shot_no,
+                camera=beat.camera or ("WIDE" if beat.kind == "action" else "MCU"),
+                line=beat.vo.split("\n")[-1][:180],
             )
         )
     return shots
 
 
 def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
+    prefix = f"{beat.camera}, " if beat.camera else ""
+    if beat.kind == "action" and beat.vo.strip():
+        return f"{prefix}{beat.vo}".strip()
     if (packet.genre or "nonfiction") != "nonfiction":
         if packet.vantage == "one_family":
-            return _family_shot(beat)
+            return prefix + _family_shot(beat)
         if packet.vantage == "one_ship":
-            return _ship_shot(beat)
-        return "Map-table room, radio on, a paper Gulf chart. No collage. Not a receipt card."
+            return prefix + _ship_shot(beat)
+        return prefix + "Map-table room, radio on, a paper Gulf chart. No collage. Not a receipt card."
     blob = " ".join([beat.id, beat.vo] + [f.claim for f in rows]).lower()
     if (
         beat.id == "jcpoa-to-houthi"
@@ -132,7 +147,10 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
             shot.image_href = ""
             shot.imagen = False
         return shots
-    cap = frame_count(require_cut(packet.cut), packet.platform) if packet.cut else len(shots)
+    if packet.cut in {"tiktok-length", "shorts"}:
+        cap = len(shots)
+    else:
+        cap = frame_count(require_cut(packet.cut), packet.platform) if packet.cut else len(shots)
     spent = 0
     for shot in shots:
         if not shot.key_frame or spent >= cap:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from onecrew.cut import event_cap, is_long_cut, require_cut, scene_seconds
-from onecrew.models import Finding, Packet, ScriptBeat
+from onecrew.cut import event_cap, is_long_cut, require_cut
+from onecrew.models import MISSING, Finding, Packet, ScriptBeat
 from onecrew.picks import require_tell_pairing
 
 
@@ -316,8 +316,220 @@ def _act_name(index: int, total: int) -> str:
     return f"ACT {min(3, index // third + 1)}"
 
 
+_SHORT = frozenset({"tiktok-length", "shorts"})
+
+
+def _tier(cut: str | None) -> str:
+    if cut in _SHORT:
+        return "short"
+    if cut == "full_length_documentary":
+        return "doc"
+    if cut == "feature_film":
+        return "feature"
+    return "episode"
+
+
+def _durs(tier: str) -> dict[str, int]:
+    if tier == "short":
+        return {"heading": 1, "action": 3, "vo": 6, "dialogue": 4, "interview": 3, "close": 5}
+    if tier == "doc":
+        return {"heading": 2, "action": 50, "vo": 70, "dialogue": 40, "interview": 40, "close": 180}
+    if tier == "feature":
+        return {"heading": 2, "action": 45, "vo": 60, "dialogue": 40, "interview": 30, "close": 180}
+    return {"heading": 2, "action": 90, "vo": 150, "dialogue": 40, "interview": 45, "close": 180}
+
+
+def _slugs(theme: str, *, fiction: bool, vantage: str, n: int) -> list[str]:
+    if fiction and vantage == "one_family":
+        family = {
+            "jcpoa": [
+                "INT. BANDAR ABBAS KITCHEN - NIGHT",
+                "INT. KITCHEN / SMALL TV - NIGHT",
+                "INT. HALL OFF THE KITCHEN - NIGHT",
+            ],
+            "oil_lane": [
+                "INT. KITCHEN WINDOW - NIGHT",
+                "EXT. HARBOR ROAD (FROM THE WINDOW) - NIGHT",
+                "INT. SINK AND RADIO - NIGHT",
+            ],
+            "panic": [
+                "INT. KITCHEN DOORWAY - NIGHT",
+                "INT. KITCHEN - NEIGHBOR IN FRAME - NIGHT",
+                "INT. KITCHEN TABLE - NIGHT",
+            ],
+            "producer": [
+                "INT. KITCHEN / STATE BULLETIN TV - NIGHT",
+                "INT. ABOVE THE SINK - NIGHT",
+                "INT. KITCHEN - NIGHT",
+            ],
+            "mine_rumor": [
+                "INT. OPEN KITCHEN DOOR - NIGHT",
+                "EXT. ALLEY (FROM THE DOOR) - NIGHT",
+                "INT. KITCHEN - NIGHT",
+            ],
+        }
+        return (family.get(theme) or [
+            "INT. BANDAR ABBAS KITCHEN - NIGHT",
+            "INT. KITCHEN TABLE - NIGHT",
+            "INT. SINK - NIGHT",
+        ])[:n]
+    if fiction and vantage == "one_ship":
+        ship = {
+            "jcpoa": [
+                "INT. TANKER BRIDGE - NIGHT",
+                "INT. CHART TABLE - NIGHT",
+                "INT. BRIDGE WING DOOR - NIGHT",
+            ],
+            "oil_lane": [
+                "EXT. BOW / HORMUZ LANE - NIGHT",
+                "EXT. BRIDGE WING - NIGHT",
+                "INT. BRIDGE - NIGHT",
+            ],
+            "panic": [
+                "INT. CREW MESS - NIGHT",
+                "INT. MESS RADIO - NIGHT",
+                "INT. HULL CORRIDOR - NIGHT",
+            ],
+            "producer": [
+                "INT. BRIDGE SPEAKER - NIGHT",
+                "INT. CHART TABLE - NIGHT",
+                "INT. BRIDGE - NIGHT",
+            ],
+            "mine_rumor": [
+                "EXT. BRIDGE WING - NIGHT",
+                "INT. BRIDGE - NIGHT",
+                "EXT. DARK WATER - NIGHT",
+            ],
+        }
+        return (ship.get(theme) or [
+            "INT. TANKER BRIDGE - NIGHT",
+            "EXT. BRIDGE WING - NIGHT",
+            "INT. CHART TABLE - NIGHT",
+        ])[:n]
+    if fiction:
+        return [
+            "INT. MAP-TABLE ROOM - NIGHT",
+            "INT. MAP-TABLE ROOM - RADIO ON - NIGHT",
+            "INT. MAP-TABLE ROOM - LATER",
+        ][:n]
+    studio = {
+        "jcpoa": ["STUDIO — GULF MAP", "ARCHIVE — 2018 ANNOUNCEMENT", "STUDIO — THE DATE", "B-ROLL — PODIUM CHYRON"],
+        "oil_lane": ["B-ROLL — STRAIT OF HORMUZ", "ENERGY DESK", "B-ROLL — OPEN LANE", "STUDIO — WHO PUBLISHED THE SHARE"],
+        "panic": ["NEWSROOM — OVERNIGHT", "STUDIO — SCARE LINE", "WALL MAP — HORMUZ", "STUDIO — NOT A MEASUREMENT"],
+        "producer": ["PRODUCER DESK", "SHIPPING BOARD", "STUDIO — INDUSTRY FRAME", "B-ROLL — OPEN LANE MARK"],
+        "mine_rumor": ["NIGHT WATER — HORMUZ", "STUDIO — UNSOURCED CLAIM", "EMPTY LANE — NO MINES ON CAMERA", "STUDIO — IT STAYS A CLAIM"],
+        "fringe_other": ["STUDIO — FRINGE ROW", "B-ROLL — THE CLAIM ONLY", "STUDIO — NOT FACT", "STUDIO — STILL ON THE LIST"],
+        "talking_point": ["STUDIO — TALKING POINT", "NEWSROOM", "STUDIO — WHO DRIVES IT", "B-ROLL — REPEATED LINE"],
+        "fact": ["STUDIO", "B-ROLL", "STUDIO — THE SENTENCE", "ARCHIVE"],
+    }
+    return (studio.get(theme) or studio["fact"])[:n]
+
+
+def _action_line(theme: str, *, fiction: bool, vantage: str, lean: str, finding: Finding) -> str:
+    if fiction:
+        return _frame_for_theme(theme, vantage, lean) or "A narrator stands at a map table. (frame)"
+    if theme == "jcpoa":
+        return "Host at a Gulf map. A dated chyron waits. No family in the shot."
+    if theme == "oil_lane":
+        return "Tanker in an open Hormuz lane, land close on both sides. The water is quiet."
+    if theme == "panic":
+        return "Overnight newsroom. Oil ticker running. A scare is not a measurement on screen."
+    if theme == "producer":
+        return "Producer-state energy desk. Hormuz marked open on a shipping board."
+    if theme == "mine_rumor":
+        return "Night water in the strait. Empty lane. No mines on camera."
+    if "milk" in finding.claim.lower() or "dairy" in finding.claim.lower():
+        return "Spring auction floor. A milk tanker at the dock as the spot price ticks."
+    return f"Photoreal B-roll of the cited beat: {finding.claim.rstrip('.')}."
+
+
+def _frame_for_theme(theme: str, vantage: str, lean: str) -> str:
+    if vantage == "one_ship":
+        return _ship_frame(theme, lean)
+    if vantage == "one_family":
+        return _family_frame(theme, lean)
+    return _map_table_frame(theme, lean)
+
+
+def _hole_line(finding: Finding, lean: str) -> str:
+    if finding.stamp == "fringe":
+        return _vo_body(finding, lean, long_form=True)
+    if finding.lean == "missing" or finding.lean == MISSING:
+        return "Who drives that repeated line is not on our list. I am leaving the hole visible."
+    if finding.propaganda == "yes":
+        issuer = finding.propaganda_issuer if finding.propaganda_issuer != "missing" else "the named issuer"
+        return f"{issuer} is on the row as the campaign source. The stamp stays visible."
+    return "That is the sentence we have. I am not stacking a later scare on it."
+
+
+def _interview_line(theme: str, finding: Finding) -> str:
+    if theme == "oil_lane" and finding.propaganda_issuer and finding.propaganda_issuer != "missing":
+        return f"Ask who is putting that share out. The named issuer on the row is {finding.propaganda_issuer}."
+    if finding.stamp == "fringe":
+        return "Ask for a source on this claim. If none lands, it stays a claim."
+    if theme == "jcpoa":
+        return "Ask for the public date only. Do not let a later scare rewrite 2018."
+    return "Ask what we can cite on this beat. Do not invent the next event."
+
+
+def _dialogue(theme: str, vantage: str, lean: str, fact: str) -> str:
+    if vantage == "one_ship":
+        name = "REZA"
+    elif vantage == "one_family":
+        name = "LEILA"
+    else:
+        name = "NARRATOR"
+    return f"{name}\n{fact}"
+
+
+class _Draft:
+    def __init__(self, *, hours: bool, long_form: bool, scene_total: int):
+        self.hours = hours
+        self.long_form = long_form
+        self.scene_total = scene_total
+        self.beats: list[ScriptBeat] = []
+        self.cursor = 0
+        self.scene_i = 0
+
+    def add(
+        self,
+        *,
+        kind: str,
+        bid: str,
+        text: str,
+        fids: list[str],
+        dur: int,
+        scene: str,
+        camera: str = "",
+        frame: str = "",
+    ) -> None:
+        act = _act_name(self.scene_i, self.scene_total) if self.long_form else ""
+        self.beats.append(
+            ScriptBeat(
+                id=bid,
+                start=_tc(self.cursor, hours=self.hours),
+                duration_s=dur,
+                act=act,
+                scene=scene,
+                kind=kind,
+                vo=text,
+                camera=camera,
+                finding_ids=fids,
+                frame=frame,
+            )
+        )
+        self.cursor += dur
+        if kind == "heading":
+            self.scene_i += 1
+
+
+def _scene_count(tier: str, finding_n: int, *, with_open: bool, with_close: bool) -> int:
+    per = {"short": 1, "episode": 2, "doc": 4, "feature": 3}[tier]
+    return (1 if with_open else 0) + finding_n * per + (1 if with_close else 0)
+
+
 def write_script(packet: Packet) -> Packet:
-    """Timed spoken VO from the receipt. Lean changes the argument, not the stamps."""
+    """Full recordable script from the receipt. Lean changes the argument, not the stamps or the thickness."""
     receipt = packet.receipt
     if receipt is None or receipt.disposition != "READY" or not receipt.findings:
         packet.script = ""
@@ -330,44 +542,155 @@ def write_script(packet: Packet) -> Packet:
     rows = list(receipt.findings)
     if cut:
         rows = rows[: event_cap(cut, packet.platform)]
+    tier = _tier(cut)
     long_form = bool(cut and is_long_cut(cut))
-    duration = scene_seconds(cut) if cut else 12
-    close_s = 180 if long_form else 0
     hours = long_form
+    durs = _durs(tier)
+    fiction = _invents_frame(packet)
+    vantage = packet.vantage or "global_overview"
+    per = {"short": 1, "episode": 2, "doc": 4, "feature": 3}[tier]
+    with_open = tier != "short"
+    with_close = tier != "short" and bool(receipt.causal_links)
     prior = {beat.id: beat for beat in packet.beats}
-    beats: list[ScriptBeat] = []
-    cursor = 0
-    scene_total = len(rows) + (1 if long_form and receipt.causal_links else 0)
-    for index, finding in enumerate(rows):
-        beats.append(
-            ScriptBeat(
-                id=finding.id,
-                start=_tc(cursor, hours=hours),
-                duration_s=duration,
-                act=_act_name(index, scene_total) if long_form else "",
-                vo=_vo_for(finding, lean, long_form=long_form, packet=packet),
-                finding_ids=[finding.id],
-                frame=_frame_for(packet, finding, lean),
-            )
+    draft = _Draft(
+        hours=hours,
+        long_form=long_form,
+        scene_total=_scene_count(tier, len(rows), with_open=with_open, with_close=with_close),
+    )
+    first = rows[0]
+    if with_open:
+        open_slug = (
+            "INT. BANDAR ABBAS KITCHEN - EVENING"
+            if fiction and vantage == "one_family"
+            else "INT. TANKER BRIDGE - DUSK"
+            if fiction and vantage == "one_ship"
+            else "INT. MAP-TABLE ROOM - EVENING"
+            if fiction
+            else "STUDIO — COLD OPEN"
         )
-        cursor += duration
-    if long_form and receipt.causal_links:
+        open_action = (
+            "Leila at the Bandar Abbas sink. Evening. The radio is already on. (frame)"
+            if fiction and vantage == "one_family"
+            else "Reza at the bridge window. Dusk. The lane is ahead. No blast. (frame)"
+            if fiction and vantage == "one_ship"
+            else "A narrator at a map table. Radio on. No collage. (frame)"
+            if fiction
+            else "Host at a map table. Gulf chart on the wall. No invented family."
+        )
+        draft.add(kind="heading", bid="open-h", text=open_slug, fids=[first.id], dur=durs["heading"], scene=open_slug)
+        draft.add(
+            kind="action",
+            bid="open-a",
+            text=open_action,
+            fids=[first.id],
+            dur=durs["action"],
+            scene=open_slug,
+            camera="WIDE",
+            frame=open_action if fiction else "",
+        )
+    for finding in rows:
+        theme = _theme(finding)
+        slugs = _slugs(theme, fiction=fiction, vantage=vantage, n=per)
+        fact = _vo_for(finding, lean, long_form=True, packet=packet)
+        hole = _hole_line(finding, lean).rstrip() + _cite(finding.id)
+        asked = _interview_line(theme, finding)
+        for si, slug in enumerate(slugs):
+            draft.add(kind="heading", bid=f"{finding.id}-h{si+1}", text=slug, fids=[finding.id], dur=durs["heading"], scene=slug)
+            action = _action_line(theme, fiction=fiction, vantage=vantage, lean=lean, finding=finding)
+            draft.add(
+                kind="action",
+                bid=f"{finding.id}-a{si+1}",
+                text=action,
+                fids=[finding.id],
+                dur=durs["action"],
+                scene=slug,
+                camera="WIDE" if si == 0 else "CUTAWAY",
+                frame=action if fiction and "(frame)" in action else "",
+            )
+            if si == 0:
+                spoken = _dialogue(theme, vantage, lean, fact) if fiction else f"NARRATOR\n{fact}"
+                draft.add(
+                    kind="vo",
+                    bid=finding.id,
+                    text=spoken,
+                    fids=[finding.id],
+                    dur=durs["vo"],
+                    scene=slug,
+                    camera="MCU",
+                    frame=_frame_for(packet, finding, lean),
+                )
+            elif si == 1 and fiction:
+                extra = _dialogue(theme, vantage, lean, hole)
+                draft.add(
+                    kind="dialogue",
+                    bid=f"{finding.id}-d{si+1}",
+                    text=extra,
+                    fids=[finding.id],
+                    dur=durs["dialogue"],
+                    scene=slug,
+                    camera="OTS",
+                    frame=_frame_for_theme(theme, vantage, lean),
+                )
+            else:
+                spoken = f"NARRATOR\n{hole}" if not fiction else _dialogue(theme, vantage, lean, hole)
+                draft.add(
+                    kind="vo",
+                    bid=f"{finding.id}-v{si+1}",
+                    text=spoken,
+                    fids=[finding.id],
+                    dur=durs["vo"],
+                    scene=slug,
+                    camera="MCU",
+                    frame=_frame_for(packet, finding, lean) if fiction else "",
+                )
+            if not fiction and si == per - 1:
+                draft.add(
+                    kind="interview",
+                    bid=f"{finding.id}-q",
+                    text=asked,
+                    fids=[finding.id],
+                    dur=durs["interview"],
+                    scene=slug,
+                    camera="TWO-SHOT",
+                )
+    if with_close:
         link = receipt.causal_links[0]
         known = {f.id for f in receipt.findings}
         cite = [fid for fid in (link.from_id, link.to_id) if fid in known]
         if cite:
-            beats.append(
-                ScriptBeat(
-                    id=link.id,
-                    start=_tc(cursor, hours=hours),
-                    duration_s=close_s,
-                    act=_act_name(len(rows), scene_total),
-                    vo=_close_frame(packet) + _close_vo(link.claim, lean, cite),
-                    finding_ids=cite,
-                    frame=_close_frame(packet).strip(),
-                )
+            close_slug = (
+                "INT. KITCHEN TABLE - NIGHT"
+                if fiction and vantage == "one_family"
+                else "INT. BRIDGE / CLIPBOARD - NIGHT"
+                if fiction and vantage == "one_ship"
+                else "INT. MAP-TABLE ROOM - NIGHT"
+                if fiction
+                else "STUDIO — THE HOLE"
             )
-            cursor += close_s
+            close_vo = _close_frame(packet) + _close_vo(link.claim, lean, cite)
+            draft.add(kind="heading", bid=f"{link.id}-h", text=close_slug, fids=cite, dur=durs["heading"], scene=close_slug)
+            draft.add(
+                kind="action",
+                bid=f"{link.id}-a",
+                text=_close_frame(packet).strip() or "Two dated cards on a table. No arrow drawn.",
+                fids=cite,
+                dur=durs["action"],
+                scene=close_slug,
+                camera="INSERT",
+                frame=_close_frame(packet).strip(),
+            )
+            spoken = _dialogue("fact", vantage, lean, close_vo) if fiction else f"NARRATOR\n{close_vo}"
+            draft.add(
+                kind="vo",
+                bid=link.id,
+                text=spoken,
+                fids=cite,
+                dur=durs["close"],
+                scene=close_slug,
+                camera="MCU",
+                frame=_close_frame(packet).strip(),
+            )
+    beats = draft.beats
     for beat in beats:
         old = prior.get(beat.id)
         if old is None:
@@ -381,14 +704,28 @@ def write_script(packet: Packet) -> Packet:
         "",
     ]
     last_act = None
+    last_scene = None
     elapsed = 0
     for beat in beats:
         if beat.act and beat.act != last_act:
             lines.append(beat.act)
             last_act = beat.act
+        if beat.kind == "heading":
+            if beat.scene != last_scene:
+                lines.append(beat.scene)
+                last_scene = beat.scene
+            elapsed += beat.duration_s
+            continue
         elapsed += beat.duration_s
         lines.append(f"{beat.start}–{_tc(elapsed, hours=hours)}")
-        lines.append(beat.vo)
+        if beat.camera:
+            lines.append(beat.camera)
+        if beat.kind == "action":
+            lines.append(f"ACTION: {beat.vo}")
+        elif beat.kind == "interview":
+            lines.append(f"INTERVIEW: {beat.vo}")
+        else:
+            lines.append(beat.vo)
         lines.append("")
     packet.beats = beats
     packet.script = "\n".join(lines).strip() + "\n"

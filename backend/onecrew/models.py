@@ -185,7 +185,10 @@ class ScriptBeat(BaseModel):
     start: str
     duration_s: int
     act: str = ""
+    scene: str = ""
+    kind: str = "vo"
     vo: str
+    camera: str = ""
     finding_ids: list[str] = Field(default_factory=list)
     frame: str = ""
     collision: Collision = MISSING
@@ -213,6 +216,9 @@ class ShotFrame(BaseModel):
     beat_id: str = ""
     duration_s: int = 0
     key_frame: bool = False
+    shot_no: int = 0
+    camera: str = ""
+    line: str = ""
 
 
 class Receipt(BaseModel):

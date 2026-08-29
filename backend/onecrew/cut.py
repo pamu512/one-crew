@@ -13,13 +13,13 @@ EVENT_CAP: dict[Cut, int] = {
     "full_length_documentary": 40,
     "feature_film": 40,
 }
-# Imagen spend cap = one image per short-form beat, or one key frame per
-# episode/doc scene. Never 400 calls. Actual spend is min(scenes, this cap).
+# Imagen spend cap. Shorts generate every shot. Long-form: key frames only.
+# Shot LIST is complete; billable images stay capped (never 400).
 FRAME_COUNT: dict[Cut, int] = {
-    "tiktok-length": 3,
-    "shorts": 4,
-    "weekly_update": 6,
-    "one_time_short_episode": 8,
+    "tiktok-length": 24,
+    "shorts": 24,
+    "weekly_update": 24,
+    "one_time_short_episode": 40,
     "full_length_documentary": 40,
     "feature_film": 40,
 }
