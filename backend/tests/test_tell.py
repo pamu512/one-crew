@@ -272,6 +272,7 @@ def test_tell_examples_are_not_an_enum() -> None:
     assert "<script" not in svg.lower()
     assert "foreignObject" not in svg
     assert "onload" not in svg.lower()
+    assert all(ord(ch) < 128 for ch in svg)
 
 
 def test_fiction_vo_has_no_receipt_jargon() -> None:
