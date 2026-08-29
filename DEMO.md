@@ -10,10 +10,11 @@ Talk over the floor with `oc-pickle-debt` already open.
 
 ## 0:40–1:20 · Receipt
 
-1. Point at **grounded** ranking hit — Parallel URL on the row.
-2. Point at **mainstream** 3am-kitchen — lean / interests / who_repeats are `missing`. Then **industry-recovery** — those fields present, Parallel URL on each, lean is not the stamp.
-3. Point at **fringe** NASA miss — Parallel miss, never sold as fact.
-4. Same receipt: a hit **and** a miss.
+1. Point at **grounded** ranking hit — Parallel URL on the row. independent / vested_interest are `missing`.
+2. Point at **trade-hit** — still grounded, and the floor says **not independent**.
+3. Point at **mainstream** 3am-kitchen — lean / interests / who_repeats are `missing`. Then **industry-recovery** — those fields present, Parallel URL on each, lean is not the stamp.
+4. Point at **fringe** NASA miss — Parallel miss, never sold as fact.
+5. Same receipt: a hit **and** a miss.
 
 ## 1:20–2:10 · Board + floor
 

@@ -19,7 +19,29 @@
         "interests": "missing",
         "interests_url": null,
         "who_repeats": "missing",
-        "who_repeats_url": null
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null
+      },
+      {
+        "id": "trade-hit",
+        "claim": "Pickle Packers International publishes pickle nutrition and usage material for the trade.",
+        "stamp": "grounded",
+        "parallel_url": "https://www.ilovepickles.org/",
+        "parallel_status": "hit",
+        "note": "Parallel URL on this row.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "no",
+        "independent_url": "https://www.ilovepickles.org/",
+        "vested_interest": "missing",
+        "vested_interest_url": null
       },
       {
         "id": "3am-kitchen",
@@ -33,7 +55,11 @@
         "interests": "missing",
         "interests_url": null,
         "who_repeats": "missing",
-        "who_repeats_url": null
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null
       },
       {
         "id": "industry-recovery",
@@ -47,7 +73,11 @@
         "interests": ["Pickle Packers International"],
         "interests_url": "https://www.ilovepickles.org/",
         "who_repeats": ["Pickle Packers International"],
-        "who_repeats_url": "https://www.ilovepickles.org/"
+        "who_repeats_url": "https://www.ilovepickles.org/",
+        "independent": "no",
+        "independent_url": "https://www.ilovepickles.org/",
+        "vested_interest": "missing",
+        "vested_interest_url": null
       },
       {
         "id": "nasa-miss",
@@ -61,7 +91,11 @@
         "interests": "missing",
         "interests_url": null,
         "who_repeats": "missing",
-        "who_repeats_url": null
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null
       }
     ],
     "disposition": "READY",

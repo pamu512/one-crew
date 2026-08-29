@@ -7,11 +7,13 @@ from pydantic import BaseModel, Field
 
 Stamp = Literal["grounded", "mainstream", "fringe"]
 ParallelStatus = Literal["hit", "miss", "n/a"]
+Independent = Literal["yes", "no", "missing"]
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
 ShiftStatus = Literal["running", "completed", "failed"]
 
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
+INDEPENDENT = frozenset({"yes", "no", "missing"})
 MISSING = "missing"
 
 
@@ -68,6 +70,11 @@ class Finding(BaseModel):
     interests_url: str | None = None
     who_repeats: str | list[str] = MISSING
     who_repeats_url: str | None = None
+    # Cited-source ownership. Parallel-sourced or missing. Not Gemini note text.
+    independent: Independent = MISSING
+    independent_url: str | None = None
+    vested_interest: str | list[str] = MISSING
+    vested_interest_url: str | None = None
 
 
 class ShotFrame(BaseModel):

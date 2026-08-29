@@ -72,6 +72,8 @@ def findings_from_parallel_rows(
             lean=MISSING,
             interests=MISSING,
             who_repeats=MISSING,
+            independent=MISSING,
+            vested_interest=MISSING,
         ),
         Finding(
             id="3am-kitchen",
@@ -83,6 +85,8 @@ def findings_from_parallel_rows(
             lean=MISSING,
             interests=MISSING,
             who_repeats=MISSING,
+            independent=MISSING,
+            vested_interest=MISSING,
         ),
         Finding(
             id="nasa-miss",
@@ -94,6 +98,8 @@ def findings_from_parallel_rows(
             lean=MISSING,
             interests=MISSING,
             who_repeats=MISSING,
+            independent=MISSING,
+            vested_interest=MISSING,
         ),
     ]
 

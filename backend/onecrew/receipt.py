@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from onecrew.models import MISSING, STAMPS, Finding, Packet, Rails, Receipt, ShotFrame
+from onecrew.models import INDEPENDENT, MISSING, STAMPS, Finding, Packet, Rails, Receipt, ShotFrame
 
 GROUNDED = "grounded"
 MAINSTREAM = "mainstream"
@@ -46,6 +46,18 @@ def validate_attribution(finding: Finding) -> None:
     _validate_attr("lean", finding.lean, finding.lean_url)
     _validate_attr("interests", finding.interests, finding.interests_url)
     _validate_attr("who_repeats", finding.who_repeats, finding.who_repeats_url)
+    validate_source_stake(finding)
+
+
+def validate_source_stake(finding: Finding) -> None:
+    """independent / vested_interest: Parallel hit for that fact, or missing. No invented parent."""
+    if finding.independent not in INDEPENDENT:
+        raise ReceiptInvalidError("independent must be yes, no, or missing")
+    if finding.independent != MISSING and not _url_ok(finding.independent_url):
+        raise ReceiptInvalidError("independent requires a Parallel hit; otherwise independent=missing")
+    if finding.independent == MISSING and finding.independent_url:
+        raise ReceiptInvalidError("independent=missing cannot carry a Parallel URL")
+    _validate_attr("vested_interest", finding.vested_interest, finding.vested_interest_url)
 
 
 def validate_finding(finding: Finding) -> None:
