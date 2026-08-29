@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-# Bedroom-studio floor. No publish control. GET-only surface.
+# Bedroom-studio floor. Topic + required depth. No publish control. GET-only until POST /shift.
 
 FLOOR_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -40,6 +40,7 @@ FLOOR_HTML = """<!DOCTYPE html>
     .stamp.grounded { color: var(--grounded); }
     .stamp.mainstream { color: var(--mainstream); }
     .stamp.fringe { color: var(--fringe); }
+    .stamp.missing { color: var(--hold); }
     .url { font-size: 12px; color: #d8c4a8; word-break: break-all; }
     .note { font-size: 12px; color: var(--muted); }
     .frames { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -47,27 +48,189 @@ FLOOR_HTML = """<!DOCTYPE html>
     .frame img { width: 100%; height: 140px; object-fit: cover; display: block; background: #0c0a08; }
     .frame p { font-size: 12px; color: var(--muted); margin: 8px 10px 10px; }
     .hold { color: var(--hold); }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+    textarea, input[type="password"] {
+      width: 100%; background: #120e0b; color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px; font: inherit;
+    }
+    .depths { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+    .depths label { display: flex; gap: 8px; align-items: center; margin: 0; color: var(--fg); font-size: 13px; }
+    button {
+      background: #2a2118; color: var(--fg); border: 1px solid var(--line);
+      border-radius: 8px; padding: 8px 12px; font: inherit; cursor: pointer;
+    }
+    button:disabled { opacity: .45; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <header>
     <div>
       <div class="brand">One Crew</div>
-      <div class="sub">Researcher + boarder. Floor never posts.</div>
+      <div class="sub">Research companion. Script plus cited sources. Floor never posts.</div>
     </div>
     <div class="badges" id="badges"></div>
   </header>
   <main>
     <section class="card">
-      <div class="brand">First-open</div>
-      <p class="script">Seeded packet. GET does not spend Parallel or Imagen. The floor never posts.</p>
+      <div class="brand">Desk</div>
+      <p class="script">Platform, length, depth, then script lean. Any missing pick = no run. GET does not spend. The floor never posts.</p>
+      <label for="topic">Topic</label>
+      <textarea id="topic" rows="3" placeholder="Explain what's going on with the Hormuz strait"></textarea>
+      <label>Platform — required</label>
+      <div class="depths" id="platforms"></div>
+      <label>Length / cut — required</label>
+      <div class="depths" id="cuts"></div>
+      <label>Depth — required</label>
+      <div class="depths" id="depths"></div>
+      <label>Script lean — required (does not restamp sources)</label>
+      <div class="depths" id="leans"></div>
+      <label for="token">Shift token (spend only)</label>
+      <input id="token" type="password" autocomplete="off"/>
+      <button id="research" type="button" disabled>Write script</button>
+      <p class="script" id="desk-msg">Any missing pick = no run.</p>
       <p class="script" id="health"></p>
     </section>
-    <section class="card" id="packet">Loading oc-pickle-debt…</section>
+    <section class="card" id="packet">Loading oc-hormuz-decade…</section>
   </main>
   <script>
+    const PLATFORMS = [
+      {id:"tiktok", label:"tiktok"},
+      {id:"youtube", label:"youtube"},
+      {id:"youtube_shorts", label:"youtube_shorts"},
+      {id:"instagram_reels", label:"instagram_reels"},
+      {id:"instagram_stories", label:"instagram_stories"},
+      {id:"instagram_feed", label:"instagram_feed"},
+      {id:"facebook_reels", label:"facebook_reels"},
+      {id:"facebook_feed", label:"facebook_feed"},
+      {id:"threads", label:"threads"},
+      {id:"podcast", label:"podcast"}
+    ];
+    const CUTS = [
+      {id:"tiktok-length", label:"tiktok-length"},
+      {id:"shorts", label:"shorts"},
+      {id:"weekly_update", label:"weekly_update"},
+      {id:"one_time_short_episode", label:"one_time_short_episode"},
+      {id:"full_length_documentary", label:"full_length_documentary"}
+    ];
+    const DEPTHS = [
+      {id:"1y", label:"1y"},
+      {id:"2-3y", label:"2-3y"},
+      {id:"5y", label:"5y"},
+      {id:"decade", label:"decade"},
+      {id:"few_decades", label:"few_decades"},
+      {id:"pre-1980_pre-internet", label:"pre-1980_pre-internet"}
+    ];
+    const LEANS = [
+      {id:"centered_independent", label:"centered_independent"},
+      {id:"left", label:"left"},
+      {id:"right", label:"right"},
+      {id:"far_right", label:"far_right"},
+      {id:"far_left", label:"far_left"},
+      {id:"unhinged_fringe", label:"unhinged_fringe"}
+    ];
+
+    function chosenRadio(name) {
+      const el = document.querySelector('input[name="' + name + '"]:checked');
+      return el ? el.value : "";
+    }
+
+    function syncDesk() {
+      const platform = chosenRadio("platform");
+      const cut = chosenRadio("cut");
+      const depth = chosenRadio("depth");
+      const lean = chosenRadio("script_lean");
+      const btn = document.getElementById("research");
+      const live = window.__shiftsOn === true;
+      btn.disabled = !platform || !cut || !depth || !lean || !live;
+      const msg = document.getElementById("desk-msg");
+      if (!platform) { msg.textContent = "No platform chosen = no run."; return; }
+      if (!cut) { msg.textContent = "No cut chosen = no run."; return; }
+      if (!depth) { msg.textContent = "No depth chosen = no run."; return; }
+      if (!lean) { msg.textContent = "No script lean chosen = no run."; return; }
+      msg.textContent = live
+        ? "Four picks locked. Research spends Parallel only after this."
+        : "Live spend off. Token-gate still on spend.";
+    }
+
+    function renderRadios(rootId, name, rows) {
+      const root = document.getElementById(rootId);
+      root.innerHTML = "";
+      rows.forEach(d => {
+        const lab = document.createElement("label");
+        const inp = document.createElement("input");
+        inp.type = "radio";
+        inp.name = name;
+        inp.value = d.id;
+        inp.addEventListener("change", syncDesk);
+        lab.appendChild(inp);
+        lab.appendChild(document.createTextNode(d.label));
+        root.appendChild(lab);
+      });
+    }
+
+    function findingHtml(f) {
+      return `
+        <div class="finding">
+          <div class="stamp ${f.stamp}">${f.stamp} · ${f.parallel_status}${f.when ? " · " + f.when : ""}</div>
+          ${f.independent === "no" ? `<div class="stamp fringe">not independent</div>` : ""}
+          ${f.propaganda === "yes" ? `<div class="stamp fringe">propaganda</div>` : ""}
+          <p>${f.claim}</p>
+          ${f.parallel_url ? `<div class="url">${f.parallel_url}</div>` : ""}
+          <div class="note">${f.note}</div>
+          <div class="note">lean: ${f.lean || "missing"}${f.lean_url ? " · " + f.lean_url : ""}</div>
+          <div class="note">interests: ${Array.isArray(f.interests) ? f.interests.join(", ") : (f.interests || "missing")}${f.interests_url ? " · " + f.interests_url : ""}</div>
+          <div class="note">who_repeats: ${Array.isArray(f.who_repeats) ? f.who_repeats.join(", ") : (f.who_repeats || "missing")}${f.who_repeats_url ? " · " + f.who_repeats_url : ""}</div>
+          <div class="note">independent: ${f.independent || "missing"}${f.independent_url ? " · " + f.independent_url : ""}</div>
+          <div class="note">vested_interest: ${Array.isArray(f.vested_interest) ? f.vested_interest.join(", ") : (f.vested_interest || "missing")}${f.vested_interest_url ? " · " + f.vested_interest_url : ""}</div>
+          <div class="note">propaganda: ${f.propaganda || "missing"}${f.propaganda_issuer && f.propaganda_issuer !== "missing" ? " · " + f.propaganda_issuer : ""}${f.propaganda_url ? " · " + f.propaganda_url : ""}</div>
+        </div>`;
+    }
+
+    function linkHtml(l) {
+      return `
+        <div class="finding">
+          <div class="stamp ${l.stamp}">link · ${l.stamp}</div>
+          <p>${l.claim}</p>
+          <div class="note">${l.from_id} → ${l.to_id}</div>
+          ${l.parallel_url ? `<div class="url">${l.parallel_url}</div>` : `<div class="note">causal link missing — not invented</div>`}
+        </div>`;
+    }
+
+    function renderPacket(packet) {
+      const rec = packet.receipt || {};
+      const findings = (rec.findings || []).map(findingHtml).join("");
+      const links = (rec.causal_links || []).map(linkHtml).join("");
+      const frames = (packet.frames || []).map(fr => `
+        <div class="frame">
+          <img src="${fr.image_href}" alt="${fr.shot}"/>
+          <p>${fr.shot}</p>
+        </div>`).join("");
+      document.getElementById("packet").innerHTML = `
+        <div class="brand">${packet.id}</div>
+        <h1 class="hook">${packet.topic || packet.hook}</h1>
+        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"}</p>
+        <div class="brand" style="margin:16px 0 8px">Script</div>
+        <p class="script">${packet.script || ""}</p>
+        <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
+        <div class="brand" style="margin:16px 0 8px">Cited sources</div>
+        ${findings}
+        <div class="brand" style="margin:16px 0 8px">Causal links</div>
+        ${links || `<p class="note">No Parallel-sourced link. Missing, not invented.</p>`}
+        <div class="brand" style="margin:16px 0 8px">Storyboard (from the script)</div>
+        <div class="frames">${frames}</div>
+      `;
+      if (packet.topic && !document.getElementById("topic").value) {
+        document.getElementById("topic").value = packet.topic;
+      }
+    }
+
     async function load() {
+      renderRadios("platforms", "platform", PLATFORMS);
+      renderRadios("cuts", "cut", CUTS);
+      renderRadios("depths", "depth", DEPTHS);
+      renderRadios("leans", "script_lean", LEANS);
       const health = await fetch("/api/health").then(r => r.json());
+      window.__shiftsOn = !!(health.shifts && health.shifts.enabled);
       const badges = document.getElementById("badges");
       badges.innerHTML = "";
       if (!health.shifts.enabled) {
@@ -90,34 +253,38 @@ FLOOR_HTML = """<!DOCTYPE html>
       });
       document.getElementById("health").textContent =
         "model " + health.model + " · store " + health.store + " · floor does not post";
+      syncDesk();
 
       const body = await fetch("/api/packets").then(r => r.json());
       const packet = (body.packets || [])[0];
-      const root = document.getElementById("packet");
-      if (!packet) { root.textContent = "No packet."; return; }
-      const rec = packet.receipt || {};
-      const findings = (rec.findings || []).map(f => `
-        <div class="finding">
-          <div class="stamp ${f.stamp}">${f.stamp} · ${f.parallel_status}</div>
-          <p>${f.claim}</p>
-          ${f.parallel_url ? `<div class="url">${f.parallel_url}</div>` : ""}
-          <div class="note">${f.note}</div>
-        </div>`).join("");
-      const frames = (packet.frames || []).map(fr => `
-        <div class="frame">
-          <img src="${fr.image_href}" alt="${fr.shot}"/>
-          <p>${fr.shot}</p>
-        </div>`).join("");
-      root.innerHTML = `
-        <div class="brand">${packet.id}</div>
-        <h1 class="hook">${packet.hook}</h1>
-        <p class="script">${packet.script}</p>
-        <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
-        ${findings}
-        <div class="brand" style="margin:16px 0 8px">Four shot frames</div>
-        <div class="frames">${frames}</div>
-      `;
+      if (!packet) { document.getElementById("packet").textContent = "No packet."; return; }
+      renderPacket(packet);
     }
+
+    document.getElementById("research").addEventListener("click", async () => {
+      const platform = chosenRadio("platform");
+      const cut = chosenRadio("cut");
+      const depth = chosenRadio("depth");
+      const script_lean = chosenRadio("script_lean");
+      if (!platform || !cut || !depth || !script_lean) {
+        document.getElementById("desk-msg").textContent = "Any missing pick = no run.";
+        return;
+      }
+      const topic = document.getElementById("topic").value.trim();
+      const token = document.getElementById("token").value.trim();
+      const res = await fetch("/api/shifts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? {"X-Shift-Token": token} : {})
+        },
+        body: JSON.stringify({topic, platform, cut, depth, script_lean, goal: topic || "Research the topic. Do not post."})
+      });
+      const text = await res.text();
+      document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);
+      if (res.ok) load();
+    });
+
     load().catch(err => {
       document.getElementById("packet").textContent = "API unreachable. python -m onecrew";
       console.error(err);

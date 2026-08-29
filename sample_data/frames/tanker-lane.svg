@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360" role="img" aria-label="Tanker in the strait">
+  <rect width="640" height="360" fill="#1a1410"/>
+  <rect x="0" y="210" width="640" height="150" fill="#1c2a32"/>
+  <rect x="0" y="0" width="120" height="360" fill="#2a2118"/>
+  <rect x="520" y="0" width="120" height="360" fill="#2a2118"/>
+  <rect x="180" y="180" width="260" height="40" fill="#6a5340"/>
+  <rect x="220" y="150" width="80" height="30" fill="#3a2e22"/>
+  <text x="160" y="80" fill="#f3e6d4" font-family="ui-sans-serif, system-ui, sans-serif" font-size="18">tanker-lane</text>
+  <text x="160" y="108" fill="#9a8470" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Narrow lane. Land on both sides.</text>
+</svg>

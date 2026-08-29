@@ -4,7 +4,7 @@ from typing import Any
 
 from onecrew import config
 from onecrew.imagen_client import ImagenDownError, generate_frames
-from onecrew.models import Finding, Packet, ShotFrame
+from onecrew.models import MISSING, Finding, Packet, ShotFrame
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.store import store
 
@@ -38,7 +38,7 @@ def imagen_shots(script: str, refs: str) -> dict[str, Any]:
     """Boarder tool. Vertex Imagen. Spends. Real shots, not a mood dump."""
     prompt = (
         f"Four photoreal shot frames from this short-form script, using only these refs. "
-        f"Real camera setups, not a mood board. Script: {script}. Refs: {refs}"
+        f"Storyboard from this script, one frame per beat, not a mood collage. Script: {script}. Refs: {refs}"
     )
     try:
         generate_frames(prompt=prompt, number_of_images=4)
@@ -63,63 +63,83 @@ def findings_from_parallel_rows(
         return []
     return [
         Finding(
-            id="ranking-hit",
+            id="timeline-hit",
             claim=hit_claim,
             stamp="grounded",
             parallel_url=hit_url,
             parallel_status="hit",
             note="Parallel URL on this row.",
+            lean=MISSING,
+            interests=MISSING,
+            who_repeats=MISSING,
+            independent=MISSING,
+            vested_interest=MISSING,
         ),
         Finding(
-            id="3am-kitchen",
+            id="timeline-frame",
             claim=mainstream_claim,
             stamp="mainstream",
             parallel_url=None,
             parallel_status="n/a",
             note="Widely repeated, may be bias, not a source.",
+            lean=MISSING,
+            interests=MISSING,
+            who_repeats=MISSING,
+            independent=MISSING,
+            vested_interest=MISSING,
         ),
         Finding(
-            id="nasa-miss",
+            id="timeline-miss",
             claim=miss_claim,
             stamp="fringe",
             parallel_url=None,
             parallel_status="miss",
             note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+            lean=MISSING,
+            interests=MISSING,
+            who_repeats=MISSING,
+            independent=MISSING,
+            vested_interest=MISSING,
         ),
     ]
 
 
 def frames_from_script(packet: Packet, refs: list[str]) -> list[ShotFrame]:
-    return [
+    from onecrew.cut import frame_count, require_cut
+
+    frames = [
         ShotFrame(
-            id="jar-pour",
-            shot="Close-up: refrigerator pickle jar, brine pouring into a shot glass.",
+            id="tanker-lane",
+            shot="Tanker in a narrow lane, land on both sides.",
             source_refs=refs,
-            image_href="/api/frames/jar-pour",
+            image_href="/api/frames/tanker-lane",
             imagen=True,
         ),
         ShotFrame(
-            id="kitchen-3am",
-            shot="Single overhead bulb, kitchen sink, 3:07 on the microwave.",
-            source_refs=[],
-            image_href="/api/frames/kitchen-3am",
-            imagen=True,
-        ),
-        ShotFrame(
-            id="ranking-phone",
-            shot="Phone in hand showing the Parallel ranking URL. Not a stock collage.",
+            id="strait-map",
+            shot="Chart table with a strait map and a 2018 date chip.",
             source_refs=refs,
-            image_href="/api/frames/ranking-phone",
+            image_href="/api/frames/strait-map",
             imagen=True,
         ),
         ShotFrame(
-            id="nasa-empty",
-            shot="Search board: NASA pickle juice — no hit. Empty results, not a NASA seal.",
+            id="oil-share",
+            shot="Phone showing the Parallel oil-share URL. Not a collage.",
+            source_refs=refs,
+            image_href="/api/frames/oil-share",
+            imagen=True,
+        ),
+        ShotFrame(
+            id="link-empty",
+            shot="Timeline board: causal link missing. No invented chain.",
             source_refs=[],
-            image_href="/api/frames/nasa-empty",
+            image_href="/api/frames/link-empty",
             imagen=True,
         ),
     ]
+    if packet.cut:
+        return frames[: frame_count(require_cut(packet.cut), packet.platform)]
+    return frames
 
 
 # Keep seed id reachable for tools without importing seed (avoids cycle in ADK load).

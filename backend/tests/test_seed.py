@@ -1,43 +1,76 @@
 from fastapi.testclient import TestClient
 
 from onecrew.api import app
-from onecrew.seed import seed_first_open
+from onecrew.models import MISSING
+from onecrew.seed import OPEC_URL, seed_first_open
 
 
-def test_first_open_packet_id_is_oc_pickle_debt() -> None:
+def test_first_open_packet_id_is_oc_hormuz_decade() -> None:
     packet = seed_first_open()
-    assert packet.id == "oc-pickle-debt"
+    assert packet.id == "oc-hormuz-decade"
+    assert packet.topic.lower().find("hormuz") >= 0
+    assert packet.depth == "decade"
+    assert packet.cut == "one_time_short_episode"
+    assert packet.platform == "youtube"
+    assert packet.script_lean == "centered_independent"
+    assert "[jcpoa-2018]" in packet.script
+    assert "[hormuz-share]" in packet.script
+    assert "[secret-closure]" in packet.script
     with TestClient(app) as client:
         body = client.get("/api/packets")
         ids = {p["id"] for p in body.json()["packets"]}
-        assert "oc-pickle-debt" in ids
+        assert "oc-hormuz-decade" in ids
 
 
-def test_seeded_grounded_ranking_hit() -> None:
+def test_seeded_grounded_cause() -> None:
     packet = seed_first_open()
-    grounded = next(f for f in packet.receipt.findings if f.stamp == "grounded")
-    assert grounded.id == "ranking-hit"
-    assert grounded.parallel_status == "hit"
-    assert grounded.parallel_url and grounded.parallel_url.startswith("http")
-    assert "ranking" in grounded.claim.lower() or "ranks" in grounded.claim.lower()
+    grounded = [f for f in packet.receipt.findings if f.stamp == "grounded"]
+    assert any(f.id == "jcpoa-2018" for f in grounded)
+    jcpoa = next(f for f in grounded if f.id == "jcpoa-2018")
+    assert jcpoa.parallel_status == "hit"
+    assert jcpoa.parallel_url and jcpoa.parallel_url.startswith("http")
 
 
-def test_seeded_mainstream_3am_kitchen() -> None:
+def test_seeded_mainstream_lean_present_or_missing_honestly() -> None:
     packet = seed_first_open()
-    row = next(f for f in packet.receipt.findings if f.id == "3am-kitchen")
-    assert row.stamp == "mainstream"
-    assert "3am" in row.claim.lower() or "3am" in row.id
-    assert "not a source" in row.note.lower()
-    assert row.parallel_url is None
+    missing = next(f for f in packet.receipt.findings if f.id == "oil-panic")
+    assert missing.stamp == "mainstream"
+    assert "not a source" in missing.note.lower()
+    assert missing.parallel_url is None
+    assert missing.lean == MISSING
+    assert missing.interests == MISSING
+    present = next(f for f in packet.receipt.findings if f.id == "producer-frame")
+    assert present.stamp == "mainstream"
+    assert present.lean == "industry"
+    assert present.lean != present.stamp
+    assert present.interests == ["OPEC"]
+    assert present.lean_url == OPEC_URL
 
 
-def test_seeded_fringe_nasa_miss() -> None:
+def test_seeded_fringe_tagged() -> None:
     packet = seed_first_open()
-    row = next(f for f in packet.receipt.findings if f.id == "nasa-miss")
+    row = next(f for f in packet.receipt.findings if f.id == "secret-closure")
     assert row.stamp == "fringe"
     assert row.parallel_status == "miss"
-    assert "nasa" in row.claim.lower()
     assert "never sold as fact" in row.note.lower()
+
+
+def test_seeded_missing_causal_link() -> None:
+    packet = seed_first_open()
+    assert packet.receipt.causal_links
+    link = packet.receipt.causal_links[0]
+    assert link.stamp == MISSING
+    assert link.parallel_url is None
+    assert link.from_id == "jcpoa-2018"
+    assert link.to_id == "oil-panic"
+
+
+def test_seed_shows_script_and_storyboard_together() -> None:
+    packet = seed_first_open()
+    assert packet.script.strip()
+    assert "[jcpoa-2018]" in packet.script
+    assert len(packet.frames) >= 1
+    assert all(frame.shot.strip() for frame in packet.frames)
 
 
 def test_seeded_four_shot_frames() -> None:
@@ -48,10 +81,10 @@ def test_seeded_four_shot_frames() -> None:
     packet = seed_first_open()
     assert len(packet.frames) == 4
     assert {f.id for f in packet.frames} == {
-        "jar-pour",
-        "kitchen-3am",
-        "ranking-phone",
-        "nasa-empty",
+        "tanker-lane",
+        "strait-map",
+        "oil-share",
+        "link-empty",
     }
     for frame in packet.frames:
         assert frame.shot.strip()

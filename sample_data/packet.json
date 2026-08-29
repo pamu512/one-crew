@@ -1,70 +1,182 @@
 {
-  "id": "oc-pickle-debt",
-  "hook": "Pickle juice at 3am is a ranking cheat code — NASA even studied it.",
-  "script": "Open on the fridge. Pour the brine. Cut to the microwave clock at 3:07. Show the ranking on the phone. End on the empty NASA search — do not sell it as fact.",
+  "id": "oc-hormuz-decade",
+  "topic": "Explain what's going on with the Hormuz strait",
+  "platform": "youtube",
+  "depth": "decade",
+  "cut": "one_time_short_episode",
+  "script_lean": "centered_independent",
+  "hook": "Explain what's going on with the Hormuz strait",
+  "script": "Straight read. Platform youtube. Cut one_time_short_episode. The United States withdrew from the JCPOA, tightening the Iran file around the Gulf. Grounded. Independent missing. [jcpoa-2018] A large share of seaborne oil still transits the Strait of Hormuz. Grounded. Propaganda yes, issuer OPEC. Not independent. [hormuz-share] Any Hormuz scare means oil crashes the world overnight. Mainstream, not a source. Source lean missing. [oil-panic] Producer states treat an open Hormuz as an oil-market given. Mainstream, not a source. Source lean industry. [producer-frame] Hormuz has already been mined shut under a hidden navy treaty. Tagged fringe, never sold as fact. [secret-closure] Centered note: some source lean fields are missing. Fringe stays on the list. Not hidden to match a centered ask. Propaganda stays marked. Not hidden.",
   "status": "ready",
   "receipt": {
-    "packet_id": "oc-pickle-debt",
+    "packet_id": "oc-hormuz-decade",
     "written": true,
     "findings": [
       {
-        "id": "ranking-hit",
-        "claim": "Pickle juice sodium ranks with common sports drinks in published recovery tables.",
+        "id": "jcpoa-2018",
+        "claim": "The United States withdrew from the JCPOA, tightening the Iran file around the Gulf.",
         "stamp": "grounded",
-        "parallel_url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/",
+        "parallel_url": "https://www.cfr.org/backgrounder/what-iran-nuclear-deal",
         "parallel_status": "hit",
-        "note": "Parallel URL on this row."
+        "note": "Parallel URL on this row.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "2018"
       },
       {
-        "id": "3am-kitchen",
-        "claim": "A 3am kitchen pickle-juice shot is a hangover ranking hack.",
+        "id": "hormuz-share",
+        "claim": "A large share of seaborne oil still transits the Strait of Hormuz.",
+        "stamp": "grounded",
+        "parallel_url": "https://www.opec.org/",
+        "parallel_status": "hit",
+        "note": "Parallel URL on this row.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "no",
+        "independent_url": "https://www.opec.org/",
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "yes",
+        "propaganda_url": "https://www.opec.org/",
+        "propaganda_issuer": "OPEC",
+        "when": "2018-2024"
+      },
+      {
+        "id": "oil-panic",
+        "claim": "Any Hormuz scare means oil crashes the world overnight.",
         "stamp": "mainstream",
         "parallel_url": null,
         "parallel_status": "n/a",
-        "note": "Widely repeated, may be bias, not a source."
+        "note": "Widely repeated, may be bias, not a source.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "2023-2024"
       },
       {
-        "id": "nasa-miss",
-        "claim": "NASA studied pickle juice for astronaut cramps.",
+        "id": "producer-frame",
+        "claim": "Producer states treat an open Hormuz as an oil-market given.",
+        "stamp": "mainstream",
+        "parallel_url": null,
+        "parallel_status": "n/a",
+        "note": "Widely repeated, may be bias, not a source.",
+        "lean": "industry",
+        "lean_url": "https://www.opec.org/",
+        "interests": [
+          "OPEC"
+        ],
+        "interests_url": "https://www.opec.org/",
+        "who_repeats": [
+          "OPEC"
+        ],
+        "who_repeats_url": "https://www.opec.org/",
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "2018-2024"
+      },
+      {
+        "id": "secret-closure",
+        "claim": "Hormuz has already been mined shut under a hidden navy treaty.",
         "stamp": "fringe",
         "parallel_url": null,
         "parallel_status": "miss",
-        "note": "Parallel miss. Included and tagged fringe. Never sold as fact."
+        "note": "Parallel miss. Included and tagged fringe. Never sold as fact.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "decade"
       }
     ],
     "disposition": "READY",
     "hold_reason": null,
     "invented_source": false,
     "collage": false,
-    "invented_stamp": false
+    "invented_stamp": false,
+    "invented_lean": false,
+    "causal_links": [
+      {
+        "id": "jcpoa-to-houthi",
+        "from_id": "jcpoa-2018",
+        "to_id": "oil-panic",
+        "claim": "The 2018 JCPOA exit caused the 2023-2024 Hormuz panic.",
+        "stamp": "missing",
+        "parallel_url": null
+      }
+    ]
   },
   "frames": [
     {
-      "id": "jar-pour",
-      "shot": "Close-up: refrigerator pickle jar, brine pouring into a shot glass.",
-      "source_refs": ["https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/"],
-      "image_href": "/api/frames/jar-pour",
+      "id": "tanker-lane",
+      "shot": "Tanker in a narrow lane, land on both sides.",
+      "source_refs": [
+        "https://www.opec.org/"
+      ],
+      "image_href": "/api/frames/tanker-lane",
       "imagen": false
     },
     {
-      "id": "kitchen-3am",
-      "shot": "Single overhead bulb, kitchen sink, 3:07 on the microwave.",
+      "id": "strait-map",
+      "shot": "Chart table with a strait map and a 2018 date chip.",
+      "source_refs": [
+        "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
+      ],
+      "image_href": "/api/frames/strait-map",
+      "imagen": false
+    },
+    {
+      "id": "oil-share",
+      "shot": "Phone showing the Parallel oil-share URL. Not a collage.",
+      "source_refs": [
+        "https://www.opec.org/"
+      ],
+      "image_href": "/api/frames/oil-share",
+      "imagen": false
+    },
+    {
+      "id": "link-empty",
+      "shot": "Timeline board: JCPOA to panic — causal link missing. No invented chain.",
       "source_refs": [],
-      "image_href": "/api/frames/kitchen-3am",
-      "imagen": false
-    },
-    {
-      "id": "ranking-phone",
-      "shot": "Phone in hand showing the Parallel ranking URL. Not a stock collage.",
-      "source_refs": ["https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3894303/"],
-      "image_href": "/api/frames/ranking-phone",
-      "imagen": false
-    },
-    {
-      "id": "nasa-empty",
-      "shot": "Search board: NASA pickle juice — no hit. Empty results, not a NASA seal.",
-      "source_refs": [],
-      "image_href": "/api/frames/nasa-empty",
+      "image_href": "/api/frames/link-empty",
       "imagen": false
     }
   ],

@@ -1,26 +1,43 @@
 # One Crew
 
-Overnight researcher and board artist for one-person YouTube / TikTok studios. Parallel + Gemini. Never posts.
+Pick platform, length, depth, then how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
 
-**Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. The floor does not publish.**
+One Crew is a research companion. Four picks, then a write-once timeline, then a **script**, then a **storyboard** — one Imagen frame per beat, sized to the cut. Not a mood collage. The crew does not post.
+
+**Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. The floor never posts.**
 
 **License:** Apache-2.0
 
-You paste a short hook. The researcher calls the official `parallel-web` Python SDK and writes a receipt **once**. Each finding is stamped exactly one of: **grounded** (Parallel URL on the row), **mainstream** (widely repeated, may be bias, not a source), **fringe** (included and tagged, never sold as fact). The same receipt must show a Parallel **hit** and a Parallel **miss**. The boarder then makes four real Imagen shots from the script plus those Parallel refs — not a mood dump. If Parallel, Vertex, or Imagen is down: **HOLD**. No invented source, no collage, no invented stamp.
+## Front door
+
+Required picks, in this order, before any Parallel or Imagen spend. No defaults. Any missing pick = no run.
+
+1. **Platform** (TikTok, YouTube, Instagram / Meta, podcast — no free-text, no default) — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
+2. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary`
+3. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
+4. **Script lean** (voice of the script only) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
+
+Then the researcher writes a timeline and stamps each source row: grounded / mainstream / fringe, lean-of-the-source, interests, independent, vested_interest, propaganda, and causal links only when Parallel sourced them. Missing stays missing.
+
+The floor writes the **script** in the requested lean, sized to that surface + length, with citations pointing at those rows. The script **must** convert to a storyboard: Imagen frames from that script, one frame per beat/shot, sized to the surface. A Stories board is not a documentary board. A Reels board is not a YouTube long-form board. Parallel refs may inform the frames. If Imagen or Vertex is down, frames stay missing — they are not invented. Boards are not optional.
+
+Requested script lean does **not** restamp sources. Unhinged / fringe voice still cannot invent sources or mark propaganda as grounded. Centered_independent still must show missing when Parallel missed. Do not hide fringe or propaganda to match a centered ask. Do not invent a lobby to match a far-right / far-left ask.
+
+The floor never posts.
 
 ![Architecture](docs/architecture.svg)
 
 ## Who it's for
 
-A bedroom creator who needs receipts before they cut. Sample first-open packet: **oc-pickle-debt**.
+A one-person shop that needs a script with receipts. Sample first-open packet: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent).
 
 ## How it works
 
-1. First-open is the seeded `oc-pickle-debt` packet (grounded ranking hit, mainstream 3am-kitchen, fringe NASA miss, four shot frames). GET never calls Parallel or Imagen.
-2. A live shift is `POST /api/shifts` and requires `SHIFT_TOKEN` + `X-Shift-Token`. Unset token → 403.
-3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**.
-4. Write-once receipt. Second stamp is an error.
-5. Missing Parallel, Vertex, or Imagen → fail-closed HOLD.
+1. First-open shows the four picks, a script with citations, a mixed source list (Parallel hit **and** miss on the same receipt), and the storyboard cut from that script. GET never calls Parallel or Imagen.
+2. `POST /api/shifts` requires `SHIFT_TOKEN` + `X-Shift-Token` and all four picks. Unset token → 403. Any missing pick → 400. No spend.
+3. **Google ADK** crew: researcher then boarder, on **Vertex Gemini 3.5 Flash**. Flow is picks → timeline + sources → script → storyboard.
+4. Write-once receipt. Script lean cannot change a source stamp.
+5. Missing Parallel — or a pre-1980 miss → fail-closed HOLD. Unhinged lean still fail-closed if Parallel missed. Missing Imagen/Vertex → frames stay missing.
 6. The floor has no publish control. Nothing is posted.
 
 ## How to run locally
@@ -38,7 +55,7 @@ pip install -r backend/requirements.txt
 PYTHONPATH=backend python -m onecrew
 ```
 
-Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the receipt on `oc-pickle-debt`. The floor has no publish button.
+Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the Hormuz script, the cited sources, and the storyboard. The floor has no publish button.
 
 ```bash
 PYTHONPATH=backend python -m onecrew &
@@ -50,7 +67,7 @@ curl -s http://127.0.0.1:43158/api/packets | python -m json.tool | head
 # curl -s -X POST http://127.0.0.1:43158/api/shifts \
 #   -H 'content-type: application/json' \
 #   -H "X-Shift-Token: $SHIFT_TOKEN" \
-#   -d '{"goal":"Research the hook. Do not post."}'
+#   -d '{"topic":"Explain what is going on with the Hormuz strait","platform":"youtube","cut":"one_time_short_episode","depth":"decade","script_lean":"centered_independent"}'
 ```
 
 ### Tests
@@ -60,7 +77,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-31 tests lock write-once receipts, stamps, hit+miss, GET-never-spends, POST 403, HOLD, and the seed packet.
+Tests lock: no run without all four picks; script lean cannot change a source stamp; unhinged lean still fail-closed on missing Parallel; first-open shows script + storyboard; Imagen down leaves frames missing.
 
 ### ADK web (optional)
 
@@ -118,12 +135,11 @@ Leave `SHIFT_TOKEN` unset on the public service so `POST /api/shifts` is 403. Th
 ## Repository map
 
 ```
-sample_data/packet.json    first-open oc-pickle-debt
-sample_data/frames/        four seeded shot boards
+sample_data/packet.json    first-open oc-hormuz-decade
+sample_data/frames/        storyboard frames cut from the seed script
 backend/onecrew/           FastAPI + ADK crew + receipt lock
-backend/tests/             31 locks
+backend/tests/             locks
 docs/architecture.svg
-docs/architecture.png
 DEMO.md
 LICENSE
 ```

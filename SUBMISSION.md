@@ -8,24 +8,24 @@ One Crew
 
 ## Tagline
 
-Overnight researcher and board artist. Parallel receipts. Imagen shots. The floor never posts.
+Pick platform, length, depth, then how you want it to lean. You get a script, cited sources, and a storyboard cut from that script.
 
 ## Text description
 
-One Crew is for a bedroom YouTube / TikTok creator who pastes a short hook. The researcher calls the official Parallel Web Python SDK and writes a receipt once. Each finding is stamped exactly one of grounded (Parallel URL on the row), mainstream (widely repeated, may be bias, not a source), or fringe (included and tagged, never sold as fact). The same receipt must show a Parallel hit and a Parallel miss.
+One Crew is a research companion that returns a script plus cited sources. Before any Parallel or Imagen spend you pick, in order: platform (tiktok, youtube, youtube_shorts, Instagram/Meta: instagram_reels, instagram_stories, instagram_feed, facebook_reels, facebook_feed, threads, plus podcast), length (tiktok-length, shorts, weekly_update, one_time_short_episode, full_length_documentary), depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet), and script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe). No defaults. Any missing pick = no run.
 
-The boarder makes four real Imagen frames from the script plus those Parallel refs — not a mood dump. If Parallel, Vertex, or Imagen is down, the packet HOLDs. No invented source, no collage, no invented stamp.
-
-GET is seeded (`oc-pickle-debt`) and never spends Parallel or Imagen. POST that spends is 403 unless `X-Shift-Token` matches `SHIFT_TOKEN`. The floor has no publish control.
+The researcher writes a timeline once and stamps each source. The floor writes the script in the requested lean, sized to platform and length, with citations pointing at those rows. The script must convert to a storyboard: Imagen frames from that script, one per beat, sized to the cut. Not a mood collage. If Imagen or Vertex is down, frames stay missing. Script lean does not restamp sources. The floor never posts.
 
 ## Features and functionality
 
-- Write-once Parallel receipt
-- Stamps: grounded / mainstream / fringe
-- Hit and miss on the same receipt
-- Four shot frames from script + Parallel refs
-- Fail-closed HOLD when rails are down
-- GET never spends; POST spend is token-gated
+- Four required picks: platform, length, depth, script lean
+- Script plus cited sources plus a storyboard cut from that script
+- Boards are not optional; Imagen/Vertex down leaves frames missing
+- Script lean does not restamp sources
+- Write-once Parallel timeline
+- Stamps: grounded / mainstream / fringe, source lean, interests, independent, vested_interest, propaganda
+- Causal links grounded only if Parallel sourced
+- GET never spends; POST is token-gated and pick-gated
 - Floor never posts
 - Gemini ADK crew on Vertex 3.5 Flash
 
@@ -41,7 +41,7 @@ GET is seeded (`oc-pickle-debt`) and never spends Parallel or Imagen. POST that 
 
 ## Other data sources used
 
-Seeded first-open packet `oc-pickle-debt` in `sample_data/packet.json`. No creator accounts. No secrets.
+Seeded first-open packet `oc-hormuz-decade` in `sample_data/packet.json`. No creator accounts. No secrets.
 
 ## Google SDK used
 

@@ -5,19 +5,35 @@ import uuid
 
 from onecrew import config
 from onecrew.agent.tools import findings_from_parallel_rows, frames_from_script
+from onecrew.cut import frame_count, require_cut, size_findings
+from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
 from onecrew.imagen_client import ImagenDownError, generate_frames
-from onecrew.models import Packet, Rails, Receipt, ShiftRecord, utcnow
+from onecrew.models import Depth, Packet, Rails, Receipt, ShiftRecord, utcnow
 from onecrew.parallel_client import ParallelDownError, search
+from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
+from onecrew.script import write_script
 from onecrew.seed import reset_floor
 from onecrew.store import store
 
 log = logging.getLogger("onecrew.shift")
 
 
-def open_shift(goal: str, *, packet_id: str | None = None) -> ShiftRecord:
+def open_shift(
+    goal: str,
+    *,
+    packet_id: str | None = None,
+    platform: str | None = None,
+    depth: str | None = None,
+    cut: str | None = None,
+    script_lean: str | None = None,
+    topic: str = "",
+) -> ShiftRecord:
+    chosen_platform, chosen_cut, chosen_depth, chosen_lean = require_picks(
+        platform, cut, depth, script_lean
+    )
     packet_id = packet_id or config.SEED_PACKET_ID
     shift_id = f"shift-{uuid.uuid4().hex[:10]}"
     rails = assess_rails()
@@ -30,6 +46,11 @@ def open_shift(goal: str, *, packet_id: str | None = None) -> ShiftRecord:
         engine=f"adk+{config.GEMINI_MODEL}" if live else "receipt-stamp",
         model=config.GEMINI_MODEL if live else "none",
         packet_id=packet_id,
+        platform=chosen_platform,
+        depth=chosen_depth,
+        cut=chosen_cut,
+        script_lean=chosen_lean,
+        topic=topic or goal,
         rails=rails,
         store_backend=store.backend,
     )
@@ -37,48 +58,73 @@ def open_shift(goal: str, *, packet_id: str | None = None) -> ShiftRecord:
     return shift
 
 
-def _research(packet: Packet, rails: Rails) -> Receipt:
-    if not rails.ok:
-        return hold_receipt(packet.id, rails)
+def _research(packet: Packet, rails: Rails, depth: Depth) -> Receipt:
+    if not rails.parallel:
+        held = hold_receipt(packet.id, rails)
+        pre = pre1980_fail_closed(packet_id=packet.id, depth=depth, rails=rails, parallel_hits=0)
+        return pre or held
     try:
         hit = search(
-            objective=f"Ground the ranking claim in: {packet.hook}",
-            search_queries=["pickle juice sodium sports drink ranking recovery"],
+            objective=f"Timeline for {packet.topic or packet.hook} inside depth={depth}",
+            search_queries=[packet.topic or packet.hook, f"{packet.topic} {depth}"],
         )
         miss = search(
-            objective="Confirm whether NASA studied pickle juice for astronaut cramps",
-            search_queries=["NASA pickle juice astronaut cramps study"],
+            objective=f"Unsourced fringe claim in {packet.topic or packet.hook}",
+            search_queries=[f"{packet.topic} hidden treaty Hormuz"],
         )
     except ParallelDownError:
-        return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
+        down = rails.model_copy(update={"parallel": False})
+        return pre1980_fail_closed(
+            packet_id=packet.id, depth=depth, rails=down, parallel_hits=0
+        ) or hold_receipt(packet.id, down)
     hit_rows = list(getattr(hit, "results", None) or [])
     miss_rows = list(getattr(miss, "results", None) or [])
     hit_url = getattr(hit_rows[0], "url", None) if hit_rows else None
-    if not hit_url or miss_rows:
-        # Need a Parallel hit AND a Parallel miss. Do not invent either.
+    pre = pre1980_fail_closed(
+        packet_id=packet.id,
+        depth=depth,
+        rails=rails,
+        parallel_hits=len(hit_rows),
+    )
+    if pre:
+        return pre
+    if not hit_url:
         return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
     findings = findings_from_parallel_rows(
         hit_url=hit_url,
-        hit_claim="Pickle juice sodium ranks with common sports drinks in published recovery tables.",
-        mainstream_claim="A 3am kitchen pickle-juice shot is a hangover ranking hack.",
-        miss_claim="NASA studied pickle juice for astronaut cramps.",
+        hit_claim=f"Grounded event inside {depth}: {packet.topic or packet.hook}",
+        mainstream_claim=f"Widely repeated frame about {packet.topic or packet.hook}",
+        miss_claim=f"Fringe claim about {packet.topic or packet.hook}",
     )
     if not findings:
         return hold_receipt(packet.id, rails.model_copy(update={"parallel": False}))
-    return Receipt(packet_id=packet.id, written=False, findings=findings, disposition="READY")
+    if packet.cut:
+        findings = size_findings(findings, packet.cut, packet.platform)
+    # ponytail: live causal_links stay empty unless Parallel sourced a this-led-to-that URL.
+    # Seed shows one missing link; do not invent a 40-year chain here.
+    return Receipt(
+        packet_id=packet.id,
+        written=False,
+        findings=findings,
+        causal_links=[],
+        disposition="READY",
+    )
 
 
 def _board(packet: Packet, rails: Rails) -> list:
-    if not rails.ok:
+    """Storyboard from the script. If Imagen/Vertex is down, frames stay missing."""
+    if not rails.imagen or not rails.vertex:
         return []
     refs = [f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url]
+    shots = frame_count(require_cut(packet.cut), packet.platform)
     try:
         generate_frames(
             prompt=(
-                f"Four photoreal shot frames. Script: {packet.script}. "
-                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a mood dump."
+                f"{shots} photoreal storyboard frames, one per beat, from this script. "
+                f"Cut={packet.cut}. Script: {packet.script}. "
+                f"Refs: {', '.join(r for r in refs if r)}. Real shots, not a mood collage."
             ),
-            number_of_images=4,
+            number_of_images=shots,
         )
     except ImagenDownError:
         return []
@@ -86,49 +132,74 @@ def _board(packet: Packet, rails: Rails) -> list:
 
 
 def run_live_packet(shift: ShiftRecord) -> Packet:
-    """Spend path. Caller already checked X-Shift-Token. One write at the end."""
+    """Spend path. Picks → sources → script → storyboard. Boards are not optional."""
+    require_picks(shift.platform, shift.cut, shift.depth, shift.script_lean)
     rails = shift.rails or assess_rails()
     existing = store.get_packet(shift.packet_id) or reset_floor()
     fresh = Packet(
         id=existing.id,
-        hook=existing.hook,
-        script=existing.script,
+        topic=shift.topic or existing.topic or existing.hook,
+        platform=shift.platform,
+        depth=shift.depth,
+        cut=shift.cut,
+        script_lean=shift.script_lean,
+        hook=shift.topic or existing.hook,
+        script="",
         status="running",
         shift_id=shift.id,
     )
-    bus.emit(shift.id, agent="researcher", kind="plan", message=f"Research {fresh.id}")
-    if not rails.ok:
-        write_receipt(fresh, hold_receipt(fresh.id, rails))
+    bus.emit(shift.id, agent="researcher", kind="plan", message=f"Research {fresh.id} depth={shift.depth}")
+    if not rails.parallel:
+        write_receipt(
+            fresh,
+            pre1980_fail_closed(
+                packet_id=fresh.id, depth=shift.depth, rails=rails, parallel_hits=0
+            )
+            or hold_receipt(fresh.id, rails),
+        )
+        write_script(fresh)
         attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
 
-    receipt = _research(fresh, rails)
+    receipt = _research(fresh, rails, shift.depth)
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
+        write_script(fresh)
         attach_frames(fresh, [], rails=rails)
-        store.upsert_packet(fresh)
-        return fresh
-
-    bus.emit(shift.id, agent="boarder", kind="plan", message="Four shot frames")
-    frames = _board(fresh, rails)
-    if not frames:
-        down = rails.model_copy(update={"imagen": False, "vertex": rails.vertex})
-        if not rails.imagen:
-            down = rails.model_copy(update={"imagen": False})
-        write_receipt(fresh, hold_receipt(fresh.id, down.model_copy(update={"imagen": False})))
-        attach_frames(fresh, [], rails=down.model_copy(update={"imagen": False}))
         store.upsert_packet(fresh)
         return fresh
 
     write_receipt(fresh, receipt)
+    write_script(fresh)
+    bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
+    frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
     store.upsert_packet(fresh)
     return fresh
 
 
-async def run_shift(goal: str, *, packet_id: str | None = None, shift: ShiftRecord | None = None) -> ShiftRecord:
-    shift = shift or open_shift(goal, packet_id=packet_id)
+async def run_shift(
+    goal: str,
+    *,
+    packet_id: str | None = None,
+    shift: ShiftRecord | None = None,
+    platform: str | None = None,
+    depth: str | None = None,
+    cut: str | None = None,
+    script_lean: str | None = None,
+    topic: str = "",
+) -> ShiftRecord:
+    if shift is None:
+        shift = open_shift(
+            goal,
+            packet_id=packet_id,
+            platform=platform,
+            depth=depth,
+            cut=cut,
+            script_lean=script_lean,
+            topic=topic,
+        )
     try:
         packet = run_live_packet(shift)
         shift.status = "completed"
