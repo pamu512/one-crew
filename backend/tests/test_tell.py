@@ -268,7 +268,7 @@ def test_tell_examples_are_not_an_enum() -> None:
     assert "maps and infographics" in readme.lower()
     png = Path("/workspace/docs/architecture.png").read_bytes()
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
-    svg = Path("/workspace/docs/architecture.svg").read_text()
+    svg = Path("/workspace/docs/architecture.svg").read_text(encoding="utf-8")
     assert "<script" not in svg.lower()
     assert "foreignObject" not in svg
     assert "onload" not in svg.lower()

@@ -1,12 +1,13 @@
 # One Crew
 
-One Crew is a research companion for a one-person shop. Before you record, you see:
+One Crew is a research companion for a one-person shop. Before you record, you see collisions, dirty sources, and holes:
 
-1. a timed VO with citations
+1. a full recordable script with citations (not a 6-beat sketch)
 2. which lines already exist as someone else's media (`collision` yes / no / missing)
 3. which sources are house organs, propaganda, fringe, or unsourced
+4. a frame-by-frame shot list, and what the thesis left out
 
-You leave with a citable thesis plus a script, not a sketch. The research pack is always written. The point is you can see the risk on the page. We do not clear copyright. We do not give legal advice. We do not license footage. A Parallel miss is not permission. `collision=missing` means we did not get a search, not that you are in the clear. The floor never posts, so we also do not publish the thing that would get you a claim. The thesis lists what was left out and why.
+You leave with a citable thesis plus a script, not a sketch. The research pack is always written. We do not clear copyright. We do not give legal advice. We do not license tape. A Parallel miss is not permission. `collision=missing` means we did not get a search, not that you are in the clear. The floor never posts.
 
 **Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. License: Apache-2.0.**
 
