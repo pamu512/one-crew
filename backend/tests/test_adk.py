@@ -17,3 +17,8 @@ def test_adk_crew_builds_with_vertex_flash() -> None:
     client_src = Path(search.__code__.co_filename).read_text()
     assert "from parallel import Parallel" in client_src
     assert "client.search(" in client_src
+    assert "client.extract(" in client_src
+    assert "client.task_run.create(" in client_src
+    assert 'processor="pro"' in client_src or "processor: str = \"pro\"" in client_src
+    assert "monitors.create" not in client_src
+    assert "monitor.create" not in client_src

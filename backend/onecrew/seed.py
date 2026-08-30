@@ -4,10 +4,14 @@ import json
 
 from onecrew import config
 from onecrew.board import apply_seed_placeholders, write_shot_list
+from onecrew.collision import hold_collisions
 from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt
 from onecrew.receipt import write_receipt
-from onecrew.script import write_script
+from onecrew.script import write_offline_pack_script
 from onecrew.store import store
+from onecrew.pack import seed_exclusions, write_research_pack
+from onecrew.tell import SEED_TELL
+from onecrew.tone import SEED_TONE
 
 CFR_JCPOA = "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
 OPEC_URL = "https://www.opec.org/"
@@ -24,6 +28,7 @@ def seed_findings() -> list[Finding]:
             when="2018",
             claim="The United States withdrew from the JCPOA, tightening the Iran file around the Gulf.",
             stamp="grounded",
+            title="What Is the Iran Nuclear Deal?",
             parallel_url=CFR_JCPOA,
             parallel_status="hit",
             note="Parallel URL on this row.",
@@ -35,6 +40,7 @@ def seed_findings() -> list[Finding]:
             when="2018-2024",
             claim="A large share of seaborne oil still transits the Strait of Hormuz.",
             stamp="grounded",
+            title="OPEC",
             parallel_url=OPEC_URL,
             parallel_status="hit",
             note="Parallel URL on this row.",
@@ -105,8 +111,8 @@ def build_seed_packet() -> Packet:
         depth="decade",
         cut="one_time_short_episode",
         script_lean="centered_independent",
-        genre="nonfiction",
-        vantage="global_overview",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
         hook=SEED_HOOK,
         script=SEED_SCRIPT,
         status="ready",
@@ -119,7 +125,10 @@ def build_seed_packet() -> Packet:
         causal_links=seed_links(),
         disposition="READY",
     )
-    packet = write_script(write_receipt(packet, receipt))
+    packet = write_offline_pack_script(write_receipt(packet, receipt))
+    hold_collisions(packet)
+    packet.exclusions = seed_exclusions()
+    write_research_pack(packet)
     packet.frames = apply_seed_placeholders(write_shot_list(packet))
     return packet
 

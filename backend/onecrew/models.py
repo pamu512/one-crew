@@ -9,6 +9,9 @@ Stamp = Literal["grounded", "mainstream", "fringe"]
 ParallelStatus = Literal["hit", "miss", "n/a"]
 Independent = Literal["yes", "no", "missing"]
 Propaganda = Literal["yes", "no", "missing"]
+Collision = Literal["yes", "no", "missing"]
+CollisionKind = Literal["same_script", "near_script", "missing"]
+Footage = Literal["sourced", "imagen", "missing"]
 Depth = Literal["1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet"]
 Cut = Literal[
     "tiktok-length",
@@ -38,9 +41,17 @@ ScriptLean = Literal[
     "far_left",
     "unhinged_fringe",
 ]
-Genre = Literal["nonfiction", "horror", "war", "historical", "musical", "drama", "thriller"]
-Vantage = Literal["global_overview", "one_family", "one_ship"]
 LinkStamp = Literal["grounded", "missing"]
+ExclusionReason = Literal[
+    "parallel_miss",
+    "outside_depth",
+    "off_topic",
+    "duplicate",
+    "no_url",
+    "not_searched",
+    "rails_down",
+    "other",
+]
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
 ShiftStatus = Literal["running", "completed", "failed"]
@@ -48,6 +59,19 @@ ShiftStatus = Literal["running", "completed", "failed"]
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
 PROPAGANDA = frozenset({"yes", "no", "missing"})
+COLLISIONS = frozenset({"yes", "no", "missing"})
+COLLISION_KINDS = frozenset({"same_script", "near_script", "missing"})
+FOOTAGES = frozenset({"sourced", "imagen", "missing"})
+EXCLUSION_REASONS = frozenset({
+    "parallel_miss",
+    "outside_depth",
+    "off_topic",
+    "duplicate",
+    "no_url",
+    "not_searched",
+    "rails_down",
+    "other",
+})
 DEPTHS = ("1y", "2-3y", "5y", "decade", "few_decades", "pre-1980_pre-internet")
 CUTS = (
     "tiktok-length",
@@ -77,26 +101,8 @@ SCRIPT_LEANS = (
     "far_left",
     "unhinged_fringe",
 )
-GENRES = (
-    "nonfiction",
-    "horror",
-    "war",
-    "historical",
-    "musical",
-    "drama",
-    "thriller",
-)
-FICTION_GENRES = (
-    "horror",
-    "war",
-    "historical",
-    "musical",
-    "drama",
-    "thriller",
-)
-NONFICTION_CUTS = ("weekly_update", "full_length_documentary")
+NONFICTION_CUTS = ("weekly_update", "one_time_short_episode", "full_length_documentary")
 FEATURE_CUTS = ("feature_film",)
-VANTAGES = ("global_overview", "one_family", "one_ship")
 MISSING = "missing"
 
 
@@ -142,6 +148,7 @@ class Finding(BaseModel):
     id: str
     claim: str
     stamp: Stamp
+    title: str = MISSING
     parallel_url: str | None = None
     parallel_status: ParallelStatus
     note: str
@@ -181,9 +188,35 @@ class ScriptBeat(BaseModel):
     start: str
     duration_s: int
     act: str = ""
+    scene: str = ""
+    kind: str = "vo"
     vo: str
+    camera: str = ""
     finding_ids: list[str] = Field(default_factory=list)
     frame: str = ""
+    collision: Collision = MISSING
+    collision_url: str | None = None
+    collision_title: str = MISSING
+    collision_kind: CollisionKind = MISSING
+
+
+class Exclusion(BaseModel):
+    """Something considered and left out of the findings list. Not an invented source."""
+
+    what: str
+    reason: ExclusionReason
+    detail: str = ""
+    url: str | None = None
+
+
+class CollisionRow(BaseModel):
+    """Existing media whose script/narration matches a VO beat. Not a clearance."""
+
+    beat_id: str
+    collision: Collision = MISSING
+    url: str | None = None
+    title: str = MISSING
+    kind: CollisionKind = MISSING
 
 
 class ShotFrame(BaseModel):
@@ -195,6 +228,13 @@ class ShotFrame(BaseModel):
     beat_id: str = ""
     duration_s: int = 0
     key_frame: bool = False
+    shot_no: int = 0
+    camera: str = ""
+    line: str = ""
+    footage: Footage = MISSING
+    footage_url: str | None = None
+    footage_title: str = MISSING
+    kind: str = ""
 
 
 class Receipt(BaseModel):
@@ -225,8 +265,8 @@ class Packet(BaseModel):
     depth: Depth | None = None
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
-    genre: Genre | None = None
-    vantage: Vantage | None = None
+    tell: str = ""
+    tone: str = ""
     hook: str
     script: str
     status: PacketStatus = "ready"
@@ -234,6 +274,12 @@ class Packet(BaseModel):
     beats: list[ScriptBeat] = Field(default_factory=list)
     frames: list[ShotFrame] = Field(default_factory=list)
     shift_id: str | None = None
+    collisions: list[CollisionRow] = Field(default_factory=list)
+    collision_disposition: Disposition = "HOLD"
+    collision_hold_reason: str | None = None
+    research_pack: str = ""
+    exclusions: list[Exclusion] = Field(default_factory=list)
+    task_spine: str = ""
 
 
 class ShiftRecord(BaseModel):
@@ -249,8 +295,8 @@ class ShiftRecord(BaseModel):
     depth: Depth | None = None
     cut: Cut | None = None
     script_lean: ScriptLean | None = None
-    genre: Genre | None = None
-    vantage: Vantage | None = None
+    tell: str = ""
+    tone: str = ""
     topic: str = ""
     rails: Rails | None = None
     error: str | None = None
