@@ -626,7 +626,7 @@ def write_script(packet: Packet) -> Packet:
         if not holes:
             holes.append("empty pack")
         return _fail_closed(packet, holes)
-    if not (packet.research_pack or "").strip() and not receipt.findings:
+    if not (packet.research_pack or "").strip():
         return _fail_closed(packet, ["empty pack"])
     try:
         raw = generate_script(_writer_prompt(packet))

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from onecrew.agent.shift import _board
 from onecrew.models import Finding, Packet, Rails, Receipt, ShotFrame
+from onecrew.pack import write_research_pack
 from onecrew.receipt import attach_frames
 from onecrew.script import write_script
 from onecrew.seed import seed_first_open
@@ -47,6 +48,7 @@ def _dairy_packet() -> Packet:
             ),
         ],
     )
+    write_research_pack(packet)
     return write_script(packet)
 
 

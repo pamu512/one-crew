@@ -155,6 +155,84 @@ def test_empty_pack_holds() -> None:
     assert any("empty pack" in (row.detail or "") for row in packet.exclusions)
 
 
+def test_ready_findings_still_hold_when_pack_text_is_empty() -> None:
+    packet = recession_fixture()
+    packet.research_pack = ""
+    write_script(packet)
+    assert packet.script == ""
+    assert packet.beats == []
+    assert packet.status == "hold"
+    assert any("empty pack" in (row.detail or "") for row in packet.exclusions)
+    assert "Hormuz" not in (packet.script or "")
+    assert "Leila" not in (packet.script or "")
+
+
+def test_live_recession_episode_writes_pack_before_vertex(monkeypatch) -> None:
+    from onecrew.agent.shift import open_shift, run_live_packet
+    from onecrew.models import Rails
+
+    fixture = recession_fixture()
+    seen: dict[str, str] = {}
+
+    def capture(prompt: str) -> str:
+        seen["prompt"] = prompt
+        from conftest import echo_vertex_script
+
+        return echo_vertex_script(prompt)
+
+    def research(packet, rails, depth):
+        receipt = copy.deepcopy(fixture.receipt)
+        receipt.packet_id = packet.id
+        urls = [f.parallel_url for f in receipt.findings if f.parallel_url]
+        spine = "NBER dated the last peak. USREC=0. Nonfarm payrolls fell −23k."
+        return receipt, [], urls, spine
+
+    monkeypatch.setattr("onecrew.script.generate_script", capture)
+    monkeypatch.setattr("onecrew.agent.shift._research", research)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: type("R", (), {"results": []})())
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: type("R", (), {"results": []})())
+    shift = open_shift(
+        "Are we near recession?",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Centered news desk, host only",
+        tone="Make the viewer think",
+        topic="Are we near recession?",
+    )
+    shift.rails = Rails(parallel=True, vertex=True, imagen=False)
+    packet = run_live_packet(shift)
+    assert packet.id != SEED_PACKET_ID
+    assert packet.id != "oc-hormuz-decade"
+    assert "recession" in packet.id
+    assert packet.research_pack
+    assert "NBER" in packet.research_pack
+    assert "USREC=0" in packet.research_pack or "USREC" in packet.research_pack
+    prompt = seen["prompt"]
+    pack_body = prompt.split("RESEARCH PACK:", 1)[-1]
+    assert "## Question" in pack_body
+    assert "## Timeline of what led here" in pack_body
+    assert "NBER" in pack_body
+    assert "USREC" in pack_body
+    assert "−23k" in pack_body or "23k" in pack_body
+    assert "NBER" in prompt
+    assert "USREC" in prompt
+    assert "−23k" in prompt or "23k" in prompt
+    blob = packet.script
+    assert "NBER" in blob or "USREC" in blob or "payrolls" in blob.lower()
+    assert "−23k" in blob or "23k" in blob or "USREC=0" in blob
+    low = blob.lower()
+    assert "gulf" not in low
+    assert "hormuz" not in low
+    assert "jcpoa" not in low
+    assert "leila" not in low
+    assert "reza" not in low
+    assert packet.status == "ready"
+    assert packet.beats
+    assert "host" in (packet.tell or "").lower() or "host" in blob.lower() or "NARRATOR" in blob
+
+
 def test_write_script_sends_tell_tone_cut_lean(monkeypatch) -> None:
     packet = recession_fixture()
     packet.script_lean = "left"

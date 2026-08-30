@@ -454,9 +454,6 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             )
             or hold_receipt(fresh.id, rails),
         )
-        write_script(fresh)
-        stamp_collisions(fresh, rails)
-        attach_frames(fresh, [], rails=rails)
         fresh.exclusions = [
             Exclusion(
                 what="Live Parallel search",
@@ -465,6 +462,9 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             )
         ]
         write_research_pack(fresh, hit_urls=[])
+        write_script(fresh)
+        stamp_collisions(fresh, rails)
+        attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
 
@@ -472,9 +472,6 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     fresh.task_spine = spine
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
-        write_script(fresh)
-        stamp_collisions(fresh, rails)
-        attach_frames(fresh, [], rails=rails)
         if leftover:
             fresh.exclusions = leftover
         elif not fresh.exclusions:
@@ -486,17 +483,20 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                 )
             ]
         write_research_pack(fresh, hit_urls=hit_urls)
+        write_script(fresh)
+        stamp_collisions(fresh, rails)
+        attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
 
     write_receipt(fresh, receipt)
+    fresh.exclusions = leftover
+    write_research_pack(fresh, hit_urls=hit_urls)
     write_script(fresh)
     stamp_collisions(fresh, rails)
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
-    fresh.exclusions = leftover
-    write_research_pack(fresh, hit_urls=hit_urls)
     store.upsert_packet(fresh)
     return fresh
 

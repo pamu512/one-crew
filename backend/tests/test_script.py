@@ -2,6 +2,7 @@ import copy
 import re
 
 from onecrew.models import MISSING, SCRIPT_LEANS, Packet, Receipt
+from onecrew.pack import write_research_pack
 from onecrew.script import write_script
 from onecrew.seed import seed_findings, seed_first_open, seed_links
 
@@ -41,6 +42,7 @@ def _packet(*, platform: str, cut: str, lean: str) -> Packet:
         written=True,
     )
     packet.receipt = receipt
+    write_research_pack(packet)
     return write_script(packet)
 
 
