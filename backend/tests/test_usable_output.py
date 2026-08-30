@@ -171,7 +171,8 @@ def test_episode_script_is_recordable_and_speaks_the_prints(monkeypatch) -> None
     assert "Cite" in card
     assert "Tape is not a license" in card
     assert "Collision is not a clearance" in card
-    assert "NBER" in card or "FRED" in card or "USREC" in card or "payroll" in card.lower()
+    assert "NBER" in card or "FRED" in card or "USREC" in card
+    assert "23,000" in card or "23000" in card or "payroll" in card.lower()
     assert "Do not invent a family" in card
     assert "Sit with this before you move on" not in packet.script
     assert "I'm staying on that" not in packet.script

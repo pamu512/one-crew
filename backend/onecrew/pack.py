@@ -310,6 +310,12 @@ def write_desk_card(packet: Packet) -> str:
                     cites.append(finding.parallel_url)
             else:
                 cannot.append(f"Do not sell as fact: {claim}")
+        seen = {row.lower() for row in can}
+        for extra in facts_from_spine(packet.task_spine or ""):
+            claim = (extra.get("claim") or "").strip()
+            if claim and claim.lower() not in seen:
+                can.append(claim)
+                seen.add(claim.lower())
         if not can:
             can.append("Nothing grounded is on this card yet.")
     else:
