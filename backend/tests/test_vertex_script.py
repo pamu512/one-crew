@@ -220,17 +220,67 @@ def test_live_recession_episode_writes_pack_before_vertex(monkeypatch) -> None:
     assert "USREC" in prompt
     assert "−23k" in prompt or "23k" in prompt
     blob = packet.script
-    assert "NBER" in blob or "USREC" in blob or "payrolls" in blob.lower()
-    assert "−23k" in blob or "23k" in blob or "USREC=0" in blob
+    assert "NBER" in blob
+    assert "USREC" in blob
+    assert "payrolls" in blob.lower() or "−23k" in blob or "23k" in blob
     low = blob.lower()
     assert "gulf" not in low
     assert "hormuz" not in low
     assert "jcpoa" not in low
     assert "leila" not in low
     assert "reza" not in low
+    assert "(frame)" not in blob
     assert packet.status == "ready"
     assert packet.beats
-    assert "host" in (packet.tell or "").lower() or "host" in blob.lower() or "NARRATOR" in blob
+    from onecrew.script import _host_only
+
+    assert _host_only(packet)
+    assert "collision = no" in packet.research_pack
+
+
+def test_recession_fringe_search_does_not_query_hormuz(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from onecrew.agent.shift import open_shift, run_live_packet
+    from onecrew.models import Rails
+
+    queries: list[str] = []
+
+    def search(*, objective, search_queries):
+        queries.extend(search_queries)
+        return SimpleNamespace(
+            results=[SimpleNamespace(url="https://fred.stlouisfed.org/series/USREC", title="USREC")]
+        )
+
+    monkeypatch.setattr("onecrew.agent.shift.search", search)
+    monkeypatch.setattr(
+        "onecrew.agent.shift.extract",
+        lambda **_k: SimpleNamespace(results=[], errors=[]),
+    )
+    monkeypatch.setattr(
+        "onecrew.agent.shift.run_task",
+        lambda **_k: SimpleNamespace(output=SimpleNamespace(content="NBER USREC payrolls −23k", basis=[])),
+    )
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    shift = open_shift(
+        "Are we near recession?",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Centered news desk, host only",
+        tone="Make the viewer think",
+        topic="Are we near recession?",
+    )
+    shift.rails = Rails(parallel=True, vertex=True, imagen=False)
+    packet = run_live_packet(shift)
+    blob = " ".join(queries).lower()
+    assert "hormuz" not in blob
+    assert "jcpoa" not in blob
+    assert packet.id != SEED_PACKET_ID
+    assert "Hormuz" not in (packet.research_pack or "")
+    assert "Hormuz" not in (packet.script or "")
 
 
 def test_write_script_sends_tell_tone_cut_lean(monkeypatch) -> None:

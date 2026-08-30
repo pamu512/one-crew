@@ -236,7 +236,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         )
         miss = search(
             objective=f"Unsourced fringe claim in {packet.topic or packet.hook}",
-            search_queries=[f"{packet.topic} hidden treaty Hormuz"],
+            search_queries=[f"{packet.topic} hidden treaty"],
         )
     except ParallelDownError:
         down = rails.model_copy(update={"parallel": False})
@@ -464,6 +464,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         write_research_pack(fresh, hit_urls=[])
         write_script(fresh)
         stamp_collisions(fresh, rails)
+        write_research_pack(fresh, hit_urls=[])
         attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
@@ -485,6 +486,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         write_research_pack(fresh, hit_urls=hit_urls)
         write_script(fresh)
         stamp_collisions(fresh, rails)
+        write_research_pack(fresh, hit_urls=hit_urls)
         attach_frames(fresh, [], rails=rails)
         store.upsert_packet(fresh)
         return fresh
@@ -494,6 +496,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     write_research_pack(fresh, hit_urls=hit_urls)
     write_script(fresh)
     stamp_collisions(fresh, rails)
+    write_research_pack(fresh, hit_urls=hit_urls)
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
