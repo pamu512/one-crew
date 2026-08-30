@@ -51,7 +51,8 @@ def apply_tone(line: str, tone: str, *, fiction: bool) -> str:
     if lane == "desk":
         return f"From the news desk. {line}"
     if lane == "essay":
-        return f"Sit with this before you move on. {line}"
+        # ponytail: stance lives on the desk card. A prefix on every beat wastes tape.
+        return line
     if lane == "interrogative":
         return f"Question the decision that put this on the air. {line}"
     if lane == "first_person":

@@ -163,6 +163,19 @@ def test_episode_script_is_recordable_and_speaks_the_prints(monkeypatch) -> None
     total = sum(b.duration_s for b in packet.beats)
     assert total <= 8 * 60
     assert "{'executive_summary'" not in (packet.research_pack or "")
+    card = packet.desk_card or ""
+    pack = packet.research_pack or ""
+    assert pack.index("## Desk card") < pack.index("## Question")
+    assert "You can say" in card
+    assert "Do not say" in card
+    assert "Cite" in card
+    assert "Tape is not a license" in card
+    assert "Collision is not a clearance" in card
+    assert "NBER" in card or "FRED" in card or "USREC" in card or "payroll" in card.lower()
+    assert "Do not invent a family" in card
+    assert "Sit with this before you move on" not in packet.script
+    assert "I'm staying on that" not in packet.script
+    assert packet.script.lower().count("sit with this") <= 1
 
 
 def test_hormuz_only_in_exclusions_does_not_unlock_gulf_footage() -> None:
@@ -245,3 +258,82 @@ def test_extract_skips_nav_html() -> None:
     assert leftover == []
     assert "Search Search" not in finding.note
     assert "23,000" in finding.note
+
+
+def test_hold_desk_card_says_do_not_record() -> None:
+    packet = Packet(
+        id="oc-recession-hold",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        tell="Centered news desk, host only",
+        tone="Make the viewer think",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="HOLD",
+        hold_reason="Vertex down. No leftover Hormuz VO.",
+        findings=[],
+    )
+    write_research_pack(packet)
+    assert "Do not record" in packet.desk_card
+    assert "HOLD" in packet.desk_card
+    assert packet.research_pack.index("## Desk card") < packet.research_pack.index("## Question")
+
+
+def test_collision_title_is_do_not_copy(monkeypatch) -> None:
+    from onecrew.collision import stamp_collisions
+    from onecrew.models import Rails, ScriptBeat
+
+    packet = Packet(
+        id="oc-recession-hit",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="vo",
+        cut="one_time_short_episode",
+        tell="Centered news desk, host only",
+        tone="Make the viewer think",
+        beats=[
+            ScriptBeat(
+                id="timeline-hit",
+                start="00:00:00",
+                duration_s=8,
+                vo="The latest NBER-based FRED reading is 0 for July 2026. [timeline-hit]",
+                finding_ids=["timeline-hit"],
+            )
+        ],
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=[
+            Finding(
+                id="timeline-hit",
+                claim="The latest NBER-based FRED reading is 0 for July 2026.",
+                stamp="grounded",
+                parallel_url="https://fred.stlouisfed.org/series/USREC",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "onecrew.collision.search",
+        lambda **_k: SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://www.youtube.com/watch?v=recession-desk",
+                    title="Are We Near Recession? Nightly Desk",
+                )
+            ]
+        ),
+    )
+    stamp_collisions(packet, Rails(parallel=True, vertex=True, imagen=False))
+    write_research_pack(packet)
+    assert "Do not copy this title on air" in packet.desk_card
+    assert "Are We Near Recession? Nightly Desk" in packet.desk_card
+    assert "Collision is not a clearance" in packet.desk_card

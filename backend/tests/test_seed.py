@@ -121,6 +121,7 @@ def test_seed_wired_output_is_what_the_creator_gets() -> None:
     assert pack
     assert len(pack) >= 2000
     for heading in (
+        "## Desk card",
         "## Question",
         "## Picks",
         "## Tell",

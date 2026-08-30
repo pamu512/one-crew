@@ -278,6 +278,7 @@ class Packet(BaseModel):
     collision_disposition: Disposition = "HOLD"
     collision_hold_reason: str | None = None
     research_pack: str = ""
+    desk_card: str = ""
     exclusions: list[Exclusion] = Field(default_factory=list)
     task_spine: str = ""
 

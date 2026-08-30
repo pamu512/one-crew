@@ -66,7 +66,7 @@ FLOOR_HTML = """<!DOCTYPE html>
   <header>
     <div>
       <div class="brand">One Crew</div>
-      <div class="sub">Research companion. Timed VO, cited sources, collision list. Floor never posts.</div>
+      <div class="sub">Research companion. Desk card, timed VO, bookable shots. Floor never posts.</div>
     </div>
     <div class="badges" id="badges"></div>
   </header>
@@ -226,7 +226,7 @@ FLOOR_HTML = """<!DOCTYPE html>
       const links = (rec.causal_links || []).map(linkHtml).join("");
       const frames = (packet.frames || []).map(fr => `
         <div class="frame">
-          ${fr.image_href ? `<img src="${fr.image_href}" alt="${fr.shot}"/>` : `<p class="note">Image missing. Shot list kept. Not invented.</p>`}
+          ${fr.image_href ? `<img src="${fr.image_href}" alt="${fr.shot}"/>` : `<p class="note">Image missing. Frame kept. Not invented.</p>`}
           <p>${fr.shot_no ? "#" + fr.shot_no + " · " : ""}${fr.camera ? fr.camera + " · " : ""}${fr.shot}</p>
           <p class="note">footage · ${fr.footage || "missing"}${fr.kind ? " · " + fr.kind : ""}${fr.footage === "sourced" ? " · someone else's footage, not ours. We do not license it." : ""}${fr.footage === "imagen" && (fr.kind === "motion_graphic" || fr.kind === "infographic") ? " · graphic, not archive" : ""}</p>
           ${fr.footage_url ? `<div class="url">${fr.footage_url}${fr.footage_title && fr.footage_title !== "missing" ? " · " + fr.footage_title : ""}</div>` : ""}
@@ -236,10 +236,15 @@ FLOOR_HTML = """<!DOCTYPE html>
         <div class="brand">${packet.id}</div>
         <h1 class="hook">${packet.topic || packet.hook}</h1>
         <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.tell || "none"} · tone: ${packet.tone || "none"}</p>
+        <div class="brand" style="margin:16px 0 8px">Desk card</div>
+        <p class="note">Read this first. Tape is not a license. Collision is not a clearance. The floor does not post.</p>
+        <p class="script">${packet.desk_card || "Desk card missing."}</p>
         <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
+        <div class="brand" style="margin:16px 0 8px">Shot list (from that VO)</div>
+        <div class="frames">${frames}</div>
         <div class="brand" style="margin:16px 0 8px">Existing media · collision</div>
-        <p class="note">Match list of videos/docs/films with the same or near script. Not a copyright clearance. The floor does not post.</p>
+        <p class="note">Match list of videos/docs/films with the same or near script. Collision is not a clearance. Not a copyright clearance. The floor does not post.</p>
         ${(packet.beats || []).map(b => `
           <div class="finding">
             <div class="stamp ${b.collision === "yes" ? "fringe" : "missing"}">collision · ${b.collision || "missing"}${b.collision_kind && b.collision_kind !== "missing" ? " · " + b.collision_kind : ""}</div>
@@ -255,8 +260,6 @@ FLOOR_HTML = """<!DOCTYPE html>
         ${findings}
         <div class="brand" style="margin:16px 0 8px">Causal links</div>
         ${links || `<p class="note">No Parallel-sourced link. Missing, not invented.</p>`}
-        <div class="brand" style="margin:16px 0 8px">Shot list (from that VO)</div>
-        <div class="frames">${frames}</div>
       `;
       if (packet.topic && !document.getElementById("topic").value) {
         document.getElementById("topic").value = packet.topic;

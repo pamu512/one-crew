@@ -38,6 +38,12 @@ def test_floor_html_has_no_publish_button() -> None:
         assert "Grounded in the record" in page.text
         assert "Research pack" in page.text
         assert "floor does not post it" in page.text.lower() or "does not post" in page.text.lower()
+        html = FLOOR_HTML
+        assert html.index("Desk card") < html.index("Timed VO")
+        assert html.index("Timed VO") < html.index("Shot list")
+        assert html.index("Shot list") < html.index("Existing media")
+        assert "Tape is not a license" in html
+        assert "Collision is not a clearance" in html or "not a copyright clearance" in html.lower()
         assert "grounded in reality" not in page.text.lower()
         assert "<textarea" in FLOOR_HTML
         assert "checked=" not in FLOOR_HTML

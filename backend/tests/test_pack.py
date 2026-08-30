@@ -30,6 +30,7 @@ _STAMP_MARKERS = (
 )
 
 _THESIS_HEADINGS = (
+    "## Desk card",
     "## Question",
     "## Picks",
     "## Tell",

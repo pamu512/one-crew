@@ -10,6 +10,7 @@ from onecrew.models import (
     Finding,
     Packet,
 )
+from onecrew.tell import invents_frame
 
 
 class PackInvalidError(ValueError):
@@ -286,6 +287,77 @@ def _argument_prose(packet: Packet) -> str:
     return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
+def write_desk_card(packet: Packet) -> str:
+    """One page a desk can record from. Not a license and not a clearance."""
+    receipt = packet.receipt
+    held = bool(receipt and receipt.disposition == "HOLD")
+    can: list[str] = []
+    cannot: list[str] = []
+    cites: list[str] = []
+    if held:
+        cannot.append(
+            f"Do not record this VO. HOLD: {(receipt.hold_reason if receipt else '') or 'receipt held'}."
+        )
+        can.append("Nothing. The receipt is HOLD.")
+    elif receipt:
+        for finding in receipt.findings:
+            claim = (finding.claim or "").strip()
+            if not claim or is_template_claim(claim):
+                continue
+            if finding.stamp == "grounded":
+                can.append(claim)
+                if finding.parallel_url:
+                    cites.append(finding.parallel_url)
+            else:
+                cannot.append(f"Do not sell as fact: {claim}")
+        if not can:
+            can.append("Nothing grounded is on this card yet.")
+    else:
+        can.append("Nothing grounded is on this card yet.")
+    if packet.cut and not invents_frame(cut=packet.cut, tell=packet.tell or ""):
+        cannot.append("Do not invent a family, named civilians, or a kitchen-radio scene.")
+    cannot.append("Do not invent numbers or dates that are not on the You can say list.")
+    for beat in packet.beats:
+        title = (beat.collision_title or "").strip()
+        if beat.collision == "yes" and title and title != MISSING:
+            cannot.append(f"Do not copy this title on air: {title}")
+    if packet.collision_disposition == "HOLD":
+        cannot.append(
+            f"Collision is HOLD. {packet.collision_hold_reason or 'No search ran.'} That is not a clearance."
+        )
+
+    def bullets(rows: list[str]) -> str:
+        return "\n".join(f"- {row}" for row in rows) if rows else "- None on this card."
+
+    body = "\n".join(
+        [
+            "## Desk card",
+            "",
+            "Read this first. Tape is not a license. Collision is not a clearance. The floor does not post.",
+            "",
+            "### You can say",
+            "",
+            bullets(can),
+            "",
+            "### Do not say",
+            "",
+            bullets(cannot),
+            "",
+            "### Cite",
+            "",
+            bullets(cites) if cites else "- No grounded URL on this card.",
+            "",
+            "### Legal",
+            "",
+            "- Sourced footage is someone else's tape. We do not license it.",
+            "- A collision=yes row is a match list, not a copyright clearance.",
+            "- This pack is not legal advice.",
+        ]
+    )
+    packet.desk_card = body
+    return body
+
+
 def write_research_pack(packet: Packet, hit_urls: list[str] | None = None) -> Packet:
     """Always-written thesis. Lean/tone/tell do not rewrite stamps."""
     validate_exclusions(packet)
@@ -303,6 +375,8 @@ def write_research_pack(packet: Packet, hit_urls: list[str] | None = None) -> Pa
     question = topic
     lines: list[str] = [
         f"# Research pack · {packet.id}",
+        "",
+        write_desk_card(packet),
         "",
         "## Question",
         "",

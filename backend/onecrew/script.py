@@ -35,8 +35,6 @@ def _recast(finding: Finding, lean: str, *, long_form: bool) -> str:
             line = f"{when}: {body}."
         else:
             line = f"{body}. That's the print."
-        if long_form:
-            line += " I'm not stacking anything else on it."
         return line
     if lean in {"left", "far_left"}:
         if after:
@@ -45,24 +43,13 @@ def _recast(finding: Finding, lean: str, *, long_form: bool) -> str:
             line = f"When this lands in {when}: {body}."
         else:
             line = f"What we can say out loud is this — {body}."
-        if long_form:
-            line += " Stay on that sentence."
         return line
     if lean == "far_right":
-        line = f"{when + ': ' if when else ''}{body}."
-        if long_form:
-            line += " Date and claim. Stop there."
-        return line
+        return f"{when + ': ' if when else ''}{body}."
     if lean == "unhinged_fringe":
-        line = f"Plain: {body}."
-        if long_form:
-            line += " I still don't get to invent the next beat."
-        return line
+        return f"Plain: {body}."
     already_dated = bool(when and when.lower() in body.lower())
-    line = f"{('In ' + when + ', ') if when and not already_dated else ''}{body}."
-    if long_form:
-        line += " I'm staying on that."
-    return line
+    return f"{('In ' + when + ', ') if when and not already_dated else ''}{body}."
 
 
 def _invents_frame(packet: Packet) -> bool:
@@ -341,6 +328,15 @@ def draft_model_script(packet: Packet) -> dict:
         else "Host at the desk. No invented family."
     )
     units: list[dict] = []
+    toned = False
+
+    def _tone_once(line: str) -> str:
+        nonlocal toned
+        if fiction or not (packet.tone or "").strip() or toned:
+            return line
+        toned = True
+        return apply_tone(line, packet.tone, fiction=False)
+
     if first and tier != "short":
         units.append(
             {
@@ -352,17 +348,9 @@ def draft_model_script(packet: Packet) -> dict:
             }
         )
     for finding in rows:
-        spoken = apply_tone(
-            _recast(finding, lean, long_form=True).rstrip(),
-            packet.tone,
-            fiction=fiction,
-        )
+        spoken = _tone_once(_recast(finding, lean, long_form=True).rstrip())
         fact = spoken + _cite(finding.id)
-        hole = apply_tone(
-            _hole_line(finding, lean).rstrip(),
-            packet.tone,
-            fiction=fiction,
-        ) + _cite(finding.id)
+        hole = _tone_once(_hole_line(finding, lean).rstrip()) + _cite(finding.id)
         slugs = _scene_slugs(finding, fiction=fiction, tell=packet.tell or "", n=per)
         visual = _visual_for(finding, fiction=fiction, tell=packet.tell or "")
         for si, slug in enumerate(slugs):
@@ -389,8 +377,7 @@ def draft_model_script(packet: Packet) -> dict:
                 units.append(
                     {
                         "finding_id": finding.id,
-                        "vo": apply_tone(extra["claim"], packet.tone, fiction=fiction)
-                        + _cite(finding.id),
+                        "vo": _tone_once(extra["claim"]) + _cite(finding.id),
                         "visual": _visual_for(
                             Finding(
                                 id=finding.id,
@@ -426,11 +413,7 @@ def draft_model_script(packet: Packet) -> dict:
                     "finding_id": cite[0],
                     "finding_ids": cite,
                     "id": link.id,
-                    "vo": apply_tone(
-                        _close_vo(link.claim, lean, cite),
-                        packet.tone,
-                        fiction=fiction,
-                    ),
+                    "vo": _tone_once(_close_vo(link.claim, lean, cite)),
                     "visual": close_visual,
                     "scene": close_scene,
                     "kind": "close",
