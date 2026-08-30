@@ -115,12 +115,12 @@ def test_feature_kitchen_imagen_allowed(monkeypatch) -> None:
     packet.tell = "One family in Bandar Abbas, kitchen radio on"
     write_script(packet)
     frames = write_board(packet, Rails(parallel=True, vertex=True, imagen=True))
-    kitchens = [f for f in frames if "kitchen" in f.shot.lower() or "bandar" in f.shot.lower() or "leila" in f.shot.lower()]
+    kitchens = [f for f in frames if "kitchen" in f.shot.lower() or "bandar" in f.shot.lower()]
     assert kitchens
     assert called
     assert any(f.imagen for f in frames)
     assert any(
-        f.imagen and ("kitchen" in f.shot.lower() or "bandar" in f.shot.lower() or "leila" in f.shot.lower() or "sink" in f.shot.lower())
+        f.imagen and ("kitchen" in f.shot.lower() or "bandar" in f.shot.lower() or "sink" in f.shot.lower())
         for f in frames
     )
 

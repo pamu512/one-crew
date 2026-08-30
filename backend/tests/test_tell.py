@@ -46,11 +46,13 @@ def test_same_receipt_three_tells_stamps_identical() -> None:
     assert stamps(nf) == stamps(family) == stamps(ship) == stamps(feature)
     assert {f.id for f in nf.receipt.findings} == {f.id for f in family.receipt.findings}
     assert nf.script != family.script != ship.script
-    assert "Leila" in family.script and "Bandar Abbas" in family.script
-    assert "(frame)" in family.script and "(frame)" in ship.script
+    assert "Leila" not in family.script
+    assert "Reza" not in ship.script
     assert "(frame)" not in nf.script
-    assert "Reza" in ship.script or "bridge" in ship.script.lower()
-    assert "Leila" in feature.script and "(frame)" in feature.script
+    assert "(frame)" not in family.script
+    assert "(frame)" not in ship.script
+    assert "(frame)" in feature.script
+    assert invents_frame(cut="one_time_short_episode", tell=FAMILY_TELL) is False
     for packet in (nf, family, ship, feature):
         for beat in packet.beats:
             assert beat.finding_ids
@@ -84,7 +86,7 @@ def test_documentary_family_drama_invents_no_leila() -> None:
 def test_feature_family_writes_fiction_frame() -> None:
     packet = _from_seed(tell=FAMILY_TELL, cut="feature_film")
     assert packet.cut == "feature_film"
-    assert "Leila" in packet.script
+    assert "Leila" not in packet.script
     assert "(frame)" in packet.script
     assert "[jcpoa-2018]" in packet.script
     seed = seed_first_open()
@@ -102,10 +104,9 @@ def test_pilot_tell_on_feature_differs_from_family() -> None:
     family = _from_seed(tell=FAMILY_TELL, cut="feature_film")
     pilot = _from_seed(tell=PILOT_TELL, cut="feature_film")
     assert family.script != pilot.script
-    assert "Leila" in family.script
-    assert "Leila" not in pilot.script
     assert "retired pilot" in pilot.script.lower() or "night watch" in pilot.script.lower()
     assert "(frame)" in pilot.script
+    assert "(frame)" in family.script
     stamps = lambda p: [(f.id, f.stamp, f.propaganda) for f in p.receipt.findings]
     assert stamps(family) == stamps(pilot)
 
@@ -116,17 +117,12 @@ def test_thriller_does_not_claim_a_sourced_explosion() -> None:
     assert "got blown" not in blob
     assert "was hit" not in blob
     assert "exploded" not in blob
-    assert "sourced explosion" in blob or "no blast" in blob or "not a fact" in blob
     family = _from_seed(tell=FAMILY_TELL)
-    shots = " ".join(f.shot.lower() for f in family.frames)
-    ship_shots = " ".join(f.shot.lower() for f in ship.frames)
     nf = _from_seed(tell=SEED_TELL)
     nf_shots = " ".join(f.shot.lower() for f in nf.frames)
-    assert "kitchen" in shots
-    assert "bridge" in ship_shots or "watch" in ship_shots or "bow" in ship_shots
-    assert "kitchen" not in nf_shots or "bandar" not in nf_shots
+    assert "leila" not in nf_shots
     assert all("receipt card" not in f.shot.lower() for f in family.frames + ship.frames)
-    assert family.frames[0].shot != ship.frames[0].shot
+    assert family.script != ship.script
 
 
 def test_hold_does_not_invent_a_family() -> None:

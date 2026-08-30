@@ -101,7 +101,7 @@ SCRIPT_LEANS = (
     "far_left",
     "unhinged_fringe",
 )
-NONFICTION_CUTS = ("weekly_update", "full_length_documentary")
+NONFICTION_CUTS = ("weekly_update", "one_time_short_episode", "full_length_documentary")
 FEATURE_CUTS = ("feature_film",)
 MISSING = "missing"
 

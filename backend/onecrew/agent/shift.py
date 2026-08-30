@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Any
 
@@ -18,11 +19,20 @@ from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.script import write_script
-from onecrew.seed import reset_floor
 from onecrew.store import store
 from onecrew.tell import invents_frame
 
 log = logging.getLogger("onecrew.shift")
+
+
+def snapshot_id(topic: str, shift_id: str) -> str:
+    """New packet id per topic/shift. Never inherit or overwrite oc-hormuz-decade."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (topic or "topic").strip().lower()).strip("-")[:36] or "topic"
+    tail = re.sub(r"[^a-z0-9]", "", (shift_id or "").lower())[-8:] or "snap"
+    pid = f"oc-{slug}-{tail}"
+    if pid == config.SEED_PACKET_ID:
+        pid = f"oc-{slug}-{tail}-s"
+    return pid
 
 
 def open_shift(
@@ -416,17 +426,21 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         shift.tone,
     )
     rails = shift.rails or assess_rails()
-    existing = store.get_packet(shift.packet_id) or reset_floor()
+    fresh_id = snapshot_id(shift.topic, shift.id)
+    if fresh_id == config.SEED_PACKET_ID:
+        fresh_id = f"{fresh_id}-live"
+    shift.packet_id = fresh_id
+    store.upsert_shift(shift)
     fresh = Packet(
-        id=existing.id,
-        topic=shift.topic or existing.topic or existing.hook,
+        id=fresh_id,
+        topic=shift.topic,
         platform=shift.platform,
         depth=shift.depth,
         cut=shift.cut,
         script_lean=shift.script_lean,
         tell=shift.tell,
         tone=shift.tone,
-        hook=shift.topic or existing.hook,
+        hook=shift.topic,
         script="",
         status="running",
         shift_id=shift.id,

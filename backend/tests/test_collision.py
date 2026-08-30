@@ -170,7 +170,7 @@ def test_fiction_frame_is_not_searched(monkeypatch) -> None:
     packet.tell = "One family in Bandar Abbas, kitchen radio on"
     packet.cut = "feature_film"
     write_script(packet)
-    assert "Leila" in packet.script
+    assert "(frame)" in packet.script
     stamp_collisions(packet, Rails(parallel=True, vertex=True, imagen=True))
     blob = " ".join(seen).lower()
     assert "leila" not in blob
@@ -180,7 +180,6 @@ def test_fiction_frame_is_not_searched(monkeypatch) -> None:
     hit = next(b for b in packet.beats if b.id == "jcpoa-2018")
     assert hit.collision == "yes"
     assert hit.collision_url == HORMUZ_DOC_URL
-    assert "Leila" in hit.vo
 
 
 def test_floor_shows_collision_never_clears_copyright() -> None:

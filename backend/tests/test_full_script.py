@@ -36,8 +36,8 @@ def test_feature_family_is_a_full_screenplay_not_six_beats() -> None:
     assert len(packet.frames) >= 20
     assert len(packet.beats) > len(packet.receipt.findings)
     assert "INT." in packet.script or "EXT." in packet.script
-    assert "Leila" in packet.script
     assert "(frame)" in packet.script
+    assert "Leila" not in packet.script
     assert "[jcpoa-2018]" in packet.script
     assert "got blown" not in packet.script.lower()
     assert "exploded" not in packet.script.lower()

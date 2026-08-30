@@ -7,7 +7,7 @@ from onecrew.board import apply_seed_placeholders, write_shot_list
 from onecrew.collision import hold_collisions
 from onecrew.models import MISSING, CausalLink, Finding, Packet, Receipt
 from onecrew.receipt import write_receipt
-from onecrew.script import write_script
+from onecrew.script import write_offline_pack_script
 from onecrew.store import store
 from onecrew.pack import seed_exclusions, write_research_pack
 from onecrew.tell import SEED_TELL
@@ -125,7 +125,7 @@ def build_seed_packet() -> Packet:
         causal_links=seed_links(),
         disposition="READY",
     )
-    packet = write_script(write_receipt(packet, receipt))
+    packet = write_offline_pack_script(write_receipt(packet, receipt))
     hold_collisions(packet)
     packet.exclusions = seed_exclusions()
     write_research_pack(packet)
