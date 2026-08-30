@@ -54,6 +54,7 @@ def echo_vertex_script(prompt: str) -> str:
         script_lean=payload.get("script_lean"),
         platform=payload.get("platform"),
         research_pack=payload.get("pack") or "",
+        task_spine=payload.get("task_spine") or "",
     )
     packet.receipt = Receipt(
         packet_id=packet.id,

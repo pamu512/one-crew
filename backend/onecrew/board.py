@@ -8,6 +8,7 @@ from onecrew import config
 from onecrew.cut import frame_count, require_cut
 from onecrew.imagen_client import ImagenDownError, generate_frames
 from onecrew.models import MISSING, Finding, Packet, Rails, ScriptBeat, ShotFrame
+from onecrew.pack import topic_claim_text
 from onecrew.parallel_client import ParallelDownError, search
 from onecrew.tell import invents_frame
 
@@ -94,18 +95,38 @@ def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
         return f"{prefix}Archive tape: tanker in the cited strait lane. {claim}.".strip()
     if any(key in blob for key in ("payroll", "usrec", "nber", "share", "percent", "chart")):
         return f"{prefix}Infographic from the cited row: {claim}.".strip()
-    return f"{prefix}Host/reporter. Archive or cited tape for: {claim}. No photoreal fake event room.".strip()
+    return f"{prefix}Host/reporter. Archive or cited tape for: {claim}. No fake event room.".strip()
+
+
+def _about_strait(packet: Packet) -> bool:
+    blob = topic_claim_text(packet)
+    return "hormuz" in blob or "jcpoa" in blob
 
 
 def _footage_query(text: str, packet: Packet) -> str:
     """Do not keyword-search tone ('Grounded') into a game, or 'Gulf chart' into the Gulf of Mexico."""
     q = text or ""
     q = re.sub(r"\bgrounded\b", " ", q, flags=re.I)
-    pack = _pack_blob(packet, [])
-    if "hormuz" not in pack and "jcpoa" not in pack:
+    q = re.sub(r"\bphotoreal\b|\bb-roll\b|\bcited beat\b|\bgrounded event inside\b", " ", q, flags=re.I)
+    if not _about_strait(packet):
         q = re.sub(r"\bgulf chart\b|\bgulf map\b|\bgulf of mexico\b", " ", q, flags=re.I)
     q = re.sub(r"\bvideo game\b", " ", q, flags=re.I)
     return re.sub(r"\s+", " ", q).strip()
+
+
+def _footage_blocked(url: str | None, title: str | None) -> bool:
+    blob = f"{url or ''} {title or ''}".lower()
+    return any(
+        token in blob
+        for token in (
+            "grounded.obsidian",
+            "gulf-of-mexico",
+            "gulf of mexico",
+            "mapshop.com",
+            "store.steampowered.com",
+            "epicgames.com",
+        )
+    )
 
 
 def persist_generated_image(frame_id: str, result: Any) -> str:
@@ -187,9 +208,9 @@ def prefer_footage(shots: list[ShotFrame], rails: Rails, packet: Packet | None =
             title = ""
             for row in rows:
                 candidate = getattr(row, "url", None)
-                if _url_ok(candidate):
+                title = (getattr(row, "title", None) or "").strip()
+                if _url_ok(candidate) and not _footage_blocked(candidate, title):
                     url = candidate
-                    title = (getattr(row, "title", None) or "").strip()
                     break
             if url:
                 shot.footage = "sourced"

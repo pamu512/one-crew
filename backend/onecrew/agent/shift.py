@@ -17,7 +17,13 @@ from onecrew.parallel_client import ParallelDownError, entity_search, extract, r
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
-from onecrew.pack import leftover_hit_exclusions, write_research_pack
+from onecrew.pack import (
+    facts_from_spine,
+    is_template_claim,
+    leftover_hit_exclusions,
+    render_task_content,
+    write_research_pack,
+)
 from onecrew.script import write_script
 from onecrew.store import store
 from onecrew.tell import invents_frame
@@ -138,16 +144,69 @@ def _spine_from_task(result: Any) -> str:
         return ""
     parts: list[str] = []
     content = getattr(output, "content", None)
-    if content:
-        parts.append(str(content).strip())
+    rendered = render_task_content(content)
+    if rendered:
+        parts.append(rendered)
+    cites: list[str] = []
     for field in getattr(output, "basis", None) or []:
-        name = getattr(field, "field", "field")
-        cites = _cited_urls(field)
-        if not cites:
-            parts.append(f"Task basis {name}: citation missing.")
-            continue
-        parts.append(f"Task basis {name}: {', '.join(cites)}.")
-    return " ".join(parts).strip()
+        cites.extend(_cited_urls(field))
+    unique = list(dict.fromkeys(cites))
+    if unique:
+        parts.append("Citations: " + ", ".join(unique) + ".")
+    elif getattr(output, "basis", None):
+        parts.append("Task basis: citation missing.")
+    return "\n\n".join(parts).strip()
+
+
+def _leftover_geo(text: str, topic: str) -> bool:
+    blob = (text or "").lower()
+    topic_l = (topic or "").lower()
+    for word in ("hormuz", "jcpoa", "strait of hormuz"):
+        if word in blob and word not in topic_l:
+            return True
+    return False
+
+
+def lift_findings(
+    findings: list,
+    *,
+    spine: str,
+    hit_title: str,
+    miss_title: str,
+    topic: str,
+) -> list:
+    """Replace template claims with Task/Search sentences. Do not invent numbers."""
+    facts = facts_from_spine(spine)
+    grounded = next((row for row in findings if row.stamp == "grounded"), None)
+    if grounded and is_template_claim(grounded.claim):
+        if facts:
+            grounded.claim = facts[0]["claim"]
+            grounded.when = facts[0].get("when") or grounded.when
+        elif (hit_title or "").strip() and hit_title != MISSING:
+            grounded.claim = hit_title.strip().rstrip(".") + "."
+    frame = next((row for row in findings if row.stamp == "mainstream"), None)
+    if frame and is_template_claim(frame.claim):
+        frame.claim = "A widely repeated line is being treated as a measurement."
+    fringe = next((row for row in findings if row.stamp == "fringe"), None)
+    if fringe and is_template_claim(fringe.claim):
+        if (miss_title or "").strip() and not _leftover_geo(miss_title, topic or ""):
+            fringe.claim = miss_title.strip().rstrip(".") + "."
+        else:
+            fringe.claim = "Parallel did not source a named fringe claim on this topic."
+    return findings
+
+
+def _usable_excerpt(text: str) -> str | None:
+    raw = re.sub(r"<[^>]+>", " ", text or "")
+    raw = re.sub(r"\s+", " ", raw).strip()
+    if len(raw) < 20:
+        return None
+    low = raw.lower()
+    if low.count("search") >= 2 and "http" not in low:
+        return None
+    if "read the latest" in low or "featured series" in low:
+        return None
+    return raw[:400]
 
 
 def _apply_extract(findings: list, extracted: Any) -> list[Exclusion]:
@@ -159,8 +218,9 @@ def _apply_extract(findings: list, extracted: Any) -> list[Exclusion]:
         title = (getattr(item, "title", None) or "").strip()
         finding = by_url.get(url)
         if finding and excerpts:
-            # ponytail: first excerpt only. Gemini does not invent extract text.
-            finding.note = f"{finding.note} Extract: {excerpts[0][:400]}".strip()
+            usable = next((piece for piece in (_usable_excerpt(ex) for ex in excerpts) if piece), None)
+            if usable:
+                finding.note = f"{finding.note} Extract: {usable}".strip()
             if title and (not finding.title or finding.title == MISSING):
                 finding.title = title
     for err in getattr(extracted, "errors", None) or []:
@@ -354,6 +414,16 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         down = rails.model_copy(update={"parallel": False})
         return hold_receipt(packet.id, down), _hold_account_hits(hit_urls, leftover), hit_urls, ""
     spine = _spine_from_task(task)
+    miss_title = (getattr(miss_rows[0], "title", None) or "") if miss_rows else ""
+    lift_findings(
+        findings,
+        spine=spine,
+        hit_title=hit_title if isinstance(hit_title, str) else "",
+        miss_title=miss_title,
+        topic=packet.topic or packet.hook or "",
+    )
+    if packet.cut:
+        findings = size_findings(findings, packet.cut, packet.platform)
     if getattr(extracted, "results", None):
         try:
             enrich = run_task(

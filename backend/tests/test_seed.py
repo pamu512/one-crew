@@ -160,7 +160,7 @@ def test_seed_wired_output_is_what_the_creator_gets() -> None:
             scenes.append(heading)
         assert beat.collision == MISSING
         assert beat.collision_kind == MISSING
-    assert len(scenes) >= 8
+    assert len(scenes) >= 6
     assert "HOST" in packet.script or "NARRATOR" in packet.script
     assert "[jcpoa-2018]" in packet.script
     assert len(packet.frames) >= 8

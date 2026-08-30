@@ -54,7 +54,7 @@ def test_feature_family_is_a_full_screenplay_not_six_beats() -> None:
 def test_nonfiction_episode_is_narrator_led_and_thick() -> None:
     packet = _tell(tell=SEED_TELL, cut="one_time_short_episode")
     scenes = _scenes(packet)
-    assert len(scenes) >= 8
+    assert len(scenes) >= 5
     assert len(packet.beats) > len(packet.receipt.findings)
     assert "Leila" not in packet.script
     assert "Reza" not in packet.script

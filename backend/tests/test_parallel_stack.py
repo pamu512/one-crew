@@ -122,7 +122,8 @@ def test_live_path_calls_search_extract_and_task_pro(monkeypatch) -> None:
     assert "task:pro" in calls
     assert packet.task_spine
     assert "Cited thesis spine from Task pro." in packet.research_pack
-    assert "Task basis timeline" in packet.research_pack
+    assert "Citations:" in packet.research_pack or "Task basis" in packet.research_pack
+    assert KEPT in packet.research_pack
     assert "Extract: Ownership: cited house organ." in next(
         f.note for f in packet.receipt.findings if f.parallel_url == KEPT
     )

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import re
+from typing import Any
+
 from onecrew.models import (
     EXCLUSION_REASONS,
     MISSING,
@@ -11,6 +14,104 @@ from onecrew.models import (
 
 class PackInvalidError(ValueError):
     """Research pack or exclusion row failed a lock."""
+
+
+_CITE_TOKEN = re.compile(r"\[(?:[a-z0-9_]+\[\d+\]|\d+)\]")
+_YEAR = re.compile(r"\b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+)?((?:19|20)\d{2})\b")
+_TEMPLATE_CLAIM = re.compile(
+    r"^(Grounded event inside|Widely repeated frame about|Fringe claim about)\b",
+    re.I,
+)
+
+
+def render_task_content(content: Any) -> str:
+    """Task pro output as readable thesis prose. Never a Python dict dump."""
+    if content is None:
+        return ""
+    if isinstance(content, dict):
+        chunks: list[str] = []
+        for key, val in content.items():
+            title = str(key or "").replace("_", " ").strip() or "Section"
+            title = title[:1].upper() + title[1:]
+            if isinstance(val, list):
+                body = "\n".join(str(item) for item in val)
+            elif isinstance(val, dict):
+                body = render_task_content(val)
+            else:
+                body = str(val)
+            chunks.append(f"### {title}\n\n{_clean_task_text(body)}")
+        return "\n\n".join(chunks).strip()
+    return _clean_task_text(str(content))
+
+
+def _clean_task_text(text: str) -> str:
+    cleaned = (text or "").replace("\\n", "\n")
+    cleaned = _CITE_TOKEN.sub("", cleaned)
+    cleaned = re.sub(r"\*\*(.+?)\*\*", r"\1", cleaned)
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    cleaned = re.sub(r"[ ]{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
+def is_template_claim(claim: str) -> bool:
+    return bool(_TEMPLATE_CLAIM.match((claim or "").strip()))
+
+
+def facts_from_spine(spine: str) -> list[dict[str, str]]:
+    """Dated, numbered sentences already in the Task spine. Nothing invented."""
+    facts: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for raw in _spine_lines(spine):
+        line = _clean_task_text(raw).strip(" -*|")
+        if line.count("|") >= 2:
+            cols = [c.strip() for c in line.strip("|").split("|")]
+            if not cols or cols[0].lower() in {"date", "sourced event"} or set(cols[0]) <= {"-"}:
+                continue
+            line = f"{cols[0]}: {cols[1]}" if len(cols) > 1 else cols[0]
+        if len(line) < 24 or len(line) > 280:
+            continue
+        low = line.lower()
+        if not _YEAR.search(line) and not any(
+            key in low for key in ("nber", "usrec", "payroll", "gdp", "sahm", "lei", "fred")
+        ):
+            continue
+        if not re.search(r"\d", line) and "nber" not in low:
+            continue
+        if low in seen:
+            continue
+        seen.add(low)
+        when = ""
+        found = _YEAR.search(line)
+        if found:
+            when = found.group(0).strip()
+        spoken = re.split(r"\s*->\s*", line, maxsplit=1)[0]
+        spoken = re.sub(r"^[A-Z][A-Za-z0-9 /&'-]{1,40}:\s+", "", spoken).strip()
+        facts.append({"when": when, "claim": spoken.rstrip(".") + "."})
+        if len(facts) >= 8:
+            break
+    return facts
+
+
+def _spine_lines(spine: str) -> list[str]:
+    text = spine or ""
+    out: list[str] = []
+    for block in re.split(r"\n+", text):
+        if re.match(r"^\s*[-*]\s+", block):
+            out.append(re.sub(r"^\s*[-*]\s+", "", block))
+            continue
+        out.extend(re.split(r"(?<=\.)\s+(?=[A-Z*-])", block))
+    return out
+
+
+def topic_claim_text(packet: Packet) -> str:
+    """Topic + finding claims only. Leftover exclusion titles do not unlock Hormuz."""
+    parts = [packet.topic or "", packet.hook or ""]
+    receipt = packet.receipt
+    if receipt:
+        for finding in receipt.findings:
+            parts.extend([finding.claim, finding.title or "", finding.when or ""])
+    return " ".join(parts).lower()
 
 
 def seed_exclusions() -> list[Exclusion]:
@@ -182,7 +283,7 @@ def _argument_prose(packet: Packet) -> str:
     if missing_links:
         bits = "; ".join(f"{link.claim.rstrip('.')} [{link.id}]" for link in missing_links)
         parts.append(f"Causal links Parallel did not source stay named as missing: {bits}.")
-    return " ".join(parts)
+    return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
 def write_research_pack(packet: Packet, hit_urls: list[str] | None = None) -> Packet:

@@ -76,7 +76,7 @@ def test_tiktok_vo_is_short_episode_has_running_timecodes() -> None:
     assert len(tiktok.script) < len(episode.script)
     assert len(tiktok.beats) < len(episode.beats)
     assert sum(b.duration_s for b in tiktok.beats) < 60
-    assert sum(b.duration_s for b in episode.beats) >= 40 * 60
+    assert 90 <= sum(b.duration_s for b in episode.beats) <= 15 * 60
     assert re.search(r"\d{2}:\d{2}:\d{2}", episode.script)
     assert "ACT 1" in episode.script
     assert "00:" in tiktok.script

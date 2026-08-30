@@ -6,6 +6,7 @@ import re
 from onecrew import config
 from onecrew.cut import event_cap, is_long_cut, require_cut
 from onecrew.models import MISSING, Exclusion, Finding, Packet, ScriptBeat
+from onecrew.pack import facts_from_spine, topic_claim_text
 from onecrew.tell import invents_frame
 from onecrew.tone import apply_tone
 from onecrew.vertex_client import VertexDownError, generate_script
@@ -57,7 +58,8 @@ def _recast(finding: Finding, lean: str, *, long_form: bool) -> str:
         if long_form:
             line += " I still don't get to invent the next beat."
         return line
-    line = f"{('In ' + when + ', ') if when else ''}{body}."
+    already_dated = bool(when and when.lower() in body.lower())
+    line = f"{('In ' + when + ', ') if when and not already_dated else ''}{body}."
     if long_form:
         line += " I'm staying on that."
     return line
@@ -102,7 +104,8 @@ def _durs(tier: str) -> dict[str, int]:
         return {"heading": 2, "action": 50, "vo": 70, "dialogue": 40, "interview": 40, "close": 180}
     if tier == "feature":
         return {"heading": 2, "action": 45, "vo": 60, "dialogue": 40, "interview": 30, "close": 180}
-    return {"heading": 2, "action": 90, "vo": 150, "dialogue": 40, "interview": 45, "close": 180}
+    # ponytail: short episode is recordable (~3–8 min), not 90s+150s repeats.
+    return {"heading": 1, "action": 4, "vo": 18, "dialogue": 8, "interview": 8, "close": 12}
 
 
 class _Draft:
@@ -148,10 +151,8 @@ class _Draft:
 
 def _allowed_text(packet: Packet) -> str:
     parts = [
-        packet.research_pack or "",
-        packet.topic or "",
+        topic_claim_text(packet),
         packet.tell or "",
-        packet.hook or "",
     ]
     receipt = packet.receipt
     if receipt:
@@ -183,6 +184,12 @@ def _holes_for_vo(vo: str, packet: Packet) -> list[str]:
             holes.append(f"leftover {word} not in pack")
     if _host_only(packet) and "(frame)" in blob:
         holes.append("invented (frame) on a host-only cut")
+    if _host_only(packet) and "photoreal b-roll" in blob:
+        holes.append("photoreal leftover on a host-only cut")
+    if _host_only(packet) and "gulf chart" in blob and "hormuz" not in allowed:
+        holes.append("leftover gulf chart not in pack")
+    if "grounded event inside" in blob or "fringe claim about" in blob:
+        holes.append("template claim leftover")
     return holes
 
 
@@ -222,12 +229,12 @@ def _visual_for(finding: Finding, *, fiction: bool, tell: str) -> str:
     claim = finding.claim.rstrip(".")
     lower = claim.lower()
     if any(key in lower for key in ("share", "percent", "chart", "index", "payroll", "usrec", "price")):
-        return f"Infographic from the cited row: {claim}. Not a photoreal fake room."
+        return f"Infographic from the cited row: {claim}. Not a fake event room."
     if any(key in lower for key in ("tanker", "strait", "transits", "seaborne", "hormuz")):
-        return f"Archive tape: tanker in the cited strait lane. {claim}. Not a photoreal fake room."
+        return f"Archive tape: tanker in the cited strait lane. {claim}. Not a fake event room."
     if any(key in lower for key in ("withdrew", "withdrawal", "announcement", "dated")):
         return f"Archive of the cited announcement: {claim}."
-    return f"Host/reporter. Archive or cited tape for: {claim}. No photoreal fake event room."
+    return f"Host/reporter. Archive or cited tape for: {claim}. No fake event room."
 
 
 def _hole_line(finding: Finding, lean: str) -> str:
@@ -304,6 +311,7 @@ def model_payload(packet: Packet) -> dict:
         "findings": findings,
         "links": links,
         "pack": packet.research_pack or "",
+        "task_spine": packet.task_spine or "",
     }
 
 
@@ -320,7 +328,7 @@ def draft_model_script(packet: Packet) -> dict:
     tier = _tier(cut)
     long_form = bool(cut and is_long_cut(cut))
     fiction = _invents_frame(packet)
-    per = {"short": 1, "episode": 2, "doc": 4, "feature": 3}[tier]
+    per = {"short": 1, "episode": 1, "doc": 4, "feature": 3}[tier]
     first = rows[0] if rows else None
     open_scene = (
         f"INT. {(packet.tell or 'the tell').strip().upper()[:48] or 'THE TELL'} - EVENING"
@@ -358,16 +366,46 @@ def draft_model_script(packet: Packet) -> dict:
         slugs = _scene_slugs(finding, fiction=fiction, tell=packet.tell or "", n=per)
         visual = _visual_for(finding, fiction=fiction, tell=packet.tell or "")
         for si, slug in enumerate(slugs):
+            if si == 0:
+                spoken_vo = fact
+            elif finding.stamp == "fringe" or tier in {"doc", "feature"}:
+                spoken_vo = hole
+            else:
+                continue
             units.append(
                 {
                     "finding_id": finding.id,
-                    "vo": fact if si == 0 else hole,
+                    "vo": spoken_vo,
                     "visual": visual,
                     "scene": slug,
                     "kind": "vo",
-                    "interview": _interview_line(finding) if (not fiction and si == per - 1) else "",
+                    "interview": _interview_line(finding)
+                    if (not fiction and finding.stamp == "fringe" and si == 0)
+                    else "",
                 }
             )
+        if finding.stamp == "grounded" and not fiction and tier == "episode":
+            for extra in facts_from_spine(packet.task_spine or "")[1:]:
+                units.append(
+                    {
+                        "finding_id": finding.id,
+                        "vo": apply_tone(extra["claim"], packet.tone, fiction=fiction)
+                        + _cite(finding.id),
+                        "visual": _visual_for(
+                            Finding(
+                                id=finding.id,
+                                claim=extra["claim"],
+                                stamp=finding.stamp,
+                                parallel_status=finding.parallel_status,
+                                note=finding.note,
+                            ),
+                            fiction=fiction,
+                            tell=packet.tell or "",
+                        ),
+                        "scene": f"STUDIO — {extra.get('when') or finding.id}",
+                        "kind": "vo",
+                    }
+                )
     if tier != "short" and receipt.causal_links:
         link = receipt.causal_links[0]
         known = {f.id for f in receipt.findings}
@@ -636,4 +674,14 @@ def write_script(packet: Packet) -> Packet:
         model = _parse_model(raw)
     except ValueError as exc:
         return _fail_closed(packet, [f"Vertex unusable: {exc}"])
-    return assemble_script(packet, model)
+    assembled = assemble_script(packet, model)
+    leftover = any(
+        "leftover" in (row.detail or "") or "template claim" in (row.detail or "") or "photoreal" in (row.detail or "")
+        for row in assembled.exclusions
+    )
+    if assembled.status == "hold" and leftover:
+        packet.exclusions = [row for row in packet.exclusions if row.what != _VERTEX_HOLE]
+        packet.script = ""
+        packet.beats = []
+        return assemble_script(packet, draft_model_script(packet))
+    return assembled
