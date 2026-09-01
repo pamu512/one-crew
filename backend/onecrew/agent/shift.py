@@ -16,6 +16,7 @@ from onecrew.parallel_client import ParallelDownError, entity_search, extract, r
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import ReceiptInvalidError, attach_frames, hold_receipt, write_receipt
+from onecrew.foundry import foundry_findings, replace_leftover_slots
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.script import pack_numbers, write_script
 from onecrew.store import store
@@ -148,15 +149,6 @@ def _fringe_queries(packet: Packet) -> list[str]:
     return [f"{topic} unsourced fringe claim"]
 
 
-_LEFTOVER_SLOT_IDS = frozenset({"timeline-hit", "timeline-frame", "timeline-miss"})
-_SERIES = (
-    ("usrec", ("usrec",), ("usrec",), "USREC"),
-    ("payrolls", ("payroll", "nonfarm"), ("payroll", "bls", "empsit"), "payrolls"),
-    ("gdp", ("gdp",), ("gdp", "bea"), "GDP"),
-    ("sahm", ("sahm",), ("sahm",), "Sahm"),
-)
-
-
 def _rows_blob(rows: list) -> str:
     parts: list[str] = []
     for row in rows:
@@ -168,118 +160,6 @@ def _rows_blob(rows: list) -> str:
             if text:
                 parts.append(text)
     return "\n".join(parts)
-
-
-def _claim_for_series(blob: str, aliases: tuple[str, ...], name: str) -> str | None:
-    """Claim must already contain the series name and a number. Do not invent prints."""
-    for alias in aliases:
-        for match in re.finditer(rf".{{0,80}}{re.escape(alias)}.{{0,120}}", blob, re.I | re.S):
-            snippet = re.sub(r"\s+", " ", match.group(0)).strip()
-            if not pack_numbers(snippet):
-                continue
-            low = snippet.lower()
-            if alias.lower() not in low and name.lower() not in low:
-                snippet = f"{name} {snippet}"
-            return snippet[:400]
-    return None
-
-
-def _url_for_series(urls: list[str], keys: tuple[str, ...]) -> str | None:
-    for url in urls:
-        low = url.lower()
-        if any(key in low for key in keys):
-            return url
-    return None
-
-
-def _slug_finding_id(title: str, url: str, fallback: str) -> str:
-    raw = (title or "").strip()
-    if not raw or raw == MISSING:
-        raw = url
-    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")[:40] or fallback
-    if slug in _LEFTOVER_SLOT_IDS:
-        slug = fallback
-    return slug
-
-
-def _fringe_miss(topic: str) -> Finding:
-    return Finding(
-        id="fringe-unsourced",
-        claim=f"Fringe claim about {topic}",
-        stamp="fringe",
-        parallel_url=None,
-        parallel_status="miss",
-        note="Parallel miss. Included and tagged fringe. Never sold as fact.",
-        lean=MISSING,
-        interests=MISSING,
-        who_repeats=MISSING,
-        independent=MISSING,
-        vested_interest=MISSING,
-    )
-
-
-def _findings_from_spine(
-    *,
-    spine: str,
-    hit_rows: list,
-    extracted: Any,
-    hit_urls: list[str],
-    topic: str,
-) -> list[Finding]:
-    """One finding per named Task-spine object. Never leftover timeline-hit/frame/miss."""
-    extract_rows = list(getattr(extracted, "results", None) or [])
-    blob = "\n".join(part for part in (spine, _rows_blob(hit_rows), _rows_blob(extract_rows)) if part)
-    urls = [url for url in hit_urls if url]
-    findings: list[Finding] = []
-    for fid, aliases, url_keys, name in _SERIES:
-        claim = _claim_for_series(blob, aliases, name)
-        if not claim:
-            continue
-        url = _url_for_series(urls, url_keys) or (urls[0] if urls else None)
-        if not url:
-            continue
-        if name.lower() not in claim.lower() and not any(a in claim.lower() for a in aliases):
-            claim = f"{name} {claim}"
-        findings.append(
-            Finding(
-                id=fid,
-                claim=claim,
-                stamp="grounded",
-                title=name,
-                parallel_url=url,
-                parallel_status="hit",
-                note="Parallel URL on this row.",
-                independent=MISSING,
-                vested_interest=MISSING,
-            )
-        )
-    if not findings:
-        # ponytail: no named series — one grounded row from the first hit URL.
-        # Extra Search hits stay exclusions (duplicate), never leftover 3-slot ids.
-        row = next((item for item in hit_rows if getattr(item, "url", None)), None)
-        if row is not None:
-            url = row.url
-            title = (getattr(row, "title", None) or "").strip() or MISSING
-            excerpts = [str(x).strip() for x in (getattr(row, "excerpts", None) or []) if x]
-            numbered = [text for text in excerpts if pack_numbers(text)]
-            claim = (numbered[0] if numbered else (excerpts[0] if excerpts else title)) or url
-            slug = _slug_finding_id("" if title == MISSING else title, url, "hit-1")
-            findings.append(
-                Finding(
-                    id=slug,
-                    claim=str(claim)[:400],
-                    stamp="grounded",
-                    title=title,
-                    parallel_url=url,
-                    parallel_status="hit",
-                    note="Parallel URL on this row.",
-                    independent=MISSING,
-                    vested_interest=MISSING,
-                )
-            )
-    if findings:
-        findings.append(_fringe_miss(topic))
-    return findings
 
 
 def _size_live_findings(findings: list[Finding], packet: Packet) -> list[Finding]:
@@ -535,13 +415,51 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
     source_urls = _row_urls(hit_rows) + [
         url for field in (getattr(getattr(task, "output", None), "basis", None) or []) for url in _cited_urls(field)
     ]
-    findings = _findings_from_spine(
-        spine=spine,
-        hit_rows=hit_rows,
-        extracted=extracted,
-        hit_urls=source_urls or [hit_url],
-        topic=packet.topic or packet.hook or "topic",
+    packet.task_spine = spine
+    packet.research_pack = "\n".join(
+        part
+        for part in (
+            spine,
+            _rows_blob(hit_rows),
+            _rows_blob(list(getattr(extracted, "results", None) or [])),
+        )
+        if part
     )
+    findings = foundry_findings(packet, hit_urls=source_urls or [hit_url])
+    findings = replace_leftover_slots(packet, findings, hit_urls=source_urls or [hit_url])
+    if not findings:
+        # ponytail: thesis named no series. One grounded from the first hit URL.
+        row = next((item for item in hit_rows if getattr(item, "url", None)), None)
+        if row is not None:
+            title = (getattr(row, "title", None) or "").strip() or MISSING
+            excerpts = [str(x).strip() for x in (getattr(row, "excerpts", None) or []) if x]
+            numbered = [text for text in excerpts if pack_numbers(text)]
+            claim = (numbered[0] if numbered else (excerpts[0] if excerpts else title)) or row.url
+            slug = re.sub(r"[^a-z0-9]+", "-", ("" if title == MISSING else title).lower()).strip("-")[:40] or "hit-1"
+            if slug in {"timeline-hit", "timeline-frame", "timeline-miss"}:
+                slug = "hit-1"
+            findings = [
+                Finding(
+                    id=slug,
+                    claim=str(claim)[:400],
+                    stamp="grounded",
+                    title=title,
+                    parallel_url=row.url,
+                    parallel_status="hit",
+                    note="Parallel URL on this row.",
+                    independent=MISSING,
+                    vested_interest=MISSING,
+                ),
+                Finding(
+                    id="fringe-unsourced",
+                    claim="Unsourced fringe print. Parallel miss. Never sold as fact.",
+                    stamp="fringe",
+                    parallel_status="miss",
+                    note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+                    independent=MISSING,
+                    vested_interest=MISSING,
+                ),
+            ]
     findings = _size_live_findings(findings, packet)
     if not findings or not any(row.parallel_status == "hit" for row in findings):
         leftover.extend(
@@ -707,6 +625,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         store.upsert_packet(fresh)
         return fresh
 
+    receipt.findings = replace_leftover_slots(fresh, receipt.findings, hit_urls=hit_urls)
     try:
         write_receipt(fresh, receipt)
     except ReceiptInvalidError as exc:
