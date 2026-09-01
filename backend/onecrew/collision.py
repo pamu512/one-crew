@@ -8,6 +8,7 @@ from onecrew.parallel_client import ParallelDownError, search
 _CITE = re.compile(r"\[[a-z0-9-]+\]")
 _FRAME_NAME = re.compile(r"\b(Leila|Reza)\b", re.I)
 _SPACE = re.compile(r"\s+")
+_SERIES_HOSTS = ("fred.stlouisfed.org", "bls.gov", "bea.gov")
 
 COLLISION_OBJECTIVE = (
     "Find existing YouTube videos, documentaries, news packages, or films "
@@ -23,6 +24,12 @@ _HOLD_REASON = (
 
 def _url_ok(url: str | None) -> bool:
     return bool(url) and url.startswith(("http://", "https://"))
+
+
+def _is_series_citation(url: str | None) -> bool:
+    """FRED / BLS / BEA series pages are citations, not colliding media."""
+    low = (url or "").lower()
+    return any(host in low for host in _SERIES_HOSTS)
 
 
 def _clear_beat(beat: ScriptBeat) -> None:
@@ -129,7 +136,7 @@ def stamp_collisions(packet: Packet, rails: Rails) -> Packet:
             excerpts: list[str] = []
             for row in rows:
                 candidate = getattr(row, "url", None)
-                if _url_ok(candidate):
+                if _url_ok(candidate) and not _is_series_citation(candidate):
                     url = candidate
                     title = getattr(row, "title", None) or ""
                     excerpts = [str(x) for x in (getattr(row, "excerpts", None) or [])]

@@ -17,6 +17,10 @@ _NUM = re.compile(
 )
 _DEPTH_TOKEN = re.compile(r"\b\d+(?:-\d+)?y\b", re.I)
 _GROUNDED_EVENT = re.compile(r"grounded event inside\s+\S+:", re.I)
+_LEFTOVER_VO = re.compile(
+    r"grounded event inside\s+\S+:|fringe claim about\s+|widely repeated frame about\s+",
+    re.I,
+)
 _OFF_UNLESS_CITED = ("LEI", "+0.2%", "ISM", "55.6")
 _PACKET_MARK = "<<<PACKET>>>"
 _PACKET_END = "<<<END>>>"
@@ -36,7 +40,12 @@ _EIGHT_IDS = (
 
 
 def _pack_text(packet: Packet) -> str:
-    parts = [packet.research_pack or "", packet.topic or "", packet.hook or ""]
+    parts = [
+        packet.research_pack or "",
+        packet.task_spine or "",
+        packet.topic or "",
+        packet.hook or "",
+    ]
     receipt = packet.receipt
     if receipt:
         for finding in receipt.findings:
@@ -107,6 +116,45 @@ def _voice(line: str, packet: Packet) -> str:
 def _recession_pack(text: str) -> bool:
     blob = text.lower()
     return "usrec" in blob and ("payroll" in blob or "23k" in blob) and "sahm" in blob
+
+
+def _units_spoken(units: list[dict]) -> str:
+    return "\n".join(f"{u.get('vo') or ''} {u.get('eyes') or ''}" for u in units)
+
+
+def _leftover_vo(text: str) -> bool:
+    return bool(_LEFTOVER_VO.search(text or ""))
+
+
+def _missing_pack_marks(pack: str, vo: str) -> list[str]:
+    """HOLD if the pack has these objects and the VO never says them."""
+    holes: list[str] = []
+    plow = (pack or "").lower()
+    vlow = vo or ""
+    if "usrec" in plow and "usrec=0" not in vlow.lower() and "usrec = 0" not in vlow.lower():
+        holes.append("USREC=0")
+    if "payroll" in plow or "23k" in plow:
+        payroll_ok = (
+            "−23k" in vlow
+            or "-23k" in vlow
+            or "payrolls −23" in vlow.lower()
+            or "payrolls -23" in vlow.lower()
+        )
+        if not payroll_ok:
+            holes.append("payrolls −23k")
+    if "sahm" in plow and ("−0.03" in pack or "-0.03" in pack) and "0.50" in pack:
+        if not (("−0.03" in vlow or "-0.03" in vlow) and "0.50" in vlow):
+            holes.append("Sahm −0.03 vs 0.50")
+    return holes
+
+
+def _accept_units(packet: Packet, units: list[dict] | None) -> bool:
+    if not units or len(units) != 8:
+        return False
+    spoken = _units_spoken(units)
+    if _leftover_vo(spoken):
+        return False
+    return not _missing_pack_marks(_pack_text(packet), spoken)
 
 
 def _eight_from_pack(packet: Packet) -> list[dict]:
@@ -300,7 +348,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         for fid in fids:
             if f"[{fid}]" not in vo:
                 vo = f"{vo} [{fid}]"
-        if _GROUNDED_EVENT.search(vo):
+        if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
             return _fail_closed(packet, ["VO is leftover grounded-event template"])
         if _vo_has_uncited_off(vo, fids):
             return _fail_closed(packet, ["LEI/ISM spoken without a cited beat"])
@@ -355,6 +403,12 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     packet.exclusions = [row for row in packet.exclusions if row.what != _VERTEX_HOLE]
     packet.beats = beats
     packet.script = "\n".join(lines).strip() + "\n"
+    spoken = packet.script + "\n" + "\n".join(b.vo for b in beats)
+    if _leftover_vo(spoken):
+        return _fail_closed(packet, ["VO is leftover template"])
+    holes = _missing_pack_marks(_pack_text(packet), spoken)
+    if holes:
+        return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
     packet.status = "ready" if packet.receipt is None or packet.receipt.disposition != "HOLD" else "hold"
     return packet
 
@@ -410,14 +464,18 @@ def write_script(packet: Packet) -> Packet:
         return _fail_closed(packet, ["leftover grounded-event template"])
     if not _numbers_in(text):
         return _fail_closed(packet, ["pack has no numbers"])
-    units = _eight_from_pack(packet)
+    local = _eight_from_pack(packet)
+    units = local
     # Seed / leftover Hormuz stamp locally. Cloud Run boot has ADC so has_vertex
     # is true; Vertex Agent Platform 403 must not crash-loop first-open.
     if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
         try:
-            parsed = _parse_units(generate_script(_prompt(packet, units)))
-            if parsed and not any(_GROUNDED_EVENT.search(u.get("vo") or "") for u in parsed):
+            parsed = _parse_units(generate_script(_prompt(packet, local)))
+            # Prefer the pack spine when Vertex is hollow or leftover.
+            if parsed and _accept_units(packet, parsed):
                 units = parsed
         except VertexDownError:
             pass
+    if not _accept_units(packet, units) and _accept_units(packet, local):
+        units = local
     return _assemble(packet, units)

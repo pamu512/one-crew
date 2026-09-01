@@ -640,6 +640,101 @@ def test_live_research_claim_is_not_grounded_event_inside() -> None:
     assert packet.status == "hold"
 
 
+def test_vertex_hollow_eight_beat_keeps_pack_numbers(monkeypatch) -> None:
+    """Vertex overwriting _eight_from_pack with '2026 smashed into 0' is discarded."""
+    import json
+
+    packet = recession_fixture()
+    packet.id = "oc-recession-live-sep1b"
+    hollow = {
+        "beats": [
+            {
+                "id": bid,
+                "vo": (
+                    "2026 smashed into 0."
+                    if bid == "cold-open"
+                    else "Fringe claim about Are we near recession?"
+                ),
+                "eyes": "hollow",
+                "finding_ids": ["usrec-july-2026", "payrolls-23k"],
+            }
+            for bid in (
+                "cold-open",
+                "promise",
+                "gdp",
+                "labor",
+                "turn",
+                "complication",
+                "receipt",
+                "close",
+            )
+        ]
+    }
+
+    monkeypatch.setattr("onecrew.script.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda *_a, **_k: json.dumps(hollow))
+    write_script(packet)
+    vo = _spoken(packet)
+    assert packet.status == "ready"
+    assert "USREC=0" in vo
+    assert "−23k" in vo or "-23k" in vo or "payrolls −23" in vo or "payrolls -23" in vo
+    assert "2026 smashed into 0" not in vo
+    assert "Fringe claim about Are we near recession?" not in vo
+    cold = next(b for b in packet.beats if b.id == "cold-open")
+    assert cold.duration_s <= 25
+    assert "USREC=0" in cold.vo
+    assert "−23k" in cold.vo or "-23k" in cold.vo or "payroll" in cold.vo.lower()
+    assert "USREC=0" in (cold.frame or "") or "23k" in (cold.frame or "")
+    assert "Sahm" in vo or "sahm" in vo.lower()
+    assert "−0.03" in vo or "-0.03" in vo
+    assert "0.50" in vo
+    assert "LEI" not in vo and "ISM" not in vo
+
+
+def test_stuffed_fringe_claim_about_topic_holds() -> None:
+    packet = Packet(
+        id="oc-stuffed-fringe",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="should clear",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
+        research_pack="Print 7 on the desk.",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        disposition="READY",
+        written=True,
+        findings=[
+            Finding(
+                id="print-7",
+                claim="Print 7.",
+                stamp="grounded",
+                parallel_url="https://example.com/print",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="fringe-unsourced",
+                claim="Fringe claim about Are we near recession?",
+                stamp="fringe",
+                parallel_status="miss",
+                note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+            ),
+        ],
+    )
+    write_script(packet)
+    vo = _spoken(packet)
+    assert "Fringe claim about Are we near recession?" not in vo
+    assert packet.script == ""
+    assert packet.beats == []
+    assert packet.status == "hold"
+
+
 def test_tone_never_says_sit_with_this() -> None:
     from onecrew.tone import apply_tone
 

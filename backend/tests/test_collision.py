@@ -183,6 +183,31 @@ def test_fiction_frame_is_not_searched(monkeypatch) -> None:
     assert "Leila" not in hit.vo
 
 
+def test_fred_usrec_is_not_collision_yes_same_script(monkeypatch) -> None:
+    """FRED/BLS/BEA series pages are citations, not same_script media."""
+    FRED = "https://fred.stlouisfed.org/series/USREC"
+
+    def search(*, objective, search_queries):
+        return _Result(
+            [
+                _Row(
+                    url=FRED,
+                    title="USREC",
+                    excerpts=["USREC=0 (July 2026) smashed into payrolls −23k."],
+                )
+            ]
+        )
+
+    monkeypatch.setattr("onecrew.collision.search", search)
+    packet = seed_first_open()
+    write_script(packet)
+    stamp_collisions(packet, Rails(parallel=True, vertex=False, imagen=False))
+    cold = next(b for b in packet.beats if b.id == "cold-open")
+    assert not (cold.collision == "yes" and cold.collision_kind == "same_script")
+    assert cold.collision_url != FRED
+    assert all(row.url != FRED for row in packet.collisions)
+
+
 def test_floor_shows_collision_never_clears_copyright() -> None:
     html = FLOOR_HTML.lower()
     assert "collision" in html
