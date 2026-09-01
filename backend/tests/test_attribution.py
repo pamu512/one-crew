@@ -2,7 +2,7 @@ import pytest
 
 from onecrew.models import MISSING, Finding
 from onecrew.receipt import ReceiptInvalidError, validate_finding
-from onecrew.seed import OPEC_URL, seed_first_open
+from onecrew.seed import OPEC_URL, leftover_hormuz_packet
 
 
 def _mainstream(**kwargs) -> Finding:
@@ -59,7 +59,7 @@ def test_missing_stays_missing() -> None:
 
 
 def test_seeded_mainstream_present_and_missing_attribution() -> None:
-    packet = seed_first_open()
+    packet = leftover_hormuz_packet()
     missing = next(f for f in packet.receipt.findings if f.id == "oil-panic")
     present = next(f for f in packet.receipt.findings if f.id == "producer-frame")
     assert missing.stamp == "mainstream"

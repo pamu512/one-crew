@@ -15,17 +15,20 @@ You leave with a citable thesis plus a script, not a sketch. The research pack i
 
 Required, in this order, before any Parallel or Imagen spend. No defaults. Any missing pick = no run.
 
-1. **Topic** (free text) — e.g. "Explain what's going on with the Hormuz strait". Empty or whitespace = no run.
+1. **Topic** (free text) — e.g. "Are we near recession?". Empty or whitespace = no run.
 2. **Platform** — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
 3. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary` | `feature_film`
 4. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
 5. **Script lean** (voice only; does not restamp) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
 6. **Tell** (required free text) — how the piece is told. Empty or whitespace = no run. Examples only, not a closed list and not an enum:
-   - Narrator-led global overview of the US and Iran
+   - Host-only desk read of the last year of US recession prints
+   - No guest. No panel. Just the cited prints.
+   - Walk USREC, then payrolls, then GDP — host only
    - One family in Bandar Abbas, kitchen radio on
    - Thriller on a tanker crossing Hormuz that might get hit
    - Weekly news desk, host only
    - Historical drama through one port family
+   - Leftover tell (not first-open): Narrator-led global overview of the US and Iran
 
 Pairing is the **cut**, not a parse of tell. `full_length_documentary` and `weekly_update` are always nonfiction: host/reporter VO from the receipt, no invented characters, even if tell says "family thriller". `feature_film` is always fiction: may invent a frame labeled `(frame)` from whatever they typed. Shorts / tiktok / `one_time_short_episode`: news tell → no invented people; story tell → invent frame. Do not 400 because tell contains "thriller". On news/doc, subjects come from the receipt — do not invent a mother in Bandar Abbas if Parallel did not name her.
 
@@ -34,19 +37,19 @@ Pairing is the **cut**, not a parse of tell. `full_length_documentary` and `week
    - Make the viewer think
    - Question the decisions
    - Personal take
-   - Grounded in the record
+   - On the cited print
 
 Tone is not `script_lean` and does not restamp sources. A questioning tone still cannot invent a source or hide fringe. Do not name an example "grounded in reality". `feature_film` does not require tone.
 
 Then a write-once timeline (grounded / mainstream / fringe, house-organ, propaganda, causal links only when Parallel sourced them). Then a **full script you can record from** — scene headings, action/B-roll, host VO or screenplay dialogue — not one block per receipt row. Political `script_lean` changes the spoken argument, not the stamps and not the thickness. Then the collision search on factual VO lines. Then a **frame-by-frame shot list** (shot number, duration, camera, action, line). Each shot is `sourced` | `imagen` | `missing`. Nonfiction uses archive tape for event shots; genAI is for maps and infographics. Never a photoreal fake of a real event. Fiction features may Imagen invented rooms. Sourced is a cited link, not a rip. We do not license the tape we point at and we do not clear rights. Parallel down leaves footage `missing` (no invented URL, no Imagen pretend-source). Lean does not restamp sources or collisions. If the receipt is thin, the script names the hole. It does not invent history to fill pages.
 
-Sample first-open: **oc-hormuz-decade** (youtube · one_time_short_episode · decade · centered_independent · tell "Narrator-led global overview of the US and Iran" · tone "Grounded in the record"). Seed collisions stay `missing` — GET never spends.
+Sample first-open: **oc-recession-july-2026** (youtube · one_time_short_episode · 1y · centered_independent · tell "Host-only desk read of the last year of US recession prints" · tone "On the cited print"). First paint: USREC=0 smashed into payrolls −23k. Seed collisions stay `missing` — GET never spends. Leftover Hormuz (`oc-hormuz-decade`) is a named exclusion/negative case, not first-open.
 
 ![Architecture](docs/architecture.png)
 
 ## How it works
 
-1. First-open shows the required picks, the Hormuz VO, source stamps, collision fields (`missing` until a live search), and the shot list. GET never calls Parallel or Imagen.
+1. First-open shows the required picks, the recession 8-beat VO (USREC=0 smashed into payrolls −23k), source stamps, collision fields (`missing` until a live search), and the shot list. GET never calls Parallel or Imagen.
 2. `POST /api/shifts` needs `SHIFT_TOKEN` + `X-Shift-Token` and the required picks. Unset token → 403. Any missing pick (including empty tell, or empty tone on news/doc) → 400. No spend.
 3. **Google ADK** crew on **Vertex Gemini 3.5 Flash**: picks → Parallel stack → full script → collision search → shot list → archive tape or Imagen graphic.
 4. **Parallel stack:** Search (first pass: timeline, collision VO, archive footage — this satisfies the Search track) + Extract (quotes / ownership / propaganda / independence from Search URLs) + Task (`pro`, not ultra) for the thesis spine (`result.output.basis`). Search is required at runtime. Extract and Task are why the pack is a thesis. Entity Search only for a verified producer/lobby list. Do not create Monitors (standing watch; burns money; floor never posts).
@@ -68,7 +71,7 @@ pip install -r backend/requirements.txt
 PYTHONPATH=backend python -m onecrew
 ```
 
-Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the timed Hormuz VO, the collision list, and the cited sources. The floor has no publish button.
+Open [http://127.0.0.1:43158](http://127.0.0.1:43158). Read the timed recession 8-beat VO, the collision list, and the cited sources. The floor has no publish button.
 
 ```bash
 PYTHONPATH=backend python -m onecrew &
@@ -80,7 +83,7 @@ curl -s http://127.0.0.1:43158/api/packets | python -m json.tool | head
 # curl -s -X POST http://127.0.0.1:43158/api/shifts \
 #   -H 'content-type: application/json' \
 #   -H "X-Shift-Token: $SHIFT_TOKEN" \
-#   -d '{"topic":"Explain what is going on with the Hormuz strait","platform":"youtube","cut":"one_time_short_episode","depth":"decade","script_lean":"centered_independent","tell":"Narrator-led global overview of the US and Iran","tone":"Grounded in the record"}'
+#   -d '{"topic":"Are we near recession?","platform":"youtube","cut":"one_time_short_episode","depth":"1y","script_lean":"centered_independent","tell":"Host-only desk read of the last year of US recession prints","tone":"On the cited print"}'
 ```
 
 ### Tests
@@ -90,7 +93,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Locks: required picks or no run; empty tell is 400; empty tone on news/doc is 400; documentary cut never invents a family even if tell says drama; fiction frame stays labeled; lean and tone do not restamp sources or collision URLs; Parallel down leaves collision `missing` (never `no`); a Hormuz doc URL hit stamps `collision=yes` on that beat; nonfiction event shots are archive or missing (Imagen is maps/infographics only); GET never spends; POST without token is 403; floor never posts.
+Locks: required picks or no run; empty tell is 400; empty tone on news/doc is 400; documentary cut never invents a family even if tell says drama; fiction frame stays labeled; lean and tone do not restamp sources or collision URLs; Parallel down leaves collision `missing` (never `no`); a leftover Hormuz doc URL hit stamps `collision=yes` on that leftover beat; nonfiction event shots are archive or missing (Imagen is maps/infographics only); GET never spends; POST without token is 403; floor never posts.
 
 ### ADK web (optional)
 
@@ -148,7 +151,7 @@ Leave `SHIFT_TOKEN` unset on the public service so `POST /api/shifts` is 403. Th
 ## Repository map
 
 ```
-sample_data/packet.json    first-open oc-hormuz-decade
+sample_data/packet.json    first-open oc-recession-july-2026
 sample_data/frames/        storyboard frames cut from the seed script
 backend/onecrew/           FastAPI + ADK crew + receipt lock
 backend/tests/             locks

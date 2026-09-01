@@ -7,7 +7,7 @@ TONE_EXAMPLES = (
     "Make the viewer think",
     "Question the decisions",
     "Personal take",
-    "Grounded in the record",
+    "On the cited print",
 )
 
 SEED_TONE = TONE_EXAMPLES[-1]

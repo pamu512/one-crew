@@ -55,7 +55,7 @@ def test_nonfiction_episode_is_narrator_led_eight_beats() -> None:
     assert "Reza" not in packet.script
     assert "(frame)" not in packet.script
     assert "HOST" in packet.script or "NARRATOR" in packet.script
-    oil = next(f for f in packet.receipt.findings if f.id == "oil-panic")
+    oil = next(f for f in packet.receipt.findings if f.id == "already-in")
     assert oil.lean == MISSING
 
 

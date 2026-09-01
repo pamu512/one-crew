@@ -86,8 +86,8 @@ def _live_shift():
         cut="one_time_short_episode",
         depth="decade",
         script_lean="centered_independent",
-        tell="Narrator-led global overview of the US and Iran",
-        tone="Grounded in the record",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
         topic="Hormuz",
     )
     shift.rails = Rails(parallel=True, vertex=False, imagen=False)

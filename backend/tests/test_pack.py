@@ -14,7 +14,9 @@ from onecrew.pack import (
     write_research_pack,
 )
 from onecrew.script import write_script
-from onecrew.seed import seed_first_open
+from onecrew.seed import leftover_hormuz_packet, seed_first_open
+from onecrew.tell import SEED_TELL
+from onecrew.tone import SEED_TONE
 
 
 _STAMP_MARKERS = (
@@ -63,7 +65,8 @@ def test_seed_pack_is_a_thesis() -> None:
     assert f"reason={packet.exclusions[0].reason}" in pack
     assert "Left out:" in pack
     assert "never sold as fact" in pack
-    assert "Propaganda stays marked" in pack
+    leftover = leftover_hormuz_packet()
+    assert "Propaganda stays marked" in leftover.research_pack
     readme = Path("/workspace/README.md").read_text()
     assert "left out and why" in readme.lower()
 
@@ -75,8 +78,8 @@ def test_hold_pack_is_non_empty() -> None:
         cut="one_time_short_episode",
         depth="decade",
         script_lean="centered_independent",
-        tell="Narrator-led global overview of the US and Iran",
-        tone="Grounded in the record",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
         topic="Hormuz",
     )
     shift.rails = Rails(parallel=False, vertex=False, imagen=False)
@@ -97,7 +100,7 @@ def test_lean_tone_tell_do_not_change_thesis_stamps() -> None:
     seed.tell = "Weekly news desk, host only"
     write_script(seed)
     write_research_pack(seed)
-    assert "[jcpoa-2018]" in seed.script
+    assert "[usrec-july-2026]" in seed.script
     for finding in seed.receipt.findings:
         line = f"The stamp is {finding.stamp} (grounded|mainstream|fringe)."
         assert line in before
@@ -203,8 +206,8 @@ def test_live_extra_parallel_hit_is_excluded(monkeypatch) -> None:
         cut="one_time_short_episode",
         depth="decade",
         script_lean="centered_independent",
-        tell="Narrator-led global overview of the US and Iran",
-        tone="Grounded in the record",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
         topic="Hormuz",
     )
     shift.rails = Rails(parallel=True, vertex=False, imagen=False)

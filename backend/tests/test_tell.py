@@ -54,7 +54,7 @@ def test_same_receipt_three_tells_stamps_identical() -> None:
     for packet in (nf, family, ship, feature):
         for beat in packet.beats:
             assert beat.finding_ids
-        oil = next(f for f in packet.receipt.findings if f.id == "oil-panic")
+        oil = next(f for f in packet.receipt.findings if f.id == "already-in")
         assert oil.lean == MISSING
 
 

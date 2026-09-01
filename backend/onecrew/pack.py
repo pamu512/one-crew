@@ -14,11 +14,13 @@ class PackInvalidError(ValueError):
 
 
 def seed_exclusions() -> list[Exclusion]:
+    """Leftover Hormuz causal. Not first-open identity. URL keeps the leftover cited."""
     return [
         Exclusion(
             what="The 2018 JCPOA exit caused the 2023-2024 Hormuz panic.",
             reason="parallel_miss",
-            detail="Causal link is on the receipt as missing. Not drawn as fact.",
+            detail="Leftover Hormuz causal. Not first-open. Causal link is missing. Not drawn as fact.",
+            url="https://www.cfr.org/backgrounder/what-iran-nuclear-deal",
         )
     ]
 

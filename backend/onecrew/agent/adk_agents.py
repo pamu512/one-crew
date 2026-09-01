@@ -12,7 +12,7 @@ length/cut (tiktok-length, shorts, weekly_update, one_time_short_episode, full_l
 depth (1y, 2-3y, 5y, decade, few_decades, pre-1980_pre-internet),
 script lean (centered_independent, left, right, far_right, far_left, unhinged_fringe),
 tell (required free text). Examples, not a closed list: narrator-led global overview; one family in Bandar Abbas; thriller on a tanker; weekly news desk, host only; historical drama through one port family.
-tone (required free text unless cut is feature_film). Examples, not a closed list: News desk; Make the viewer think; Question the decisions; Personal take; Grounded in the record.
+tone (required free text unless cut is feature_film). Examples, not a closed list: News desk; Make the viewer think; Question the decisions; Personal take; On the cited print.
 Tone is host stance on news/doc. It does not restamp sources. It is not script_lean. A questioning tone still cannot invent a source or hide fringe.
 Do not name a tone "grounded in reality".
 Pairing is the cut, not a parse of tell. Do not reject because tell contains thriller or drama.

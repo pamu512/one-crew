@@ -15,7 +15,7 @@ from onecrew.picks import (
 from onecrew.tell import SEED_TELL, TellRequiredError
 from onecrew.tone import SEED_TONE, ToneRequiredError
 from onecrew.script import write_script
-from onecrew.seed import seed_first_open
+from onecrew.seed import leftover_hormuz_packet, seed_first_open
 from onecrew.spend import ledger
 
 
@@ -109,7 +109,7 @@ def test_no_run_without_all_six_picks(monkeypatch) -> None:
 
 
 def test_script_lean_cannot_change_a_source_stamp() -> None:
-    packet = seed_first_open()
+    packet = leftover_hormuz_packet()
     before = [
         (f.id, f.stamp, f.propaganda, f.lean, f.independent, f.interests)
         for f in packet.receipt.findings

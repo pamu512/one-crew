@@ -75,7 +75,7 @@ FLOOR_HTML = """<!DOCTYPE html>
       <div class="brand">Desk</div>
       <p class="script">Topic first, then platform, length, depth, script lean, tell, tone. Any missing pick = no run. GET does not spend. The floor never posts.</p>
       <label for="topic">Topic — pick 1, required</label>
-      <textarea id="topic" rows="3" placeholder="Explain what's going on with the Hormuz strait"></textarea>
+      <textarea id="topic" rows="3" placeholder="Are we near recession?"></textarea>
       <label>Platform — required</label>
       <div class="depths" id="platforms"></div>
       <label>Length / cut — required</label>
@@ -85,29 +85,33 @@ FLOOR_HTML = """<!DOCTYPE html>
       <label>Script lean — required (does not restamp sources)</label>
       <div class="depths" id="leans"></div>
       <label for="tell">Tell — pick 6, required free text</label>
-      <textarea id="tell" rows="3" placeholder="Narrator-led global overview of the US and Iran"></textarea>
+      <textarea id="tell" rows="3" placeholder="Host-only desk read of the last year of US recession prints"></textarea>
       <p class="note">Examples only — not the only allowed values:</p>
-      <p class="note">Narrator-led global overview of the US and Iran</p>
+      <p class="note">Host-only desk read of the last year of US recession prints</p>
+      <p class="note">No guest. No panel. Just the cited prints.</p>
+      <p class="note">Walk USREC, then payrolls, then GDP — host only</p>
       <p class="note">One family in Bandar Abbas, kitchen radio on</p>
       <p class="note">Thriller on a tanker crossing Hormuz that might get hit</p>
       <p class="note">Weekly news desk, host only</p>
       <p class="note">Historical drama through one port family</p>
+      <p class="note">Leftover tell (not first-open): Narrator-led global overview of the US and Iran</p>
       <p class="note">Documentary / weekly_update stay news: host VO, no invented people, even if you type a family thriller. Feature invents a frame from whatever you typed.</p>
       <label for="tone">Tone — required on news/doc (not on feature_film)</label>
-      <textarea id="tone" rows="2" placeholder="Grounded in the record"></textarea>
+      <textarea id="tone" rows="2" placeholder="On the cited print"></textarea>
       <p class="note">Examples only — not the only allowed values:</p>
       <p class="note">News desk</p>
       <p class="note">Make the viewer think</p>
       <p class="note">Question the decisions</p>
       <p class="note">Personal take</p>
-      <p class="note">Grounded in the record</p>
+      <p class="note">On the cited print</p>
+      <p class="note">Tone is a voice. It does not restamp source rows. It is not a clearance.</p>
       <label for="token">Shift token (spend only)</label>
       <input id="token" type="password" autocomplete="off"/>
       <button id="research" type="button" disabled>Write script</button>
       <p class="script" id="desk-msg">Any missing pick = no run.</p>
       <p class="script" id="health"></p>
     </section>
-    <section class="card" id="packet">Loading oc-hormuz-decade…</section>
+    <section class="card" id="packet">Loading oc-recession-july-2026…</section>
   </main>
   <script>
     const PLATFORMS = [

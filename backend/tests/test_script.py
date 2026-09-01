@@ -3,7 +3,7 @@ import re
 
 from onecrew.models import MISSING, SCRIPT_LEANS, Packet, Receipt
 from onecrew.script import write_script
-from onecrew.seed import seed_findings, seed_first_open, seed_links
+from onecrew.seed import leftover_hormuz_findings, leftover_hormuz_links, seed_first_open
 
 _RECEIPT_JARGON = (
     "on the receipt",
@@ -24,8 +24,8 @@ _RECEIPT_JARGON = (
 def _packet(*, platform: str, cut: str, lean: str) -> Packet:
     packet = Packet(
         id="oc-vo",
-        topic="Explain what's going on with the Hormuz strait",
-        hook="Explain what's going on with the Hormuz strait",
+        topic="How a decade of decisions around the Strait of Hormuz still sets the price of oil",
+        hook="How a decade of decisions around the Strait of Hormuz still sets the price of oil",
         script="",
         platform=platform,
         cut=cut,
@@ -35,8 +35,8 @@ def _packet(*, platform: str, cut: str, lean: str) -> Packet:
     )
     receipt = Receipt(
         packet_id=packet.id,
-        findings=copy.deepcopy(seed_findings()),
-        causal_links=copy.deepcopy(seed_links()),
+        findings=copy.deepcopy(leftover_hormuz_findings()),
+        causal_links=copy.deepcopy(leftover_hormuz_links()),
         disposition="READY",
         written=True,
     )

@@ -7,7 +7,7 @@ from onecrew.collision import stamp_collisions
 from onecrew.floor import FLOOR_HTML
 from onecrew.models import MISSING, Rails
 from onecrew.script import write_script
-from onecrew.seed import seed_first_open
+from onecrew.seed import leftover_hormuz_packet, seed_first_open
 from onecrew.spend import ledger
 
 HORMUZ_DOC_URL = "https://www.youtube.com/watch?v=StraitOfHormuzDoc"
@@ -109,7 +109,7 @@ def test_empty_script_does_not_search(monkeypatch) -> None:
 
 def test_parallel_hit_stamps_collision_yes_findings_unchanged(monkeypatch) -> None:
     monkeypatch.setattr("onecrew.collision.search", _hit_on_jcpoa)
-    packet = seed_first_open()
+    packet = leftover_hormuz_packet()
     before = [
         (f.id, f.stamp, f.propaganda, f.lean, f.independent, f.parallel_url)
         for f in packet.receipt.findings
@@ -135,12 +135,12 @@ def test_parallel_hit_stamps_collision_yes_findings_unchanged(monkeypatch) -> No
     assert any(row.beat_id == hit.id and row.collision == "yes" for row in packet.collisions)
     assert all(row.collision == "yes" for row in packet.collisions)
     assert packet.collision_disposition == "READY"
-    assert hit.vo == next(b.vo for b in seed_first_open().beats if b.id == hit.id)
+    assert hit.vo == next(b.vo for b in leftover_hormuz_packet().beats if b.id == hit.id)
 
 
 def test_lean_does_not_change_collision_url(monkeypatch) -> None:
     monkeypatch.setattr("onecrew.collision.search", _hit_on_jcpoa)
-    packet = seed_first_open()
+    packet = leftover_hormuz_packet()
     stamp_collisions(packet, Rails(parallel=True, vertex=True, imagen=True))
     url = next(b for b in packet.beats if "jcpoa-2018" in b.finding_ids).collision_url
     assert url == HORMUZ_DOC_URL
@@ -166,7 +166,7 @@ def test_fiction_frame_is_not_searched(monkeypatch) -> None:
         return _hit_on_jcpoa(objective=objective, search_queries=search_queries)
 
     monkeypatch.setattr("onecrew.collision.search", capture)
-    packet = seed_first_open()
+    packet = leftover_hormuz_packet()
     packet.tell = "One family in Bandar Abbas, kitchen radio on"
     packet.cut = "feature_film"
     write_script(packet)

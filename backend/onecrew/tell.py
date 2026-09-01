@@ -3,11 +3,14 @@ from __future__ import annotations
 from onecrew.models import FEATURE_CUTS, NONFICTION_CUTS, Cut
 
 TELL_EXAMPLES = (
-    "Narrator-led global overview of the US and Iran",
+    "Host-only desk read of the last year of US recession prints",
+    "No guest. No panel. Just the cited prints.",
+    "Walk USREC, then payrolls, then GDP — host only",
     "One family in Bandar Abbas, kitchen radio on",
     "Thriller on a tanker crossing Hormuz that might get hit",
     "Weekly news desk, host only",
     "Historical drama through one port family",
+    "Narrator-led global overview of the US and Iran",
 )
 
 SEED_TELL = TELL_EXAMPLES[0]

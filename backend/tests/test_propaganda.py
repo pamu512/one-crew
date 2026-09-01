@@ -3,7 +3,7 @@ import pytest
 from onecrew.floor import FLOOR_HTML
 from onecrew.models import MISSING, Finding
 from onecrew.receipt import ReceiptInvalidError, validate_finding
-from onecrew.seed import OPEC_URL, seed_first_open
+from onecrew.seed import OPEC_URL, leftover_hormuz_packet
 
 
 def _grounded(**kwargs) -> Finding:
@@ -62,7 +62,7 @@ def test_propaganda_missing_stays_missing() -> None:
 
 
 def test_seeded_house_organ_stays_grounded_and_marked_propaganda() -> None:
-    packet = seed_first_open()
+    packet = leftover_hormuz_packet()
     house = next(f for f in packet.receipt.findings if f.id == "hormuz-share")
     assert house.stamp == "grounded"
     assert house.propaganda == "yes"

@@ -14,14 +14,18 @@ def test_floor_html_has_no_publish_button() -> None:
         page = client.get("/")
         assert page.status_code == 200
         assert "publish" not in page.text.lower()
-        assert "oc-hormuz-decade" in page.text or "hormuz" in page.text.lower()
+        assert "oc-recession-july-2026" in page.text
+        assert "Are we near recession?" in page.text
+        assert "Host-only desk read of the last year of US recession prints" in page.text
+        assert "On the cited print" in page.text
+        assert "Grounded in the record" not in page.text
         assert "Any missing pick = no run" in page.text
         assert "Topic — pick 1, required" in page.text
         assert "No topic chosen = no run" in page.text
         assert "No platform chosen = no run" in page.text
         assert "No tell chosen = no run" in page.text
         assert "Tell — pick 6, required free text" in page.text
-        assert "Narrator-led global overview of the US and Iran" in page.text
+        assert "Leftover tell (not first-open): Narrator-led global overview of the US and Iran" in page.text
         assert "One family in Bandar Abbas, kitchen radio on" in page.text
         assert "Thriller on a tanker crossing Hormuz that might get hit" in page.text
         assert "Weekly news desk, host only" in page.text
@@ -35,7 +39,8 @@ def test_floor_html_has_no_publish_button() -> None:
         assert "Make the viewer think" in page.text
         assert "Question the decisions" in page.text
         assert "Personal take" in page.text
-        assert "Grounded in the record" in page.text
+        assert "On the cited print" in page.text
+        assert "Grounded in the record" not in page.text
         assert "Research pack" in page.text
         assert "floor does not post it" in page.text.lower() or "does not post" in page.text.lower()
         assert "grounded in reality" not in page.text.lower()

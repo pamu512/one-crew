@@ -44,7 +44,7 @@ def recession_fixture() -> Packet:
         depth="1y",
         script_lean="centered_independent",
         tell="Host-only desk read. Title is a question we will not answer with a forecast.",
-        tone="Grounded in the record",
+        tone=SEED_TONE,
     )
     receipt = Receipt(
         packet_id=packet.id,
@@ -140,7 +140,7 @@ def test_recession_eight_beat_from_pack_not_hormuz() -> None:
     vo = _spoken(packet)
     low = vo.lower()
 
-    assert packet.id != SEED_PACKET_ID
+    assert packet.id == SEED_PACKET_ID
     assert packet.id != "oc-hormuz-decade"
     assert packet.status == "ready"
 

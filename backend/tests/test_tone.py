@@ -77,7 +77,7 @@ def test_two_tones_change_vo_not_stamps() -> None:
     assert "Question the decision" in question.script
     assert "From the news desk." not in record.script
     assert "Question the decision" not in record.script
-    assert "[jcpoa-2018]" in desk.script
+    assert "[usrec-july-2026]" in desk.script
     assert len([b for b in question.beats if b.kind == "vo"]) == 8
 
 
@@ -87,5 +87,6 @@ def test_tone_examples_are_not_an_enum() -> None:
         assert body["default"] is None
         assert body["examples"] == list(TONE_EXAMPLES)
         assert SEED_TONE in body["examples"]
-        assert "Grounded in the record" in body["examples"]
+        assert "On the cited print" in body["examples"]
+        assert "Grounded in the record" not in body["examples"]
         assert "grounded in reality" not in " ".join(body["examples"]).lower()

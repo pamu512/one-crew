@@ -4,18 +4,18 @@ Record unedited. Show the timed VO, the collision list, and the source stamps. D
 
 ## 0:00–0:40 · What you see before you record
 
-Talk over the floor with `oc-hormuz-decade` already open.
+Talk over the floor with `oc-recession-july-2026` already open. First paint is the recession 8-beat: smash USREC=0 into payrolls −23k.
 
 > One Crew is a research companion for a one-person shop. Before you record you see collisions, dirty sources, and holes. You leave with a citable thesis plus a full recordable script, not a 6-beat sketch. Tell and tone are free text. Nonfiction uses archive tape; Imagen is maps and infographics only. We do not clear copyright, do not give legal advice, and do not license tape. Collision=missing is not a clearance. The floor never posts.
 
 ## 0:40–1:20 · VO, collisions, stamps
 
-1. Point at **topic** first — Hormuz. Then **youtube · one_time_short_episode · decade · centered_independent**, tell **Narrator-led global overview of the US and Iran**, and tone **Grounded in the record** (free text; the listed lines are examples, not the only values). Seed stays a news short, not a feature. Seed collisions are `missing` because GET does not spend.
-2. Point at the **full script** (scenes, action, host VO — not six pasted claims) and the **collision list** next to it. Then the **frame-by-frame shot list**. Citations like `[jcpoa-2018]`.
-3. Point at **grounded** jcpoa-2018 and **hormuz-share** (not independent, propaganda, still grounded).
-4. Point at **mainstream** oil-panic — source lean `missing`. Then **producer-frame**.
-5. Point at **fringe** secret-closure — still on the list. Centered ask did not hide it.
-6. Causal link `missing`. Same receipt: a hit **and** a miss.
+1. Point at **topic** first — `Are we near recession?` Then **youtube · one_time_short_episode · 1y · centered_independent**, tell **Host-only desk read of the last year of US recession prints**, and tone **On the cited print** (free text; the listed lines are examples, not the only values). Seed stays a news short, not a feature. Seed collisions are `missing` because GET does not spend.
+2. Point at the **full script** (scenes, action, host VO — not six pasted claims) and the **collision list** next to it. Then the **frame-by-frame shot list**. First paint: USREC=0 smashed into payrolls −23k. Citations like `[usrec-july-2026]`.
+3. Point at **grounded** usrec-july-2026 and payrolls-july-2026 (official series, Parallel hit).
+4. Point at **mainstream** already-in — source lean `missing`. The scare stays on the list.
+5. Point at **fringe** lei-july-2026 — still on the list. Centered ask did not hide it. LEI and ISM stay off the VO unless a beat cites them.
+6. No leftover Hormuz causal on first-open. Same receipt: a hit **and** a miss.
 
 ## 1:20–2:10 · Lean lock + floor
 
@@ -28,7 +28,7 @@ Talk over the floor with `oc-hormuz-decade` already open.
 ```bash
 PYTHONPATH=backend pytest backend/tests -q
 curl -s http://127.0.0.1:43158/api/health
-curl -s -X POST http://127.0.0.1:43158/api/shifts -d '{"topic":"Hormuz"}'
+curl -s -X POST http://127.0.0.1:43158/api/shifts -d '{"topic":"Are we near recession?"}'
 ```
 
 GET never spends. POST without token is 403. POST with token and any missing pick is 400.

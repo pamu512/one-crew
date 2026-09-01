@@ -34,7 +34,7 @@ log = logging.getLogger("onecrew.api")
 async def lifespan(_app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     ensure_seeded()
-    log.info("Seeded oc-hormuz-decade (no Parallel, no Imagen)")
+    log.info("Seeded oc-recession-july-2026 (no Parallel, no Imagen)")
     yield
 
 
