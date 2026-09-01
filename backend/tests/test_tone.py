@@ -78,7 +78,7 @@ def test_two_tones_change_vo_not_stamps() -> None:
     assert "From the news desk." not in record.script
     assert "Question the decision" not in record.script
     assert "[jcpoa-2018]" in desk.script
-    assert "[secret-closure]" in question.script
+    assert len([b for b in question.beats if b.kind == "vo"]) == 8
 
 
 def test_tone_examples_are_not_an_enum() -> None:

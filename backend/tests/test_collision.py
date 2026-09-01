@@ -122,37 +122,37 @@ def test_parallel_hit_stamps_collision_yes_findings_unchanged(monkeypatch) -> No
         for f in packet.receipt.findings
     ]
     assert after == before
-    hit = next(b for b in packet.beats if b.id == "jcpoa-2018")
+    hit = next(b for b in packet.beats if "jcpoa-2018" in b.finding_ids)
     assert hit.collision == "yes"
     assert hit.collision_url == HORMUZ_DOC_URL
     assert hit.collision_title == HORMUZ_DOC_TITLE
     assert hit.collision_kind == "same_script"
-    miss = next(b for b in packet.beats if b.id == "secret-closure")
+    miss = next(b for b in packet.beats if "jcpoa-2018" not in b.finding_ids)
     assert miss.collision == "no"
     assert miss.collision_url is None
     assert miss.collision_title == MISSING
     assert miss.collision_kind == MISSING
-    assert any(row.beat_id == "jcpoa-2018" and row.collision == "yes" for row in packet.collisions)
+    assert any(row.beat_id == hit.id and row.collision == "yes" for row in packet.collisions)
     assert all(row.collision == "yes" for row in packet.collisions)
     assert packet.collision_disposition == "READY"
-    assert hit.vo == next(b.vo for b in seed_first_open().beats if b.id == "jcpoa-2018")
+    assert hit.vo == next(b.vo for b in seed_first_open().beats if b.id == hit.id)
 
 
 def test_lean_does_not_change_collision_url(monkeypatch) -> None:
     monkeypatch.setattr("onecrew.collision.search", _hit_on_jcpoa)
     packet = seed_first_open()
     stamp_collisions(packet, Rails(parallel=True, vertex=True, imagen=True))
-    url = next(b for b in packet.beats if b.id == "jcpoa-2018").collision_url
+    url = next(b for b in packet.beats if "jcpoa-2018" in b.finding_ids).collision_url
     assert url == HORMUZ_DOC_URL
     packet.script_lean = "left"
     packet.receipt = copy.deepcopy(packet.receipt)
     write_script(packet)
-    left = next(b for b in packet.beats if b.id == "jcpoa-2018")
+    left = next(b for b in packet.beats if "jcpoa-2018" in b.finding_ids)
     assert left.collision == "yes"
     assert left.collision_url == url
     packet.script_lean = "right"
     write_script(packet)
-    right = next(b for b in packet.beats if b.id == "jcpoa-2018")
+    right = next(b for b in packet.beats if "jcpoa-2018" in b.finding_ids)
     assert right.collision_url == url
     assert right.collision == "yes"
     assert left.vo != right.vo
@@ -170,17 +170,17 @@ def test_fiction_frame_is_not_searched(monkeypatch) -> None:
     packet.tell = "One family in Bandar Abbas, kitchen radio on"
     packet.cut = "feature_film"
     write_script(packet)
-    assert "Leila" in packet.script
+    assert "(frame)" in packet.script
     stamp_collisions(packet, Rails(parallel=True, vertex=True, imagen=True))
     blob = " ".join(seen).lower()
     assert "leila" not in blob
     assert "bandar abbas" not in blob
     assert "(frame)" not in blob
     assert any("jcpoa" in q.lower() or "withdrew" in q.lower() for q in seen)
-    hit = next(b for b in packet.beats if b.id == "jcpoa-2018")
+    hit = next(b for b in packet.beats if "jcpoa-2018" in b.finding_ids)
     assert hit.collision == "yes"
     assert hit.collision_url == HORMUZ_DOC_URL
-    assert "Leila" in hit.vo
+    assert "Leila" not in hit.vo
 
 
 def test_floor_shows_collision_never_clears_copyright() -> None:

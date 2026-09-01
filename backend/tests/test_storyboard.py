@@ -25,7 +25,7 @@ def _dairy_packet() -> Packet:
         findings=[
             Finding(
                 id="milk-spot",
-                claim="Spot milk prices moved after the spring auction.",
+                claim="Spot milk prices moved 3.2% after the spring auction.",
                 stamp="grounded",
                 parallel_url="https://example.com/milk",
                 parallel_status="hit",
@@ -155,5 +155,8 @@ def test_storyboard_is_cut_from_seed_vo() -> None:
         assert "receipt card" not in frame.shot.lower()
         assert "on the receipt" not in frame.shot.lower()
     board = " ".join(f.shot.lower() for f in packet.frames)
-    assert "tanker" in board or "strait" in board or "lane" in board
-    assert "2018" in board or "announcement" in board or "map" in board
+    assert "gulf" not in board
+    assert "grounded" not in board
+    assert "photoreal" not in board
+    assert "tanker-lane" not in {f.id for f in packet.frames}
+    assert len(packet.frames) == 8

@@ -9,7 +9,7 @@ from onecrew.cut import frame_count, require_cut
 from onecrew.imagen_client import ImagenDownError, generate_frames
 from onecrew.models import MISSING, Finding, Packet, Rails, ScriptBeat, ShotFrame
 from onecrew.parallel_client import ParallelDownError, search
-from onecrew.tell import invents_frame, tell_lane
+from onecrew.tell import invents_frame
 
 FOOTAGE_OBJECTIVE = (
     "Find existing news-archive stills, official video, or a published frame "
@@ -31,12 +31,12 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
     short = packet.cut in {"tiktok-length", "shorts"}
     for beat in packet.beats:
         if beat.kind == "heading":
-            last_scene = beat.scene
+            last_scene = None
             continue
         rows = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         refs = [f.parallel_url for f in rows if f.parallel_url] or list(beat.finding_ids)
         shot_no += 1
-        key = True if short else (beat.scene != last_scene or shot_no == 1)
+        key = True if short else (last_scene is None or beat.scene != last_scene or shot_no == 1)
         last_scene = beat.scene
         picture = _shot_line(beat, rows, packet)
         shots.append(
@@ -61,89 +61,32 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
     return shots
 
 
+def _pack_blob(packet: Packet) -> str:
+    parts = [packet.research_pack or "", packet.topic or ""]
+    if packet.receipt:
+        parts.extend(f.claim for f in packet.receipt.findings)
+    return " ".join(parts).lower()
+
+
 def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
-    prefix = f"{beat.camera}, " if beat.camera else ""
-    if beat.kind == "action" and beat.vo.strip():
-        return f"{prefix}{beat.vo}".strip()
-    if invents_frame(cut=packet.cut, tell=packet.tell or ""):
-        lane = tell_lane(packet.tell)
-        if lane == "family":
-            return prefix + _family_shot(beat)
-        if lane == "pilot":
-            return prefix + _pilot_shot(beat)
-        if lane == "ship":
-            return prefix + _ship_shot(beat)
-        return prefix + "Map-table room, radio on, a paper Gulf chart. No collage. Not a receipt card."
-    blob = " ".join([beat.id, beat.vo] + [f.claim for f in rows]).lower()
-    if (
-        beat.id == "jcpoa-to-houthi"
-        or "connection is not sourced" in blob
-        or "will not tell you" in blob
-        or "won't draw it" in blob
-        or "don't hang a later" in blob
-    ):
-        return "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them."
-    if "jcpoa" in blob or ("2018" in blob and "withdrew" in blob) or ("2018" in blob and "withdrawal" in blob):
-        return "2018 announcement: a dated chyron on the JCPOA withdrawal, Gulf map on the wall behind the podium."
-    if "mined" in blob or "navy treaty" in blob or "secret-closure" in blob:
-        return "Night water in the Strait of Hormuz, empty lane, no mines on camera."
-    if "seaborne" in blob or "transits" in blob or ("hormuz" in blob and "oil" in blob and "scare" not in blob and "panic" not in blob):
-        return "Tanker in the Strait of Hormuz lane, land close on both sides, open water ahead."
-    if "crash" in blob or "scare" in blob or "overnight" in blob or "oil-panic" in blob:
-        return "Overnight newsroom, oil ticker running, Hormuz marked on a wall map. No crash proven on screen."
-    if "producer" in blob or "oil-market" in blob or "oil-market given" in blob:
-        return "Producer-state energy desk, Hormuz lane marked open on a shipping board."
-    if "milk" in blob or "dairy" in blob or "auction" in blob:
-        return "Spring auction floor and a milk tanker at the dock as the spot price ticks."
-    if "jcpoa-to-houthi" in blob or ("connection" in blob and "not sourced" in blob) or "cannot tell you" in blob:
-        return "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them."
-    claim = rows[0].claim.rstrip(".") if rows else beat.vo.split("[")[0].strip().rstrip(".")
-    return f"Photoreal frame of the action just spoken: {claim}."
+    """One idea. Eyes from the written beat. Archive or official series first. No leftover Hormuz."""
+    eyes = (beat.frame or "").strip()
+    if eyes:
+        return eyes
+    claim = rows[0].claim.rstrip(".") if rows else beat.vo.split("\n")[-1].split("[")[0].strip()
+    if "milk" in claim.lower() or "dairy" in claim.lower() or "auction" in claim.lower():
+        return f"Official auction print: {claim}."
+    return f"Official series or archive still for: {claim}."
 
 
-def _family_shot(beat: ScriptBeat) -> str:
-    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
-    if beat.id == "jcpoa-2018" or ("2018" in blob and "jcpoa" in blob):
-        return "Bandar Abbas kitchen, radio on, 2018 news on a small TV, dishes in the sink."
-    if beat.id == "secret-closure" or "alley" in blob:
-        return "Open kitchen door onto an alley in Bandar Abbas. No minefield on camera."
-    if beat.id == "hormuz-share" or "harbor" in blob:
-        return "Kitchen window over a harbor road, tankers only as distant lights."
-    if beat.id == "oil-panic" or "neighbor" in blob:
-        return "Neighbor in a Bandar Abbas kitchen doorway, overhead bulb, street quiet."
-    if "jcpoa-to-houthi" in blob or "arrow" in blob:
-        return "Kitchen table, two dates on scrap paper, no arrow drawn."
-    return "Family kitchen in Bandar Abbas, radio on, evening light."
-
-
-def _pilot_shot(beat: ScriptBeat) -> str:
-    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
-    if beat.id == "jcpoa-2018" or "2018" in blob:
-        return "Night-watch chair, 2018 note under a lamp, glass on the lane."
-    if "mine" in blob or "secret-closure" in blob:
-        return "Retired pilot at the glass. Dark water. No mines visible."
-    if "lane" in blob or "hormuz-share" in blob:
-        return "Night watch glass, open Hormuz lane, hull unhit."
-    if "crash" in blob or "oil-panic" in blob:
-        return "Watch room radio on. No fire and no blast."
-    if "explosion" in blob or "heading" in blob:
-        return "Watch clipboard with two dates. No explosion on screen."
-    return "Night watch. Retired pilot at the window. Threat only."
-
-
-def _ship_shot(beat: ScriptBeat) -> str:
-    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
-    if beat.id == "jcpoa-2018":
-        return "Bridge chart table, 2018 printout under a lamp, strait on the radar ring."
-    if beat.id == "secret-closure":
-        return "Lookout on the wing, dark Hormuz water, no mines visible."
-    if beat.id == "hormuz-share":
-        return "Bow of a ship in the Hormuz lane, land close on both sides, hull unhit."
-    if beat.id == "oil-panic":
-        return "Crew mess, radio on, coffee cups, no fire and no blast."
-    if "jcpoa-to-houthi" in blob or "explosion" in blob or "heading" in blob:
-        return "Bridge watch clock and a clipboard with two dates. No explosion on screen."
-    return "Tanker bridge at night, watch officer at the window, threat only."
+def _footage_query(text: str, packet: Packet) -> str:
+    q = text or ""
+    q = re.sub(r"\bgrounded\b", " ", q, flags=re.I)
+    pack = _pack_blob(packet)
+    if "hormuz" not in pack and "jcpoa" not in pack:
+        q = re.sub(r"\bgulf chart\b|\bgulf map\b|\bgulf of mexico\b", " ", q, flags=re.I)
+    q = re.sub(r"\bvideo game\b", " ", q, flags=re.I)
+    return re.sub(r"\s+", " ", q).strip()
 
 
 def persist_generated_image(frame_id: str, result: Any) -> str:
@@ -173,15 +116,25 @@ def persist_generated_image(frame_id: str, result: Any) -> str:
 
 def _shot_kind(line: str) -> str:
     blob = (line or "").lower()
-    # Event tape wins. A gulf map in the background of a 2018 announcement is still the event.
-    if any(
-        key in blob
-        for key in ("announcement", "tanker", "presser", "withdrawal", "podium", "jcpoa")
-    ):
+    if any(key in blob for key in ("announcement", "tanker", "presser", "withdrawal", "podium")):
         return "event"
     if any(key in blob for key in ("troop-movement", "troop movement", "motion graphic", "animation")):
         return "motion_graphic"
-    if any(key in blob for key in ("infographic", "chart", "gulf map", "wall map")):
+    if any(
+        key in blob
+        for key in (
+            "infographic",
+            "chart",
+            "bar",
+            "series",
+            "usrec",
+            "sahm",
+            "gdp",
+            "receipt board",
+            "gulf map",
+            "wall map",
+        )
+    ):
         return "infographic"
     return "event"
 
@@ -198,7 +151,7 @@ def _url_ok(url: str | None) -> bool:
     return bool(url) and url.startswith(("http://", "https://"))
 
 
-def prefer_footage(shots: list[ShotFrame], rails: Rails) -> bool:
+def prefer_footage(shots: list[ShotFrame], rails: Rails, packet: Packet | None = None) -> bool:
     """Search Parallel for existing pictures. Not a license. Not a collision/script check."""
     if not rails.parallel:
         for shot in shots:
@@ -209,9 +162,13 @@ def prefer_footage(shots: list[ShotFrame], rails: Rails) -> bool:
     searched = False
     try:
         for shot in shots:
+            queries = [
+                _footage_query(shot.shot, packet) if packet is not None else shot.shot,
+                _footage_query(shot.line or "", packet) if packet is not None else (shot.line or shot.beat_id),
+            ]
             result = search(
                 objective=FOOTAGE_OBJECTIVE,
-                search_queries=[shot.shot, shot.line or shot.beat_id],
+                search_queries=[q for q in queries if q] or [shot.beat_id],
             )
             searched = True
             rows = list(getattr(result, "results", None) or [])
@@ -300,7 +257,7 @@ def write_board(packet: Packet, rails: Rails) -> list[ShotFrame]:
     shots = write_shot_list(packet)
     if not shots:
         return []
-    searched = prefer_footage(shots, rails)
+    searched = prefer_footage(shots, rails, packet)
     if not searched:
         return shots
     return apply_imagen(shots, packet, rails=rails)

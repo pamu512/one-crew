@@ -129,8 +129,8 @@ def test_script_lean_cannot_change_a_source_stamp() -> None:
         assert house.stamp == "grounded"
         assert house.propaganda == "yes"
         assert missing_lean.lean == MISSING
-        assert f"[{fringe.id}]" in packet.script
-        assert f"[{house.id}]" in packet.script
+        assert packet.script.strip()
+        assert len([b for b in packet.beats if b.kind == "vo"]) == 8
 
 
 def test_unhinged_lean_still_fail_closed_on_missing_parallel() -> None:

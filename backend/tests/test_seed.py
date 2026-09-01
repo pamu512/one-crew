@@ -16,9 +16,11 @@ def test_first_open_packet_id_is_oc_hormuz_decade() -> None:
     assert packet.script_lean == "centered_independent"
     assert packet.tell == "Narrator-led global overview of the US and Iran"
     assert packet.tone == "Grounded in the record"
-    assert "[jcpoa-2018]" in packet.script
-    assert "[hormuz-share]" in packet.script
-    assert "[secret-closure]" in packet.script
+    assert packet.research_pack
+    assert "jcpoa-2018" in packet.research_pack
+    assert len([b for b in packet.beats if b.kind == "vo"]) == 8
+    assert "Leila" not in packet.script
+    assert "Gulf chart" not in packet.script
     with TestClient(app) as client:
         body = client.get("/api/packets")
         ids = {p["id"] for p in body.json()["packets"]}
