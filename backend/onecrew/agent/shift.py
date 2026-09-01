@@ -6,17 +6,16 @@ import uuid
 from typing import Any
 
 from onecrew import config
-from onecrew.agent.tools import findings_from_parallel_rows
 from onecrew.board import write_board
 from onecrew.collision import stamp_collisions
-from onecrew.cut import size_findings
+from onecrew.cut import event_cap, size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
-from onecrew.models import MISSING, Depth, Exclusion, Packet, Rails, Receipt, ShiftRecord, utcnow
+from onecrew.models import Finding, MISSING, Depth, Exclusion, Packet, Rails, Receipt, ShiftRecord, utcnow
 from onecrew.parallel_client import ParallelDownError, entity_search, extract, run_task, search
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
-from onecrew.receipt import attach_frames, hold_receipt, write_receipt
+from onecrew.receipt import ReceiptInvalidError, attach_frames, hold_receipt, write_receipt
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.script import pack_numbers, write_script
 from onecrew.store import store
@@ -149,6 +148,151 @@ def _fringe_queries(packet: Packet) -> list[str]:
     return [f"{topic} unsourced fringe claim"]
 
 
+_LEFTOVER_SLOT_IDS = frozenset({"timeline-hit", "timeline-frame", "timeline-miss"})
+_SERIES = (
+    ("usrec", ("usrec",), ("usrec",), "USREC"),
+    ("payrolls", ("payroll", "nonfarm"), ("payroll", "bls", "empsit"), "payrolls"),
+    ("gdp", ("gdp",), ("gdp", "bea"), "GDP"),
+    ("sahm", ("sahm",), ("sahm",), "Sahm"),
+)
+
+
+def _rows_blob(rows: list) -> str:
+    parts: list[str] = []
+    for row in rows:
+        title = (getattr(row, "title", None) or "").strip()
+        if title:
+            parts.append(title)
+        for excerpt in list(getattr(row, "excerpts", None) or []):
+            text = str(excerpt).strip()
+            if text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
+def _claim_for_series(blob: str, aliases: tuple[str, ...], name: str) -> str | None:
+    """Claim must already contain the series name and a number. Do not invent prints."""
+    for alias in aliases:
+        for match in re.finditer(rf".{{0,80}}{re.escape(alias)}.{{0,120}}", blob, re.I | re.S):
+            snippet = re.sub(r"\s+", " ", match.group(0)).strip()
+            if not pack_numbers(snippet):
+                continue
+            low = snippet.lower()
+            if alias.lower() not in low and name.lower() not in low:
+                snippet = f"{name} {snippet}"
+            return snippet[:400]
+    return None
+
+
+def _url_for_series(urls: list[str], keys: tuple[str, ...]) -> str | None:
+    for url in urls:
+        low = url.lower()
+        if any(key in low for key in keys):
+            return url
+    return None
+
+
+def _slug_finding_id(title: str, url: str, fallback: str) -> str:
+    raw = (title or "").strip()
+    if not raw or raw == MISSING:
+        raw = url
+    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")[:40] or fallback
+    if slug in _LEFTOVER_SLOT_IDS:
+        slug = fallback
+    return slug
+
+
+def _fringe_miss(topic: str) -> Finding:
+    return Finding(
+        id="fringe-unsourced",
+        claim=f"Fringe claim about {topic}",
+        stamp="fringe",
+        parallel_url=None,
+        parallel_status="miss",
+        note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+        lean=MISSING,
+        interests=MISSING,
+        who_repeats=MISSING,
+        independent=MISSING,
+        vested_interest=MISSING,
+    )
+
+
+def _findings_from_spine(
+    *,
+    spine: str,
+    hit_rows: list,
+    extracted: Any,
+    hit_urls: list[str],
+    topic: str,
+) -> list[Finding]:
+    """One finding per named Task-spine object. Never leftover timeline-hit/frame/miss."""
+    extract_rows = list(getattr(extracted, "results", None) or [])
+    blob = "\n".join(part for part in (spine, _rows_blob(hit_rows), _rows_blob(extract_rows)) if part)
+    urls = [url for url in hit_urls if url]
+    findings: list[Finding] = []
+    for fid, aliases, url_keys, name in _SERIES:
+        claim = _claim_for_series(blob, aliases, name)
+        if not claim:
+            continue
+        url = _url_for_series(urls, url_keys) or (urls[0] if urls else None)
+        if not url:
+            continue
+        if name.lower() not in claim.lower() and not any(a in claim.lower() for a in aliases):
+            claim = f"{name} {claim}"
+        findings.append(
+            Finding(
+                id=fid,
+                claim=claim,
+                stamp="grounded",
+                title=name,
+                parallel_url=url,
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+                independent=MISSING,
+                vested_interest=MISSING,
+            )
+        )
+    if not findings:
+        # ponytail: no named series — one grounded row from the first hit URL.
+        # Extra Search hits stay exclusions (duplicate), never leftover 3-slot ids.
+        row = next((item for item in hit_rows if getattr(item, "url", None)), None)
+        if row is not None:
+            url = row.url
+            title = (getattr(row, "title", None) or "").strip() or MISSING
+            excerpts = [str(x).strip() for x in (getattr(row, "excerpts", None) or []) if x]
+            numbered = [text for text in excerpts if pack_numbers(text)]
+            claim = (numbered[0] if numbered else (excerpts[0] if excerpts else title)) or url
+            slug = _slug_finding_id("" if title == MISSING else title, url, "hit-1")
+            findings.append(
+                Finding(
+                    id=slug,
+                    claim=str(claim)[:400],
+                    stamp="grounded",
+                    title=title,
+                    parallel_url=url,
+                    parallel_status="hit",
+                    note="Parallel URL on this row.",
+                    independent=MISSING,
+                    vested_interest=MISSING,
+                )
+            )
+    if findings:
+        findings.append(_fringe_miss(topic))
+    return findings
+
+
+def _size_live_findings(findings: list[Finding], packet: Packet) -> list[Finding]:
+    """Keep a Parallel hit and a Parallel miss when the cut cap is tight."""
+    if not packet.cut or not findings:
+        return findings
+    miss = [row for row in findings if row.parallel_status == "miss"][:1]
+    core = [row for row in findings if row.parallel_status != "miss"]
+    cap = event_cap(packet.cut, packet.platform)  # type: ignore[arg-type]
+    room = max(1, cap - len(miss))
+    return size_findings(core, packet.cut, packet.platform)[:room] + miss
+
+
 def _hit_claim_from_rows(rows: list, title: str) -> str:
     """Pack text from Parallel excerpts. Never 'Grounded event inside {depth}: {topic}'."""
     numbered: list[str] = []
@@ -263,7 +407,7 @@ def _apply_enrichment(findings: list, result: Any) -> None:
     grounded = next((f for f in findings if f.stamp == "grounded" and f.parallel_url), None)
     if grounded is None:
         return
-    if cited.get("independent") and content.get("independent") in {"yes", "no", "missing"}:
+    if cited.get("independent") and content.get("independent") in {"yes", "no"}:
         grounded.independent = content["independent"]
         grounded.independent_url = grounded.parallel_url
     if cited.get("vested_interest") and content.get("vested_interest"):
@@ -349,40 +493,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             hit_urls,
             "",
         )
-    findings = findings_from_parallel_rows(
-        hit_url=hit_url,
-        hit_title=hit_title,
-        hit_claim=hit_claim,
-        mainstream_claim=f"Widely repeated frame about {packet.topic or packet.hook}",
-        miss_claim=f"Fringe claim about {packet.topic or packet.hook}",
-    )
-    if not findings:
-        leftover = leftover_hit_exclusions(
-            hit_rows + miss_rows,
-            set(),
-            reason="other",
-            detail="Parallel hit did not become a finding. Not silently dropped.",
-        )
-        return (
-            hold_receipt(packet.id, rails.model_copy(update={"parallel": False})),
-            leftover,
-            hit_urls,
-            "",
-        )
-    if packet.cut:
-        findings = size_findings(findings, packet.cut, packet.platform)
-    kept_urls = {f.parallel_url for f in findings if f.parallel_url}
-    leftover = leftover_hit_exclusions(
-        hit_rows,
-        kept_urls,
-        reason="duplicate",
-        detail="Same timeline search; not stamped as a finding.",
-    ) + leftover_hit_exclusions(
-        miss_rows,
-        kept_urls,
-        reason="other",
-        detail="Returned on the fringe search; not added as a source.",
-    )
+    leftover: list[Exclusion] = []
     try:
         extracted = extract(
             urls=hit_urls,
@@ -401,7 +512,6 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         )
         down = rails.model_copy(update={"parallel": False})
         return hold_receipt(packet.id, down), _hold_account_hits(hit_urls, leftover), hit_urls, ""
-    leftover.extend(_apply_extract(findings, extracted))
     try:
         task = run_task(
             prompt=(
@@ -422,6 +532,48 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         down = rails.model_copy(update={"parallel": False})
         return hold_receipt(packet.id, down), _hold_account_hits(hit_urls, leftover), hit_urls, ""
     spine = _spine_from_task(task)
+    source_urls = _row_urls(hit_rows) + [
+        url for field in (getattr(getattr(task, "output", None), "basis", None) or []) for url in _cited_urls(field)
+    ]
+    findings = _findings_from_spine(
+        spine=spine,
+        hit_rows=hit_rows,
+        extracted=extracted,
+        hit_urls=source_urls or [hit_url],
+        topic=packet.topic or packet.hook or "topic",
+    )
+    findings = _size_live_findings(findings, packet)
+    if not findings or not any(row.parallel_status == "hit" for row in findings):
+        leftover.extend(
+            leftover_hit_exclusions(
+                hit_rows + miss_rows,
+                set(),
+                reason="other",
+                detail="Parallel hit did not become a finding. Not silently dropped.",
+            )
+        )
+        return (
+            hold_receipt(packet.id, rails.model_copy(update={"parallel": False})),
+            leftover,
+            hit_urls,
+            spine,
+        )
+    kept_urls = {f.parallel_url for f in findings if f.parallel_url}
+    leftover.extend(
+        leftover_hit_exclusions(
+            hit_rows,
+            kept_urls,
+            reason="duplicate",
+            detail="Same timeline search; not stamped as a finding.",
+        )
+        + leftover_hit_exclusions(
+            miss_rows,
+            kept_urls,
+            reason="other",
+            detail="Returned on the fringe search; not added as a source.",
+        )
+    )
+    leftover.extend(_apply_extract(findings, extracted))
     if getattr(extracted, "results", None):
         try:
             enrich = run_task(
@@ -555,7 +707,20 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         store.upsert_packet(fresh)
         return fresh
 
-    write_receipt(fresh, receipt)
+    try:
+        write_receipt(fresh, receipt)
+    except ReceiptInvalidError as exc:
+        held = hold_receipt(fresh.id, rails)
+        prior = (held.hold_reason or "").strip()
+        held.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
+        write_receipt(fresh, held)
+        write_script(fresh)
+        stamp_collisions(fresh, rails)
+        attach_frames(fresh, [], rails=rails)
+        fresh.exclusions = _hold_account_hits(hit_urls, list(leftover or []))
+        write_research_pack(fresh, hit_urls=hit_urls)
+        store.upsert_packet(fresh)
+        return fresh
     write_script(fresh)
     stamp_collisions(fresh, rails)
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")

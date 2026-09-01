@@ -126,6 +126,9 @@ def test_live_path_calls_search_extract_and_task_pro(monkeypatch) -> None:
     assert "Extract: Ownership: cited house organ." in next(
         f.note for f in packet.receipt.findings if f.parallel_url == KEPT
     )
+    ids = {f.id for f in packet.receipt.findings}
+    assert ids != {"timeline-hit", "timeline-frame", "timeline-miss"}
+    assert not ids <= {"timeline-hit", "timeline-frame", "timeline-miss"}
 
 
 def test_failed_extract_is_exclusion_not_silent_drop(monkeypatch) -> None:

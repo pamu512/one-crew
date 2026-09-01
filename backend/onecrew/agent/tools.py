@@ -4,7 +4,6 @@ from typing import Any
 
 from onecrew import config
 from onecrew.imagen_client import ImagenDownError, generate_frames
-from onecrew.models import MISSING, Finding
 from onecrew.parallel_client import ParallelDownError, extract, run_task, search
 from onecrew.store import store
 
@@ -93,61 +92,6 @@ def imagen_shots(script: str, refs: str) -> dict[str, Any]:
 
 RESEARCHER_TOOLS = [get_packet, parallel_search, parallel_extract, parallel_task]
 BOARDER_TOOLS = [get_packet, imagen_shots]
-
-
-def findings_from_parallel_rows(
-    *,
-    hit_url: str | None,
-    hit_claim: str,
-    mainstream_claim: str,
-    miss_claim: str,
-    hit_title: str = MISSING,
-) -> list[Finding]:
-    """Stamp exactly one of grounded / mainstream / fringe. Hit + miss on the same receipt."""
-    if not hit_url:
-        return []
-    return [
-        Finding(
-            id="timeline-hit",
-            claim=hit_claim,
-            stamp="grounded",
-            title=hit_title or MISSING,
-            parallel_url=hit_url,
-            parallel_status="hit",
-            note="Parallel URL on this row.",
-            lean=MISSING,
-            interests=MISSING,
-            who_repeats=MISSING,
-            independent=MISSING,
-            vested_interest=MISSING,
-        ),
-        Finding(
-            id="timeline-frame",
-            claim=mainstream_claim,
-            stamp="mainstream",
-            parallel_url=None,
-            parallel_status="n/a",
-            note="Widely repeated, may be bias, not a source.",
-            lean=MISSING,
-            interests=MISSING,
-            who_repeats=MISSING,
-            independent=MISSING,
-            vested_interest=MISSING,
-        ),
-        Finding(
-            id="timeline-miss",
-            claim=miss_claim,
-            stamp="fringe",
-            parallel_url=None,
-            parallel_status="miss",
-            note="Parallel miss. Included and tagged fringe. Never sold as fact.",
-            lean=MISSING,
-            interests=MISSING,
-            who_repeats=MISSING,
-            independent=MISSING,
-            vested_interest=MISSING,
-        ),
-    ]
 
 
 # Keep seed id reachable for tools without importing seed (avoids cycle in ADK load).

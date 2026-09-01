@@ -39,6 +39,37 @@ def test_first_open_packet_id_is_oc_recession_july_2026() -> None:
         assert "oc-hormuz-decade" not in ids
 
 
+def test_write_script_skips_vertex_on_seed_and_hormuz_ids(monkeypatch) -> None:
+    """Cloud Run boot stamps the 8-beat locally. Seed/Hormuz ids must not call Vertex."""
+
+    def boom(*_a, **_k):
+        raise AssertionError("Vertex called on seed or leftover Hormuz id")
+
+    monkeypatch.setattr("onecrew.script.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", boom)
+    packet = seed_first_open()
+    assert packet.id == "oc-recession-july-2026"
+    assert "USREC=0" in packet.script
+    assert len([b for b in packet.beats if b.kind == "vo"]) == 8
+    leftover = leftover_hormuz_packet()
+    assert leftover.id == "oc-hormuz-decade"
+    assert leftover.script.strip()
+
+
+def test_get_seed_does_not_call_vertex(monkeypatch) -> None:
+    def boom(*_a, **_k):
+        raise AssertionError("GET/seed called Vertex")
+
+    monkeypatch.setattr("onecrew.script.generate_script", boom)
+    monkeypatch.setattr("onecrew.vertex_client.generate_script", boom)
+    seed_first_open()
+    with TestClient(app) as client:
+        got = client.get("/api/packets/oc-recession-july-2026")
+    assert got.status_code == 200
+    assert got.json()["id"] == "oc-recession-july-2026"
+    assert "USREC=0" in got.json()["script"]
+
+
 def test_seeded_grounded_cause() -> None:
     packet = seed_first_open()
     grounded = [f for f in packet.receipt.findings if f.stamp == "grounded"]

@@ -18,6 +18,51 @@ NBER = "https://www.nber.org/research/business-cycle-dating"
 CONFERENCE_LEI = "https://www.conference-board.org/topics/us-leading-indicators"
 ISM_URL = "https://www.ismworld.org/"
 
+_LEFTOVER_SLOT_IDS = frozenset({"timeline-hit", "timeline-frame", "timeline-miss"})
+
+
+def _assert_live_recession_findings(packet: dict) -> None:
+    """Pack text with USREC + payrolls cannot be leftover 3-slot findings only."""
+    receipt = packet.get("receipt") or {}
+    findings = list(receipt.get("findings") or [])
+    pack = " ".join(
+        [
+            packet.get("research_pack") or "",
+            packet.get("task_spine") or "",
+            *(f.get("claim") or "" for f in findings),
+        ]
+    )
+    ids = {f.get("id") for f in findings}
+    if "USREC" in pack and "payroll" in pack.lower():
+        assert ids != _LEFTOVER_SLOT_IDS
+        assert not ids <= _LEFTOVER_SLOT_IDS
+    usrec = next(
+        (f for f in findings if "usrec" in (f.get("id") or "").lower() or "usrec" in (f.get("claim") or "").lower()),
+        None,
+    )
+    payrolls = next(
+        (
+            f
+            for f in findings
+            if "payroll" in (f.get("id") or "").lower() or "payroll" in (f.get("claim") or "").lower()
+        ),
+        None,
+    )
+    assert usrec is not None
+    assert payrolls is not None
+    assert "USREC" in (usrec.get("claim") or "")
+    assert "0" in (usrec.get("claim") or "")
+    claim = payrolls.get("claim") or ""
+    assert "payroll" in claim.lower()
+    assert "−23k" in claim or "-23k" in claim or "23k" in claim.lower()
+    assert usrec.get("id") not in _LEFTOVER_SLOT_IDS
+    assert payrolls.get("id") not in _LEFTOVER_SLOT_IDS
+    if usrec.get("stamp") == "grounded":
+        assert (usrec.get("parallel_url") or "").startswith("http")
+    if payrolls.get("stamp") == "grounded":
+        assert (payrolls.get("parallel_url") or "").startswith("http")
+
+
 _BANNED_BOARD = (
     "gulf",
     "hormuz",
@@ -352,9 +397,180 @@ def test_live_shaped_post_unique_packet_id_is_stored(monkeypatch) -> None:
     assert "hormuz" not in vo.lower()
     assert "Grounded event inside" not in vo
     assert "Grounded event inside" not in (packet.get("research_pack") or "")
+    _assert_live_recession_findings(packet)
     assert seed.status_code == 200
     assert seed.json()["id"] == "oc-recession-july-2026"
     assert leftover.status_code == 404
+
+
+def test_live_task_spine_mints_named_series_not_leftover_slots(monkeypatch) -> None:
+    """Task pro already has the numbers. Search excerpts do not. Findings must still be named series."""
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from onecrew.api import app
+    from onecrew.seed import seed_first_open
+
+    pid = "oc-recession-live-sep1b-test"
+
+    def search(*, objective, search_queries):
+        blob = f"{objective} {' '.join(search_queries)}".lower()
+        if "hidden" in blob or "fringe" in blob:
+            return SimpleNamespace(results=[])
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/USREC",
+                    title="USREC",
+                    excerpts=["Federal Reserve Bank of St. Louis recession indicator."],
+                )
+            ]
+        )
+
+    def extract(*, urls, objective):
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/USREC",
+                    title="USREC",
+                    excerpts=["Federal Reserve Bank of St. Louis recession indicator."],
+                )
+            ],
+            errors=[],
+        )
+
+    def task(*, prompt, processor="pro", task_spec=None):
+        return SimpleNamespace(
+            output=SimpleNamespace(
+                content=(
+                    "USREC July 2026 = 0. Nonfarm payrolls −23k. "
+                    "GDP 0.5/2.1/1.5. Sahm −0.03 vs 0.50."
+                ),
+                basis=[],
+            )
+        )
+
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel-key")
+    monkeypatch.setattr("onecrew.agent.shift.search", search)
+    monkeypatch.setattr("onecrew.agent.shift.extract", extract)
+    monkeypatch.setattr("onecrew.agent.shift.run_task", task)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    seed_first_open()
+    body = {
+        "topic": "Are we near recession?",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "depth": "2-3y",
+        "script_lean": "centered_independent",
+        "tell": "Host-only desk read of the last year of US recession prints",
+        "tone": "On the cited print",
+        "packet_id": pid,
+    }
+    with TestClient(app) as client:
+        posted = client.post(
+            "/api/shifts",
+            json=body,
+            headers={"X-Shift-Token": "correct-horse"},
+        )
+        assert posted.status_code == 200
+        got = client.get(f"/api/packets/{pid}")
+    assert got.status_code == 200
+    packet = got.json()
+    assert packet["id"] == pid
+    _assert_live_recession_findings(packet)
+    ids = {f["id"] for f in (packet.get("receipt") or {}).get("findings") or []}
+    assert ids != _LEFTOVER_SLOT_IDS
+    assert "timeline-hit" not in ids
+    assert "timeline-frame" not in ids
+    assert "timeline-miss" not in ids
+    gdp = next(
+        (f for f in packet["receipt"]["findings"] if "gdp" in f["id"].lower() or "gdp" in f["claim"].lower()),
+        None,
+    )
+    sahm = next(
+        (f for f in packet["receipt"]["findings"] if "sahm" in f["id"].lower() or "sahm" in f["claim"].lower()),
+        None,
+    )
+    assert gdp is not None
+    assert "0.5" in gdp["claim"] and "2.1" in gdp["claim"] and "1.5" in gdp["claim"]
+    assert sahm is not None
+    assert ("−0.03" in sahm["claim"] or "-0.03" in sahm["claim"]) and "0.50" in sahm["claim"]
+
+
+def test_independent_missing_with_url_holds_not_500(monkeypatch) -> None:
+    """ReceiptInvalidError must HOLD the unique packet. Never HTTP 500."""
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from onecrew.api import app
+    from onecrew.models import MISSING, Finding, Receipt
+    from onecrew.seed import seed_first_open
+
+    pid = "oc-independent-missing-url-hold"
+
+    def bad_research(packet, rails, depth):
+        receipt = Receipt(
+            packet_id=packet.id,
+            written=False,
+            disposition="READY",
+            findings=[
+                Finding(
+                    id="usrec",
+                    claim="USREC=0 (July 2026).",
+                    stamp="grounded",
+                    title="USREC",
+                    parallel_url="https://fred.stlouisfed.org/series/USREC",
+                    parallel_status="hit",
+                    note="Parallel URL on this row.",
+                    independent=MISSING,
+                    independent_url="https://fred.stlouisfed.org/series/USREC",
+                ),
+                Finding(
+                    id="fringe-unsourced",
+                    claim="Fringe claim about recession",
+                    stamp="fringe",
+                    parallel_status="miss",
+                    note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+                ),
+            ],
+        )
+        return receipt, [], ["https://fred.stlouisfed.org/series/USREC"], "USREC=0 payrolls −23k"
+
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel-key")
+    monkeypatch.setattr("onecrew.agent.shift._research", bad_research)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    seed_first_open()
+    body = {
+        "topic": "Are we near recession?",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "depth": "2-3y",
+        "script_lean": "centered_independent",
+        "tell": "Host-only desk read of the last year of US recession prints",
+        "tone": "On the cited print",
+        "packet_id": pid,
+    }
+    with TestClient(app) as client:
+        posted = client.post(
+            "/api/shifts",
+            json=body,
+            headers={"X-Shift-Token": "correct-horse"},
+        )
+        assert posted.status_code != 500
+        assert posted.status_code == 200
+        got = client.get(f"/api/packets/{pid}")
+    assert got.status_code == 200
+    packet = got.json()
+    assert packet["id"] == pid
+    assert packet["status"] == "hold"
 
 
 def test_seed_upsert_does_not_wipe_live_packet() -> None:

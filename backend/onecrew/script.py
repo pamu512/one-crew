@@ -411,7 +411,9 @@ def write_script(packet: Packet) -> Packet:
     if not _numbers_in(text):
         return _fail_closed(packet, ["pack has no numbers"])
     units = _eight_from_pack(packet)
-    if config.has_vertex():
+    # Seed / leftover Hormuz stamp locally. Cloud Run boot has ADC so has_vertex
+    # is true; Vertex Agent Platform 403 must not crash-loop first-open.
+    if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
         try:
             parsed = _parse_units(generate_script(_prompt(packet, units)))
             if parsed and not any(_GROUNDED_EVENT.search(u.get("vo") or "") for u in parsed):
