@@ -157,7 +157,7 @@ def test_get_never_spends_search_extract_or_task(monkeypatch) -> None:
 
 
 def test_readme_names_search_extract_task_pro() -> None:
-    readme = Path("/workspace/README.md").read_text()
+    readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
     assert "Search" in readme and "Extract" in readme
     assert "Task" in readme and "pro" in readme
     assert "thesis" in readme.lower()

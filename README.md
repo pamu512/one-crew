@@ -83,7 +83,7 @@ curl -s http://127.0.0.1:43158/api/packets | python -m json.tool | head
 # curl -s -X POST http://127.0.0.1:43158/api/shifts \
 #   -H 'content-type: application/json' \
 #   -H "X-Shift-Token: $SHIFT_TOKEN" \
-#   -d '{"topic":"Are we near recession?","platform":"youtube","cut":"one_time_short_episode","depth":"1y","script_lean":"centered_independent","tell":"Host-only desk read of the last year of US recession prints","tone":"On the cited print"}'
+#   -d '{"topic":"Are we near recession?","platform":"youtube","cut":"one_time_short_episode","depth":"2-3y","script_lean":"centered_independent","tell":"Host-only desk read of the last year of US recession prints","tone":"On the cited print"}'
 ```
 
 ### Tests
@@ -119,20 +119,20 @@ export PROJECT_ID=YOUR_GCP_PROJECT
 export REGION=us-central1
 
 gcloud config set project $PROJECT_ID
-gcloud services enable run.googleapis.com firestore.googleapis.com aiplatform.googleapis.com
-
-gcloud firestore databases create --location=$REGION || true
+gcloud services enable run.googleapis.com aiplatform.googleapis.com
 
 gcloud run deploy onecrew \
   --source . \
   --region $REGION \
   --allow-unauthenticated \
-  --min-instances 0 \
+  --timeout 3600 \
+  --min-instances 1 \
   --max-instances 2 \
+  --set-secrets "SHIFT_TOKEN=SHIFT_TOKEN:latest,PARALLEL_API_KEY=PARALLEL_API_KEY:latest" \
   --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GEMINI_MODEL=gemini-3.5-flash,GOOGLE_GENAI_USE_VERTEXAI=true"
 ```
 
-Leave `SHIFT_TOKEN` unset on the public service so `POST /api/shifts` is 403. The floor still shows the seeded packet. Do not add an unauthenticated control that bills Parallel or Imagen.
+Memory store is enough at `--min-instances 1`. Do not require Firestore. `SHIFT_TOKEN` and `PARALLEL_API_KEY` stay secrets. The floor never posts. Do not add an unauthenticated control that bills Parallel or Imagen.
 
 `GOOGLE_CLOUD_PROJECT` comes from the environment only.
 

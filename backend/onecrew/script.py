@@ -15,6 +15,8 @@ _NUM = re.compile(
     r"USREC\s*=\s*0|[-−+]?\d+(?:\.\d+)?\s*%|[-−]\d+\s*k|\b[-−]?\d+\.\d+\b|\b\d{1,4}\b",
     re.I,
 )
+_DEPTH_TOKEN = re.compile(r"\b\d+(?:-\d+)?y\b", re.I)
+_GROUNDED_EVENT = re.compile(r"grounded event inside\s+\S+:", re.I)
 _OFF_UNLESS_CITED = ("LEI", "+0.2%", "ISM", "55.6")
 _PACKET_MARK = "<<<PACKET>>>"
 _PACKET_END = "<<<END>>>"
@@ -45,7 +47,13 @@ def _pack_text(packet: Packet) -> str:
 
 
 def _numbers_in(text: str) -> list[str]:
-    return [m.group(0).strip() for m in _NUM.finditer(text or "")]
+    """Pack numbers only. Depth tokens like 2-3y are not a series print."""
+    cleaned = _DEPTH_TOKEN.sub(" ", text or "")
+    return [m.group(0).strip() for m in _NUM.finditer(cleaned)]
+
+
+def pack_numbers(text: str) -> list[str]:
+    return _numbers_in(text)
 
 
 def _claim(packet: Packet, *needles: str) -> Finding | None:
@@ -292,10 +300,16 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         for fid in fids:
             if f"[{fid}]" not in vo:
                 vo = f"{vo} [{fid}]"
+        if _GROUNDED_EVENT.search(vo):
+            return _fail_closed(packet, ["VO is leftover grounded-event template"])
         if _vo_has_uncited_off(vo, fids):
             return _fail_closed(packet, ["LEI/ISM spoken without a cited beat"])
         if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in _pack_text(packet).lower():
             return _fail_closed(packet, ["invented leftover cast"])
+        pack_blob = _pack_text(packet).lower()
+        if "hormuz" not in pack_blob and "jcpoa" not in pack_blob:
+            if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
+                return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
         dur = durs[i]
         beats.append(
             ScriptBeat(
@@ -392,13 +406,15 @@ def write_script(packet: Packet) -> Packet:
     text = _pack_text(packet)
     if not (packet.research_pack or "").strip() and not receipt.findings:
         return _fail_closed(packet, ["empty pack"])
+    if _GROUNDED_EVENT.search(text) and not _recession_pack(text):
+        return _fail_closed(packet, ["leftover grounded-event template"])
     if not _numbers_in(text):
         return _fail_closed(packet, ["pack has no numbers"])
     units = _eight_from_pack(packet)
     if config.has_vertex():
         try:
             parsed = _parse_units(generate_script(_prompt(packet, units)))
-            if parsed:
+            if parsed and not any(_GROUNDED_EVENT.search(u.get("vo") or "") for u in parsed):
                 units = parsed
         except VertexDownError:
             pass

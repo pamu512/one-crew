@@ -28,10 +28,13 @@ Talk over the floor with `oc-recession-july-2026` already open. First paint is t
 ```bash
 PYTHONPATH=backend pytest backend/tests -q
 curl -s http://127.0.0.1:43158/api/health
-curl -s -X POST http://127.0.0.1:43158/api/shifts -d '{"topic":"Are we near recession?"}'
+curl -s -X POST http://127.0.0.1:43158/api/shifts \
+  -H 'content-type: application/json' \
+  -H "X-Shift-Token: $SHIFT_TOKEN" \
+  -d '{"topic":"Are we near recession?","platform":"youtube","cut":"one_time_short_episode","depth":"2-3y","script_lean":"centered_independent","tell":"Host-only desk read of the last year of US recession prints","tone":"On the cited print"}'
 ```
 
-GET never spends. POST without token is 403. POST with token and any missing pick is 400.
+GET never spends. POST without token is 403. POST with token and any missing pick is 400. Live POST mints a new snapshot id. Seed `oc-recession-july-2026` stays first-open. Leftover `oc-hormuz-decade` is not GET.
 
 ## 2:50–3:00 · Close
 

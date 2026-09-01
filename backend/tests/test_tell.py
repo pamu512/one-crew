@@ -243,7 +243,8 @@ def test_tell_examples_are_not_an_enum() -> None:
         assert "genres" not in body
         assert client.get("/api/genres").status_code == 404
         assert client.get("/api/vantages").status_code == 404
-    readme = Path("/workspace/README.md").read_text()
+    root = Path(__file__).resolve().parents[2]
+    readme = (root / "README.md").read_text()
     assert SEED_TELL in readme
     assert FAMILY_TELL in readme
     assert "examples" in readme.lower()
@@ -253,9 +254,9 @@ def test_tell_examples_are_not_an_enum() -> None:
     assert "architecture.svg)" not in readme
     assert "archive tape" in readme.lower()
     assert "maps and infographics" in readme.lower()
-    png = Path("/workspace/docs/architecture.png").read_bytes()
+    png = (root / "docs" / "architecture.png").read_bytes()
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
-    svg = Path("/workspace/docs/architecture.svg").read_text(encoding="utf-8")
+    svg = (root / "docs" / "architecture.svg").read_text(encoding="utf-8")
     assert "<script" not in svg.lower()
     assert "foreignObject" not in svg
     assert "onload" not in svg.lower()

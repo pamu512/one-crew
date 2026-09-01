@@ -80,7 +80,7 @@ def parallel_task(prompt: str) -> dict[str, Any]:
 def imagen_shots(script: str, refs: str) -> dict[str, Any]:
     """Boarder tool. Vertex Imagen. Spends. Uses the returned images."""
     prompt = (
-        f"One photoreal shot from this timed VO beat, not a mood collage. "
+        f"One official-series still or infographic from this timed VO beat, not photoreal event B-roll. "
         f"Script: {script}. Refs: {refs}"
     )
     try:

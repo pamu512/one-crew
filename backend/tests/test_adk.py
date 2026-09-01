@@ -1,8 +1,13 @@
 from pathlib import Path
 
+import pytest
+
 from onecrew import config
-from onecrew.agent.adk_agents import build_root_agent
 from onecrew.parallel_client import search
+
+pytest.importorskip("google.adk")
+
+from onecrew.agent.adk_agents import build_root_agent  # noqa: E402
 
 
 def test_adk_crew_builds_with_vertex_flash() -> None:

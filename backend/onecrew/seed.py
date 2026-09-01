@@ -280,9 +280,9 @@ def load_sample_packet() -> Packet:
 
 
 def seed_first_open() -> Packet:
-    """Stamp the first-open recession 8-beat. No Parallel. No Imagen. Floor never posts."""
+    """Stamp the first-open recession 8-beat. Do not wipe live packets."""
     packet = build_seed_packet()
-    store.replace_packets([packet])
+    store.upsert_packet(packet)
     return packet
 
 

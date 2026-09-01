@@ -18,11 +18,14 @@ from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import attach_frames, hold_receipt, write_receipt
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
-from onecrew.script import write_script
+from onecrew.script import pack_numbers, write_script
 from onecrew.store import store
 from onecrew.tell import invents_frame
 
 log = logging.getLogger("onecrew.shift")
+
+
+_RESERVED_IDS = frozenset({config.SEED_PACKET_ID, "oc-hormuz-decade"})
 
 
 def snapshot_id(topic: str, shift_id: str) -> str:
@@ -30,9 +33,17 @@ def snapshot_id(topic: str, shift_id: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (topic or "topic").strip().lower()).strip("-")[:36] or "topic"
     tail = re.sub(r"[^a-z0-9]", "", (shift_id or "").lower())[-8:] or "snap"
     pid = f"oc-{slug}-{tail}"
-    if pid == config.SEED_PACKET_ID or pid.endswith("hormuz-decade"):
+    if pid in _RESERVED_IDS or pid.endswith("hormuz-decade"):
         pid = f"oc-{slug}-{tail}-s"
     return pid
+
+
+def resolve_live_packet_id(requested: str | None, topic: str, shift_id: str) -> str:
+    """Honor a unique body packet_id. Mint otherwise. Never write onto seed or leftover Hormuz."""
+    req = (requested or "").strip()
+    if req and req not in _RESERVED_IDS and not req.endswith("hormuz-decade"):
+        return req
+    return snapshot_id(topic, shift_id)
 
 
 def open_shift(
@@ -114,6 +125,49 @@ _ENRICH_SPEC = {
 
 def _row_urls(rows: list) -> list[str]:
     return [url for url in (getattr(row, "url", None) for row in rows) if url]
+
+
+def _search_queries(packet: Packet, depth: Depth) -> list[str]:
+    """Named official series when the topic is recession. No leftover Hormuz."""
+    topic = packet.topic or packet.hook or "topic"
+    blob = f"{topic} {packet.tell or ''}".lower()
+    if "recession" in blob or "usrec" in blob or "payroll" in blob:
+        return [
+            topic,
+            f"{topic} USREC FRED",
+            f"{topic} nonfarm payrolls BLS",
+            f"{topic} Sahm rule",
+        ]
+    return [topic, f"{topic} {depth}"]
+
+
+def _fringe_queries(packet: Packet) -> list[str]:
+    topic = packet.topic or packet.hook or "topic"
+    blob = topic.lower()
+    if any(w in blob for w in ("hormuz", "jcpoa", "strait")):
+        return [f"{topic} hidden treaty Hormuz"]
+    return [f"{topic} unsourced fringe claim"]
+
+
+def _hit_claim_from_rows(rows: list, title: str) -> str:
+    """Pack text from Parallel excerpts. Never 'Grounded event inside {depth}: {topic}'."""
+    numbered: list[str] = []
+    first = ""
+    for row in rows:
+        for excerpt in list(getattr(row, "excerpts", None) or []):
+            text = str(excerpt).strip()
+            if not text:
+                continue
+            if not first:
+                first = text
+            if pack_numbers(text):
+                numbered.append(text)
+        row_title = (getattr(row, "title", None) or "").strip()
+        if row_title and pack_numbers(row_title):
+            numbered.append(row_title)
+    if numbered:
+        return " ".join(numbered).strip()[:800]
+    return first or (title or "").strip()
 
 
 def _wants_entities(packet: Packet) -> bool:
@@ -232,11 +286,11 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
     try:
         hit = search(
             objective=f"Timeline for {packet.topic or packet.hook} inside depth={depth}",
-            search_queries=[packet.topic or packet.hook, f"{packet.topic} {depth}"],
+            search_queries=_search_queries(packet, depth),
         )
         miss = search(
             objective=f"Unsourced fringe claim in {packet.topic or packet.hook}",
-            search_queries=[f"{packet.topic} hidden treaty Hormuz"],
+            search_queries=_fringe_queries(packet),
         )
     except ParallelDownError:
         down = rails.model_copy(update={"parallel": False})
@@ -281,10 +335,24 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             hit_urls,
             "",
         )
+    hit_claim = _hit_claim_from_rows(hit_rows, hit_title)
+    if not hit_claim:
+        leftover = leftover_hit_exclusions(
+            hit_rows + miss_rows,
+            set(),
+            reason="other",
+            detail="Parallel hit had no usable claim text. Not silently dropped.",
+        )
+        return (
+            hold_receipt(packet.id, rails.model_copy(update={"parallel": False})),
+            leftover,
+            hit_urls,
+            "",
+        )
     findings = findings_from_parallel_rows(
         hit_url=hit_url,
         hit_title=hit_title,
-        hit_claim=f"Grounded event inside {depth}: {packet.topic or packet.hook}",
+        hit_claim=hit_claim,
         mainstream_claim=f"Widely repeated frame about {packet.topic or packet.hook}",
         miss_claim=f"Fringe claim about {packet.topic or packet.hook}",
     )
@@ -426,9 +494,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         shift.tone,
     )
     rails = shift.rails or assess_rails()
-    fresh_id = snapshot_id(shift.topic, shift.id)
-    if fresh_id == config.SEED_PACKET_ID:
-        fresh_id = f"{fresh_id}-live"
+    fresh_id = resolve_live_packet_id(shift.packet_id, shift.topic, shift.id)
     shift.packet_id = fresh_id
     store.upsert_shift(shift)
     fresh = Packet(

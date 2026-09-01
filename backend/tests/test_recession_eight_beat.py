@@ -243,3 +243,190 @@ def test_snapshot_id_never_is_hormuz_seed() -> None:
     assert snapshot_id("Is the US in a recession?", "shift-abc123def") != SEED_PACKET_ID
     assert snapshot_id("Hormuz", "shift-xyz98765") != SEED_PACKET_ID
     assert "hormuz-decade" not in snapshot_id("Hormuz strait", "shift-xxxxxxxx")
+
+
+def test_leftover_hormuz_id_is_not_get_first_open() -> None:
+    from fastapi.testclient import TestClient
+
+    from onecrew.api import app
+    from onecrew.seed import seed_first_open
+
+    seed_first_open()
+    with TestClient(app) as client:
+        first = client.get("/api/packets/oc-recession-july-2026")
+        leftover = client.get("/api/packets/oc-hormuz-decade")
+    assert first.status_code == 200
+    assert first.json()["id"] == "oc-recession-july-2026"
+    assert leftover.status_code == 404
+
+
+def test_live_shaped_post_unique_packet_id_is_stored(monkeypatch) -> None:
+    """POST body packet_id is persisted. Seed stays. Leftover Hormuz is not GET."""
+    from types import SimpleNamespace
+
+    from fastapi.testclient import TestClient
+
+    from onecrew.api import app
+    from onecrew.seed import seed_first_open
+
+    pid = "oc-are-we-near-recession-cf47test"
+    excerpts = [
+        "USREC=0 (July 2026).",
+        "Nonfarm payrolls fell −23k.",
+        "Sahm is −0.03 vs the 0.50 trigger.",
+        "GDP printed 0.5, then 2.1, then 1.5.",
+    ]
+
+    def search(*, objective, search_queries):
+        blob = f"{objective} {' '.join(search_queries)}".lower()
+        if "hidden" in blob or "fringe" in blob:
+            return SimpleNamespace(results=[])
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/USREC",
+                    title="USREC",
+                    excerpts=excerpts,
+                )
+            ]
+        )
+
+    def extract(*, urls, objective):
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/USREC",
+                    title="USREC",
+                    excerpts=excerpts,
+                )
+            ],
+            errors=[],
+        )
+
+    def task(*, prompt, processor="pro", task_spec=None):
+        return SimpleNamespace(
+            output=SimpleNamespace(
+                content="USREC=0 smashed into payrolls −23k. Sahm −0.03 vs 0.50.",
+                basis=[],
+            )
+        )
+
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel-key")
+    monkeypatch.setattr("onecrew.agent.shift.search", search)
+    monkeypatch.setattr("onecrew.agent.shift.extract", extract)
+    monkeypatch.setattr("onecrew.agent.shift.run_task", task)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    seed_first_open()
+    body = {
+        "topic": "Are we near recession?",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "depth": "2-3y",
+        "script_lean": "centered_independent",
+        "tell": "Host-only desk read of the last year of US recession prints",
+        "tone": "On the cited print",
+        "packet_id": pid,
+    }
+    with TestClient(app) as client:
+        posted = client.post(
+            "/api/shifts",
+            json=body,
+            headers={"X-Shift-Token": "correct-horse"},
+        )
+        assert posted.status_code == 200
+        got = client.get(f"/api/packets/{pid}")
+        seed = client.get("/api/packets/oc-recession-july-2026")
+        leftover = client.get("/api/packets/oc-hormuz-decade")
+    assert got.status_code == 200
+    packet = got.json()
+    assert packet["id"] == pid
+    assert packet["id"] != "oc-hormuz-decade"
+    assert packet["id"] != "oc-recession-july-2026"
+    vo = packet["script"]
+    assert "USREC=0" in vo
+    assert "−23k" in vo or "-23k" in vo
+    assert "gulf" not in vo.lower()
+    assert "hormuz" not in vo.lower()
+    assert "Grounded event inside" not in vo
+    assert "Grounded event inside" not in (packet.get("research_pack") or "")
+    assert seed.status_code == 200
+    assert seed.json()["id"] == "oc-recession-july-2026"
+    assert leftover.status_code == 404
+
+
+def test_seed_upsert_does_not_wipe_live_packet() -> None:
+    from fastapi.testclient import TestClient
+
+    from onecrew.api import app
+    from onecrew.models import Packet
+    from onecrew.seed import seed_first_open
+    from onecrew.store import store
+
+    seed_first_open()
+    live = Packet(
+        id="oc-live-keep-me",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="USREC=0 smashed into payrolls −23k.",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        status="ready",
+    )
+    store.upsert_packet(live)
+    seed_first_open()
+    with TestClient(app) as client:
+        kept = client.get("/api/packets/oc-live-keep-me")
+        seed = client.get("/api/packets/oc-recession-july-2026")
+    assert kept.status_code == 200
+    assert kept.json()["id"] == "oc-live-keep-me"
+    assert seed.status_code == 200
+
+
+def test_live_research_claim_is_not_grounded_event_inside() -> None:
+    from onecrew.models import Finding, Packet, Receipt
+    from onecrew.script import write_script
+
+    packet = Packet(
+        id="oc-live-grounded-ban",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="should clear",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        disposition="READY",
+        written=True,
+        findings=[
+            Finding(
+                id="timeline-hit",
+                claim="Grounded event inside 2-3y: Are we near recession?",
+                stamp="grounded",
+                parallel_url="https://example.com/hit",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            )
+        ],
+    )
+    write_script(packet)
+    assert packet.script == ""
+    assert packet.beats == []
+    assert packet.status == "hold"
+
+
+def test_tone_never_says_sit_with_this() -> None:
+    from onecrew.tone import apply_tone
+
+    spoken = apply_tone("USREC=0 smashed into payrolls −23k.", "Make the viewer think", fiction=False)
+    assert "Sit with this" not in spoken
+    assert "sit with this" not in spoken.lower()

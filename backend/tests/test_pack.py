@@ -67,7 +67,8 @@ def test_seed_pack_is_a_thesis() -> None:
     assert "never sold as fact" in pack
     leftover = leftover_hormuz_packet()
     assert "Propaganda stays marked" in leftover.research_pack
-    readme = Path("/workspace/README.md").read_text()
+    readme = Path(__file__).resolve().parents[2] / "README.md"
+    readme = readme.read_text()
     assert "left out and why" in readme.lower()
 
 

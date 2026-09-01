@@ -14,10 +14,10 @@ log = logging.getLogger("onecrew.store")
 
 
 class PacketStore:
-    """Firestore-backed packet store with a JSON file fallback.
+    """Packet store. Memory is enough when min-instances=1.
 
-    `google.cloud.firestore` is imported and Client() is constructed when ADC
-    or the emulator is present. Local demos fall back to data/store.json.
+    Firestore is optional. Import or API failure stays on memory. Seed upsert
+    must not wipe a live packet.
     """
 
     def __init__(self) -> None:
@@ -31,18 +31,24 @@ class PacketStore:
             self._load_file()
 
     def _connect_firestore(self) -> None:
-        from google.cloud import firestore  # noqa: PLC0415
+        # ponytail: memory is enough for min-instances=1. Firestore is optional.
+        try:
+            from google.cloud import firestore  # noqa: PLC0415
+        except ImportError as exc:
+            self.backend = "memory"
+            self.fallback_reason = f"ImportError: {exc}"
+            log.info("Firestore library missing; memory store")
+            return
 
         live = bool(
             os.getenv("FIRESTORE_EMULATOR_HOST")
-            or os.getenv("K_SERVICE")
-            or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
             or os.getenv("ONECREW_FORCE_FIRESTORE") == "1"
+            or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         )
         if not live:
             self.backend = "memory"
-            self.fallback_reason = "no emulator, Cloud Run, or ADC — file store"
-            log.info("Firestore client imported; using file store until ADC/emulator is present")
+            self.fallback_reason = "Firestore API not required — memory store"
+            log.info("Memory store (Firestore not requested)")
             return
         try:
             project = config.google_cloud_project() or None
@@ -55,15 +61,20 @@ class PacketStore:
             self._client = None
             self.backend = "memory"
             self.fallback_reason = f"{type(exc).__name__}: {exc}"
-            log.warning("Firestore unavailable, using file store (%s)", self.fallback_reason)
+            log.warning("Firestore unavailable, using memory store (%s)", self.fallback_reason)
 
     def _col(self, name: str):
         assert self._client is not None
         return self._client.collection(config.FIRESTORE_COLLECTION).document(name).collection("items")
 
+    def _data_dir(self) -> Path:
+        raw = (os.getenv("ONECREW_DATA_DIR") or "").strip()
+        folder = Path(raw) if raw else config.DATA_DIR
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
     def _file(self) -> Path:
-        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        return config.DATA_DIR / "store.json"
+        return self._data_dir() / "store.json"
 
     def _load_file(self) -> None:
         path = self._file()
@@ -103,7 +114,7 @@ class PacketStore:
             rows = [Packet.model_validate(d.to_dict()) for d in self._col("packets").stream()]
         else:
             rows = [Packet.model_validate(v) for v in self._mem_packets.values()]
-        rows.sort(key=lambda p: p.id)
+        rows.sort(key=lambda p: (p.id != config.SEED_PACKET_ID, p.id))
         return rows
 
     def replace_packets(self, packets: list[Packet]) -> None:
