@@ -55,6 +55,8 @@ ExclusionReason = Literal[
 Disposition = Literal["READY", "HOLD"]
 PacketStatus = Literal["ready", "hold", "running"]
 ShiftStatus = Literal["running", "completed", "failed"]
+RoomVote = Literal["ship", "recut"]
+RecutReason = Literal["not_enough_information", "other"]
 
 STAMPS = frozenset({"grounded", "mainstream", "fringe"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
@@ -260,6 +262,20 @@ class Receipt(BaseModel):
         return any(f.parallel_status == "miss" for f in self.findings)
 
 
+class GradeArtifact(BaseModel):
+    """What the discussant room votes on. Floor never posts."""
+
+    packet_id: str
+    research_pack_summary: str
+    script: str
+
+
+class RoomGrade(BaseModel):
+    vote: RoomVote
+    recut_reason: RecutReason | None = None
+    recut_detail: str = ""
+
+
 class Packet(BaseModel):
     id: str
     topic: str = ""
@@ -282,6 +298,10 @@ class Packet(BaseModel):
     research_pack: str = ""
     exclusions: list[Exclusion] = Field(default_factory=list)
     task_spine: str = ""
+    deeper_history: bool = False
+    grade_artifact: GradeArtifact | None = None
+    room_grade: RoomGrade | None = None
+    parallel_research_loops: int = 0
 
 
 class ShiftRecord(BaseModel):
@@ -303,3 +323,4 @@ class ShiftRecord(BaseModel):
     rails: Rails | None = None
     error: str | None = None
     store_backend: str = "memory"
+    deeper_history: bool = False

@@ -14,6 +14,7 @@ from onecrew import config
 from onecrew.board import resolve_frame_file
 from onecrew.cut import cuts_payload
 from onecrew.depth import depths_payload
+from onecrew.research import HORIZON_DEEPER, HORIZON_RECENT
 from onecrew.picks import (
     PickError,
     leans_payload,
@@ -64,8 +65,9 @@ class ShiftRequest(BaseModel):
     script_lean: str | None = Field(default=None)
     tell: str | None = Field(default=None)
     tone: str | None = Field(default=None)
+    deeper_history: bool = Field(default=False)
     goal: str = Field(
-        default="Research the topic inside the chosen depth. Write a timeline. Do not post."
+        default="Research the topic to the first trigger in recent news. Write a timeline. Do not post."
     )
     packet_id: str = Field(default=config.SEED_PACKET_ID)
 
@@ -105,6 +107,12 @@ def health() -> dict[str, Any]:
         "script_leans": leans_payload(),
         "tell_examples": tell_examples_payload(),
         "tone_examples": tone_examples_payload(),
+        "research_horizon": {
+            "default": HORIZON_RECENT,
+            "deeper": HORIZON_DEEPER,
+            "flag": "deeper_history",
+            "depth_enum_forwards_to_parallel": False,
+        },
     }
 
 
@@ -195,6 +203,7 @@ async def start_shift(
         tell=tell,
         tone=tone,
         topic=topic,
+        deeper_history=body.deeper_history,
     )
     await run_shift(body.goal, packet_id=body.packet_id, shift=shift)
     return shift.model_dump()

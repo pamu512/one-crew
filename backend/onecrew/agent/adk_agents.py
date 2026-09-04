@@ -33,8 +33,13 @@ for thesis quotes and ownership/propaganda/independence text. Then one Task (pro
 for the thesis spine — result.output.basis is cited structure. Do not use ultra.
 Entity Search only for a verified producer/lobby list from tell/topic. Never invent
 a family. Do not create Monitors (standing watch; floor never posts).
+Parallel researches only. Do not ask Parallel to decide depth. Default horizon is the
+first event that actually triggered the topic, scoped to recent news. Go further back
+only if the user explicitly demanded deeper history. The floor depth enum is not the
+Task horizon — never write "inside depth=decade" (or 1y/2-3y/5y/few_decades/pre-1980)
+as Parallel authority. Vertex writes the timed VO from the pack. Parallel does not.
 Write a write-once TIMELINE of events that led
-up to the current situation, inside that depth window. Each event is a row.
+up to the current situation. Each event is a row.
 Causal links (this led to that) are their own stamps: grounded only if Parallel sourced
 the link. Otherwise the link is missing. Do not invent a 40-year chain.
 pre-1980 still HOLDs if Parallel misses.
@@ -148,6 +153,48 @@ def build_boarder():
         description="Imagen frames from script + Parallel refs. Real shots, not a mood dump.",
         instruction=BOARDER_INSTRUCTION,
         tools=BOARDER_TOOLS,
+    )
+
+
+SCRIPT_WRITER_INSTRUCTION = """You are One Crew's script writer.
+
+You receive the Parallel research pack plus user picks (topic, platform, cut, tell, tone, script_lean).
+Write the timed VO from that pack. Parallel does not write the timed VO.
+Pack numbers only. Do not invent stats. Do not hardcode leftover July −23k or Hormuz 3-slot lines.
+Host/reporter only on news cuts. You do not post.
+"""
+
+ROOM_INSTRUCTION = """You are the Devpost-review / Vertex discussant room.
+
+You receive an artifact: packet id, research pack summary, full script.
+Vote ship or recut. Recut requires why: not_enough_information | other (short reason).
+not_enough_information may trigger at most one extra Parallel fetch, then a rewrite.
+A second recut for information does not call Parallel a third time — HOLD and surface to the user.
+You do not post. Floor never posts.
+"""
+
+
+def build_script_writer():
+    from google.adk.agents.llm_agent import Agent
+
+    return Agent(
+        model=config.GEMINI_MODEL,
+        name="script_writer",
+        description="Vertex timed VO from the Parallel research pack + picks. Parallel does not write VO.",
+        instruction=SCRIPT_WRITER_INSTRUCTION,
+        tools=[],
+    )
+
+
+def build_room():
+    from google.adk.agents.llm_agent import Agent
+
+    return Agent(
+        model=config.GEMINI_MODEL,
+        name="room",
+        description="Discussant room: ship or recut with why. Floor never posts.",
+        instruction=ROOM_INSTRUCTION,
+        tools=[],
     )
 
 
