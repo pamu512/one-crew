@@ -321,11 +321,36 @@ def _iso_month_stamp(year: str, month: str) -> str:
 def _usrec_iso_hits(text: str) -> list[tuple[str, str]]:
     """FRED pipe rows like 2026-07-01 | 0. Chrome Updated: Sep 1 is not a row."""
     hits: list[tuple[str, str]] = []
-    for match in _USREC_ISO.finditer(text or ""):
+    blob = text or ""
+    for match in _USREC_ISO.finditer(blob):
+        around = blob[max(0, match.start() - 96) : match.end() + 16]
+        if re.search(r"t10y3m", around, re.I):
+            continue
+        if "|" not in match.group(0) and not re.search(
+            r"usrec|recession indicator", around, re.I
+        ):
+            continue
         stamp = _iso_month_stamp(match.group(1), match.group(2))
         if stamp:
             hits.append((match.group(3), stamp))
     return hits
+
+
+def _usrec_flag_for_when(text: str, when: str) -> str | None:
+    want = (when or "").strip().lower()
+    if not want:
+        return None
+    blob = _usrec_blob(text)
+    for match in _MONTH.finditer(blob):
+        if _month_stamp(match).lower() != want:
+            continue
+        val = _usrec_cell(blob[match.end() : match.end() + 16])
+        if val:
+            return val
+    for val, stamp in _usrec_iso_hits(blob):
+        if stamp.lower() == want:
+            return val
+    return None
 
 
 def _usrec_blob(text: str) -> str:
@@ -1062,7 +1087,8 @@ def _legal_print(series: str, text: str) -> str | None:
                 default=len(text),
             )
             clause = text[prev + 1 : nxt]
-            if _PAY_REV.search(clause):
+            ces_verb = bool(_PAY_FALL.search(isol_l) or _PAY_RISE.search(isol_l))
+            if _PAY_REV.search(isol_l) or (_PAY_REV.search(clause) and not ces_verb):
                 continue
             raw = _sign_payroll(win, match.group(0))
             stamp = _stamp_near_print(isol_l + match.group(0) + isol_r, raw)
@@ -1244,7 +1270,7 @@ def _hit_for_series(notes: str, series: str, tokens: tuple[str, ...]) -> tuple[s
     found: list[tuple[str, str]] = []
 
     def _keep(printed: str, claim: str) -> tuple[str, str] | None:
-        if series not in {"GDP", "LEI", "BLS payrolls", "U-3"}:
+        if series not in {"GDP", "LEI", "BLS payrolls", "U-3", "USREC"}:
             return printed, claim
         found.append((printed, claim))
         return None
@@ -1448,6 +1474,9 @@ def _mint_from_notes(
     if pay and usrec and _usrec_month_on_table(f"{usrec.claim} {notes}", pay.when or ""):
         used_ids.discard(usrec.id)
         usrec.when = pay.when
+        flag = _usrec_flag_for_when(f"{usrec.claim} {notes}", pay.when or "")
+        if flag in {"0", "1"}:
+            usrec.print = flag
         usrec.id = _unique_id(_slug("USREC", pay.when), used_ids)
         if (pay.when or "").lower() not in (usrec.claim or "").lower():
             usrec.claim = f"USREC={usrec.print} ({usrec.when})"

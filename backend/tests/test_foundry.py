@@ -2848,6 +2848,24 @@ def test_same_sentence_ces_survives_revision_clause() -> None:
     assert payrolls.id == "payrolls-july-2026"
 
 
+def test_comma_glued_ces_survives_revision_clause() -> None:
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    spine = (
+        "USREC July 2026 = 0. "
+        "Nonfarm payrolls fell by 23,000 in July 2026, and May and June were "
+        "revised down by 103,000."
+    )
+    _, rows = _mint_notes(spine)
+    assert ledger.parallel_calls == before
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    assert "23,000" in (payrolls.print or "")
+    assert "103" not in (payrolls.print or "")
+    assert (payrolls.when or "").lower() == "july 2026"
+    assert payrolls.id == "payrolls-july-2026"
+
+
 def test_fall_unsigned_is_minus_signed_stays_rise_does_not_invent() -> None:
     from onecrew.spend import ledger
 
@@ -2969,3 +2987,68 @@ def test_iso_usrec_pipe_july_smashes_despite_august_prose() -> None:
     assert "USREC=1" not in spoken
     assert "September" not in (usrec.when or "")
     assert "Sep 1" not in (usrec.claim or "") or usrec.print == "0"
+
+
+def test_iso_pipe_july_zero_beats_leading_recession_one() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    spine = (
+        "2020-04-01 | 1\n2026-06-01 | 0\n2026-07-01 | 0\n"
+        "The FRED recession observation for August 2026 is 0. "
+        "July payrolls fell 23,000. "
+        f"{FRED_USREC} {BLS_JULY_ARCHIVE}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [
+                "2020-04-01 | 1\n2026-06-01 | 0\n2026-07-01 | 0\n"
+                "The FRED recession observation for August 2026 is 0."
+            ]),
+            _row(BLS_JULY_ARCHIVE, "BLS July archive", ["July payrolls fell 23,000."]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print == "0"
+    assert (usrec.when or "").lower() == "july 2026"
+    assert usrec.id == "usrec-july-2026"
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    assert payrolls.id == "payrolls-july-2026"
+
+
+def test_dated_t10y3m_one_is_not_usrec_print() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    spine = (
+        "T10Y3M 2026-07-01 1. "
+        "2026-07-01 | 0. "
+        "July payrolls fell 23,000. "
+        f"{FRED_USREC} {BLS_JULY_ARCHIVE}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", ["2026-07-01 | 0."]),
+            _row(BLS_JULY_ARCHIVE, "BLS July archive", ["July payrolls fell 23,000."]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print == "0"
+    assert usrec.print != "1"
+    assert (usrec.when or "").lower() == "july 2026"
