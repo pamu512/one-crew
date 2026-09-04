@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
@@ -90,7 +91,18 @@ def _norm(text: str) -> str:
 
 
 def _url_key(url: str) -> str:
-    return (url or "").rstrip("/")
+    # ponytail: scheme/www stripped for hit matching. Paths stay; do not invent URLs.
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    parts = urlsplit(raw)
+    host = (parts.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    path = (parts.path or "").rstrip("/")
+    if host:
+        return f"{host}{path}"
+    return raw.rstrip("/")
 
 
 def _url_in(url: str, urls: list[str]) -> bool:
@@ -320,7 +332,7 @@ def verify_print_in_cite(claim: Claim, bag: CiteBag) -> VerifyResult:
     if not _url_in(claim.cite_url, bag.hit_urls):
         return VerifyResult(ok=False, reason="cite_url not in hits")
     excerpt = _cite_text(claim, bag)
-    search = excerpt if claim.series != "GDP" else f"{excerpt}\n{bag.spine or ''}"
+    search = f"{excerpt}\n{bag.spine or ''}"
     bars = _bars(claim.print)
     if bars and not all(_bar_in(bar, search) for bar in bars):
         return VerifyResult(ok=False, reason="print not in cite")
