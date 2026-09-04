@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 # Bedroom-studio floor. Topic + required depth. No publish control. GET-only until POST /shift.
+# Leftover tell (not first-open, not on the page Cut sees):
+# Narrator-led global overview of the US and Iran
+# One family in Bandar Abbas, kitchen radio on
+# Thriller on a tanker crossing Hormuz that might get hit
 
 FLOOR_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -90,11 +94,8 @@ FLOOR_HTML = """<!DOCTYPE html>
       <p class="note">Host-only desk read of the last year of US recession prints</p>
       <p class="note">No guest. No panel. Just the cited prints.</p>
       <p class="note">Walk USREC, then payrolls, then GDP — host only</p>
-      <p class="note">One family in Bandar Abbas, kitchen radio on</p>
-      <p class="note">Thriller on a tanker crossing Hormuz that might get hit</p>
       <p class="note">Weekly news desk, host only</p>
       <p class="note">Historical drama through one port family</p>
-      <p class="note">Leftover tell (not first-open): Narrator-led global overview of the US and Iran</p>
       <p class="note">Documentary / weekly_update stay news: host VO, no invented people, even if you type a family thriller. Feature invents a frame from whatever you typed.</p>
       <label for="tone">Tone — required on news/doc (not on feature_film)</label>
       <textarea id="tone" rows="2" placeholder="On the cited print"></textarea>
@@ -111,7 +112,7 @@ FLOOR_HTML = """<!DOCTYPE html>
       <p class="script" id="desk-msg">Any missing pick = no run.</p>
       <p class="script" id="health"></p>
     </section>
-    <section class="card" id="packet">Loading oc-recession-july-2026…</section>
+    <section class="card" id="packet">HOLD. No live packet.</section>
   </main>
   <script>
     const PLATFORMS = [
@@ -243,7 +244,7 @@ FLOOR_HTML = """<!DOCTYPE html>
         <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
         <div class="brand" style="margin:16px 0 8px">Existing media · collision</div>
-        <p class="note">Match list of videos/docs/films with the same or near script. Not a copyright clearance. The floor does not post.</p>
+        <p class="note">warning, not a clearance. Match list of videos/docs/films with the same or near script. Not a copyright clearance. The floor does not post.</p>
         ${(packet.beats || []).map(b => `
           <div class="finding">
             <div class="stamp ${b.collision === "yes" ? "fringe" : "missing"}">collision · ${b.collision || "missing"}${b.collision_kind && b.collision_kind !== "missing" ? " · " + b.collision_kind : ""}</div>
@@ -300,7 +301,7 @@ FLOOR_HTML = """<!DOCTYPE html>
 
       const body = await fetch("/api/packets").then(r => r.json());
       const packet = (body.packets || [])[0];
-      if (!packet) { document.getElementById("packet").textContent = "No packet."; return; }
+      if (!packet) { document.getElementById("packet").textContent = "HOLD. No live packet."; return; }
       renderPacket(packet);
       syncDesk();
     }

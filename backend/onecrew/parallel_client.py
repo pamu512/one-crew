@@ -13,6 +13,27 @@ class ParallelDownError(RuntimeError):
     """Parallel rail is down. Caller must HOLD — no invented source."""
 
 
+class ParallelCreditError(RuntimeError):
+    """Parallel 402 / insufficient credit. Caller must HOLD — no invented pack."""
+
+
+def _is_credit(exc: BaseException) -> bool:
+    if isinstance(exc, ParallelCreditError):
+        return True
+    if getattr(exc, "status_code", None) == 402:
+        return True
+    blob = f"{type(exc).__name__} {exc}".lower()
+    return "insufficient credit" in blob or (
+        "402" in blob and "payment required" in blob
+    )
+
+
+def _reraise_parallel(exc: BaseException) -> None:
+    if _is_credit(exc):
+        raise ParallelCreditError("Parallel 402 Payment Required") from exc
+    raise exc
+
+
 def _client() -> Any:
     if not config.has_parallel():
         raise ParallelDownError("PARALLEL_API_KEY missing")
@@ -52,8 +73,12 @@ def run_task(
     kwargs: dict[str, Any] = {"input": prompt, "processor": processor}
     if task_spec is not None:
         kwargs["task_spec"] = task_spec
-    task_run = client.task_run.create(**kwargs)
-    return client.task_run.result(task_run.run_id, api_timeout=3600)
+    try:
+        task_run = client.task_run.create(**kwargs)
+        return client.task_run.result(task_run.run_id, api_timeout=3600)
+    except Exception as exc:
+        _reraise_parallel(exc)
+        raise
 
 
 def entity_search(

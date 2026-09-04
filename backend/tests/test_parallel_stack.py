@@ -14,15 +14,24 @@ from onecrew.spend import ledger
 
 KEPT = "https://example.com/kept-hit"
 EXTRA = "https://example.com/extra-hit"
+HORMUZ_PRINT = "Hormuz tanker transits printed 23% below 2023 in March 2024."
 
 
 def _search_two(*, objective, search_queries):
     blob = f"{objective} {' '.join(search_queries)}".lower()
     if "hidden" in blob or "fringe" in blob:
-        return SimpleNamespace(results=[])
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://example.com/fringe-miss",
+                    title="Fringe miss",
+                    excerpts=["Secret navy treaty already mined the strait shut."],
+                )
+            ]
+        )
     return SimpleNamespace(
         results=[
-            SimpleNamespace(url=KEPT, title="Kept hit", excerpts=["kept excerpt"]),
+            SimpleNamespace(url=KEPT, title="Kept hit", excerpts=[HORMUZ_PRINT]),
             SimpleNamespace(url=EXTRA, title="Extra hit", excerpts=["extra excerpt"]),
         ]
     )
@@ -64,7 +73,7 @@ def _task_ok(*, prompt, processor="pro", task_spec=None):
         )
     return SimpleNamespace(
         output=SimpleNamespace(
-            content="Cited thesis spine from Task pro.",
+            content=f"{HORMUZ_PRINT} Cited thesis spine from Task pro.",
             basis=[SimpleNamespace(field="timeline", citations=[SimpleNamespace(url=KEPT)])],
         )
     )
@@ -191,6 +200,139 @@ def test_parallel_key_not_committed() -> None:
         if line.startswith("PARALLEL_API_KEY="):
             _, _, value = line.partition("=")
             assert value.strip() in {"", '""', "''"}
+
+
+class _APIStatusError(Exception):
+    """Duck-typed Parallel SDK 402. Tests must not import the live SDK."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Error code: 402 - {'error': {'message': 'insufficient credit', "
+            "'type': 'insufficient_credit'}, "
+            "'ref_id': '2a21f0a7d58da9eb0d3e0e7a25008e07'}"
+        )
+        self.status_code = 402
+
+
+def test_parallel_402_on_second_task_holds_not_500(monkeypatch) -> None:
+    from onecrew.store import store
+
+    calls: list[str] = []
+    spine = (
+        "USREC July 2026 = 0. Nonfarm payrolls fell −23,000 in July 2026. "
+        "Unemployment was 4.1%. GDP printed 2.1, then 1.5. Sahm −0.03 vs 0.50."
+    )
+
+    def search(*, objective, search_queries):
+        blob = f"{objective} {' '.join(search_queries)}".lower()
+        if "hidden" in blob or "fringe" in blob:
+            return SimpleNamespace(
+                results=[
+                    SimpleNamespace(
+                        url="https://example.com/hidden-treaty",
+                        title="Hidden treaty",
+                        excerpts=["Secret double-dip already started in May."],
+                    )
+                ]
+            )
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/USREC",
+                    title="USREC",
+                    excerpts=["USREC July 2026 = 0."],
+                ),
+                SimpleNamespace(
+                    url="https://www.bls.gov/news.release/archives/empsit_08072026.htm",
+                    title="BLS July archive",
+                    excerpts=["July payrolls fell 23,000 and unemployment was 4.1%."],
+                ),
+                SimpleNamespace(
+                    url="https://www.bea.gov/news/2026/gdp-second-estimate-and-corporate-profits-2nd-quarter-2026",
+                    title="BEA second estimate",
+                    excerpts=["Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2."],
+                ),
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+                    title="SAHMREALTIME",
+                    excerpts=["Sahm July 2026 = −0.03 vs 0.50 trigger."],
+                ),
+            ]
+        )
+
+    def extract(*, urls, objective):
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/USREC",
+                    title="USREC",
+                    excerpts=["USREC July 2026 = 0."],
+                )
+            ],
+            errors=[],
+        )
+
+    def task(*, prompt, processor="pro", task_spec=None):
+        calls.append(f"task:{processor}")
+        if processor == "base" or len(calls) >= 2:
+            raise _APIStatusError()
+        return SimpleNamespace(output=SimpleNamespace(content=spine, basis=[]))
+
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel-key")
+    monkeypatch.setattr("onecrew.agent.shift.search", search)
+    monkeypatch.setattr("onecrew.agent.shift.extract", extract)
+    monkeypatch.setattr("onecrew.agent.shift.run_task", task)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: (_ for _ in ()).throw(AssertionError("Imagen/Vertex on 402")))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: (_ for _ in ()).throw(AssertionError("Imagen on 402")))
+    store.replace_packets([])
+    pid = "oc-are-we-near-recession-9325576d"
+    body = {
+        "topic": "Are we near recession?",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "depth": "2-3y",
+        "script_lean": "centered_independent",
+        "tell": "Host-only desk read of the last year of US recession prints",
+        "tone": "On the cited print",
+        "packet_id": pid,
+    }
+    with TestClient(app, raise_server_exceptions=False) as client:
+        posted = client.post(
+            "/api/shifts",
+            json=body,
+            headers={"X-Shift-Token": "correct-horse"},
+        )
+        assert posted.status_code != 500
+        assert posted.status_code == 200
+        listed = client.get("/api/packets")
+        got = client.get(f"/api/packets/{pid}")
+        page = client.get("/")
+    assert listed.status_code == 200
+    ids = {p["id"] for p in listed.json()["packets"]}
+    assert pid in ids
+    assert "oc-hormuz-decade" not in ids
+    assert got.status_code == 200
+    packet = got.json()
+    assert packet["id"] == pid
+    assert packet["status"] == "hold"
+    reason = (
+        (packet.get("receipt") or {}).get("hold_reason")
+        or packet.get("collision_hold_reason")
+        or ""
+    ).lower()
+    assert "402" in reason or "credit" in reason
+    assert "parallel missing" not in reason
+    findings = (packet.get("receipt") or {}).get("findings") or []
+    ids_f = {f.get("id") for f in findings}
+    assert ids_f != {"timeline-hit", "timeline-frame", "timeline-miss"}
+    assert not ids_f & {"timeline-hit", "timeline-frame", "timeline-miss"}
+    assert page.status_code == 200
+    assert "Hormuz" not in page.text
+    assert "task:pro" in calls
+    assert any(c.startswith("task:") for c in calls)
+    assert calls.count("task:pro") + calls.count("task:base") == 2
 
 
 def test_ultra_task_is_rejected() -> None:

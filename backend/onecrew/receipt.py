@@ -151,6 +151,22 @@ def validate_ready_receipt(
         )
 
 
+def credit_hold_receipt(packet_id: str) -> Receipt:
+    """Parallel 402. Empty findings. Do not invent a pack."""
+    return Receipt(
+        packet_id=packet_id,
+        written=False,
+        findings=[],
+        disposition="HOLD",
+        hold_reason="Fail-closed: Parallel credit — Parallel 402. No invented pack.",
+        invented_source=False,
+        collage=False,
+        invented_stamp=False,
+        invented_lean=False,
+        causal_links=[],
+    )
+
+
 def hold_receipt(packet_id: str, rails: Rails) -> Receipt:
     """Fail-closed. No invented source, no collage, no stamp invented."""
     missing = ", ".join(rails.missing) or "rails"

@@ -116,6 +116,7 @@ def _finding_prose(finding: Finding, packet: Packet) -> str:
         house = " Propaganda stays marked yes on this row."
     return (
         f"[{finding.id}] {finding.claim} "
+        f"series = {finding.series}. print = {finding.print}. "
         f"The full citation is {_citation_title(finding)}, {url} ({when}). "
         f"The stamp is {finding.stamp} (grounded|mainstream|fringe). "
         f"parallel = {finding.parallel_status}. "

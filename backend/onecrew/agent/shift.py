@@ -12,11 +12,24 @@ from onecrew.cut import event_cap, size_findings
 from onecrew.depth import pre1980_fail_closed
 from onecrew.events import bus
 from onecrew.models import Finding, MISSING, Depth, Exclusion, Packet, Rails, Receipt, ShiftRecord, utcnow
-from onecrew.parallel_client import ParallelDownError, entity_search, extract, run_task, search
+from onecrew.parallel_client import (
+    ParallelCreditError,
+    ParallelDownError,
+    entity_search,
+    extract,
+    run_task,
+    search,
+)
 from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
-from onecrew.receipt import ReceiptInvalidError, attach_frames, hold_receipt, write_receipt
-from onecrew.foundry import foundry_findings, replace_leftover_slots
+from onecrew.receipt import (
+    ReceiptInvalidError,
+    attach_frames,
+    credit_hold_receipt,
+    hold_receipt,
+    write_receipt,
+)
+from onecrew.foundry import FoundryHold, leftover_slot_ids, mint, require_minted, sanitize_stamps
 from onecrew.verify import apply_verify_gate, cite_bag_from_rows
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.script import pack_numbers, write_script
@@ -164,14 +177,15 @@ def _rows_blob(rows: list) -> str:
 
 
 def _size_live_findings(findings: list[Finding], packet: Packet) -> list[Finding]:
-    """Keep a Parallel hit and a Parallel miss when the cut cap is tight."""
+    """Named prints first. Reserve one miss. Never keep leftover 3-slot over USREC."""
     if not packet.cut or not findings:
         return findings
     miss = [row for row in findings if row.parallel_status == "miss"][:1]
     core = [row for row in findings if row.parallel_status != "miss"]
+    ranked = size_findings(core, packet.cut, packet.platform)
     cap = event_cap(packet.cut, packet.platform)  # type: ignore[arg-type]
     room = max(1, cap - len(miss))
-    return size_findings(core, packet.cut, packet.platform)[:room] + miss
+    return ranked[:room] + miss
 
 
 def _hit_claim_from_rows(rows: list, title: str) -> str:
@@ -271,6 +285,113 @@ def _hold_account_hits(hit_urls: list[str], leftover: list[Exclusion]) -> list[E
                 )
             )
     return leftover
+
+
+def _parallel_credit(exc: BaseException) -> bool:
+    if isinstance(exc, ParallelCreditError):
+        return True
+    if getattr(exc, "status_code", None) == 402:
+        return True
+    blob = str(exc).lower()
+    return "insufficient credit" in blob or (
+        "402" in blob and "payment required" in blob
+    )
+
+
+def _credit_account_hits(hit_urls: list[str], leftover: list[Exclusion]) -> list[Exclusion]:
+    cited = {row.url for row in leftover if row.url}
+    for url in hit_urls:
+        if url and url not in cited:
+            leftover.append(
+                Exclusion(
+                    what=url,
+                    reason="other",
+                    detail="Parallel 402 after Search. URL not silently dropped.",
+                    url=url,
+                )
+            )
+    return leftover
+
+
+def _credit_hold(
+    packet: Packet, hit_urls: list[str], leftover: list[Exclusion], what: str
+) -> tuple[Receipt, list[Exclusion], list[str], str]:
+    leftover.append(
+        Exclusion(
+            what=what,
+            reason="rails_down",
+            detail="Parallel 402 Payment Required. No invented pack.",
+        )
+    )
+    return (
+        credit_hold_receipt(packet.id),
+        _credit_account_hits(hit_urls, leftover),
+        hit_urls,
+        "",
+    )
+
+
+_NAMED_SERIES = frozenset(
+    {"USREC", "BLS payrolls", "GDP", "U-3", "LEI", "SAHMREALTIME"}
+)
+
+
+def _named_grounded(findings: list) -> bool:
+    rows = findings or []
+    if any(getattr(f, "id", "") in leftover_slot_ids() for f in rows):
+        return False
+    return any(
+        getattr(f, "stamp", "") == "grounded"
+        and getattr(f, "series", "") in _NAMED_SERIES
+        for f in rows
+    )
+
+
+def _foundry_outcome(
+    packet: Packet,
+    rails: Rails,
+    leftover: list[Exclusion],
+    hit_urls: list[str],
+    spine: str,
+    exc: FoundryHold,
+    findings: list | None = None,
+) -> tuple[Receipt, list[Exclusion], list[str], str]:
+    if _named_grounded(findings or []) and "dropped named series" in str(exc).lower():
+        return (
+            Receipt(
+                packet_id=packet.id,
+                written=False,
+                findings=list(findings or []),
+                causal_links=[],
+                disposition="READY",
+            ),
+            leftover,
+            hit_urls,
+            spine,
+        )
+    reason = str(exc).strip() or "foundry hold"
+    if rails.missing:
+        held = hold_receipt(packet.id, rails)
+        prior = (held.hold_reason or "").strip()
+        held.hold_reason = f"{prior} {reason}".strip()
+        return held, leftover, hit_urls, spine
+    return (
+        Receipt(
+            packet_id=packet.id,
+            written=False,
+            findings=[],
+            causal_links=[],
+            disposition="HOLD",
+            hold_reason=reason,
+            invented_source=False,
+            collage=False,
+            invented_stamp=False,
+            invented_lean=False,
+        ),
+        leftover,
+        hit_urls,
+        spine,
+    )
 
 
 def _apply_enrichment(findings: list, result: Any) -> None:
@@ -374,7 +495,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             hit_urls,
             "",
         )
-    leftover: list[Exclusion] = []
+    leftover = []
     try:
         extracted = extract(
             urls=hit_urls,
@@ -412,6 +533,10 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         )
         down = rails.model_copy(update={"parallel": False})
         return hold_receipt(packet.id, down), _hold_account_hits(hit_urls, leftover), hit_urls, ""
+    except Exception as exc:
+        if not _parallel_credit(exc):
+            raise
+        return _credit_hold(packet, hit_urls, leftover, "Live Parallel task")
     spine = _spine_from_task(task)
     source_urls = _row_urls(hit_rows) + [
         url for field in (getattr(getattr(task, "output", None), "basis", None) or []) for url in _cited_urls(field)
@@ -426,42 +551,44 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         )
         if part
     )
-    findings = foundry_findings(packet, hit_urls=source_urls or [hit_url])
-    findings = replace_leftover_slots(packet, findings, hit_urls=source_urls or [hit_url])
-    if not findings:
-        # ponytail: thesis named no series. One grounded from the first hit URL.
-        row = next((item for item in hit_rows if getattr(item, "url", None)), None)
-        if row is not None:
-            title = (getattr(row, "title", None) or "").strip() or MISSING
-            excerpts = [str(x).strip() for x in (getattr(row, "excerpts", None) or []) if x]
-            numbered = [text for text in excerpts if pack_numbers(text)]
-            claim = (numbered[0] if numbered else (excerpts[0] if excerpts else title)) or row.url
-            slug = re.sub(r"[^a-z0-9]+", "-", ("" if title == MISSING else title).lower()).strip("-")[:40] or "hit-1"
-            if slug in {"timeline-hit", "timeline-frame", "timeline-miss"}:
-                slug = "hit-1"
-            findings = [
-                Finding(
-                    id=slug,
-                    claim=str(claim)[:400],
-                    stamp="grounded",
-                    title=title,
-                    parallel_url=row.url,
-                    parallel_status="hit",
-                    note="Parallel URL on this row.",
-                    independent=MISSING,
-                    vested_interest=MISSING,
-                ),
-                Finding(
-                    id="fringe-unsourced",
-                    claim="Unsourced fringe print. Parallel miss. Never sold as fact.",
-                    stamp="fringe",
-                    parallel_status="miss",
-                    note="Parallel miss. Included and tagged fringe. Never sold as fact.",
-                    independent=MISSING,
-                    vested_interest=MISSING,
-                ),
-            ]
+    try:
+        findings = mint(packet, hit_rows, miss_rows, extracted, spine)
+    except FoundryHold as exc:
+        leftover.extend(
+            leftover_hit_exclusions(
+                hit_rows + miss_rows,
+                set(),
+                reason="other",
+                detail=str(exc),
+            )
+        )
+        return _foundry_outcome(packet, rails, leftover, hit_urls, spine, exc, [])
+    before_size = list(findings)
     findings = _size_live_findings(findings, packet)
+    try:
+        require_minted(findings, spine or packet.research_pack or "")
+    except FoundryHold as exc:
+        leftover.extend(
+            leftover_hit_exclusions(
+                hit_rows + miss_rows,
+                set(),
+                reason="other",
+                detail=str(exc),
+            )
+        )
+        return _foundry_outcome(packet, rails, leftover, hit_urls, spine, exc, findings)
+    kept = {f.id for f in findings}
+    for dropped in before_size:
+        if dropped.id in kept:
+            continue
+        leftover.append(
+            Exclusion(
+                what=dropped.id,
+                reason="other",
+                detail=f"cut cap dropped {dropped.id}",
+                url=dropped.parallel_url,
+            )
+        )
     if not findings or not any(row.parallel_status == "hit" for row in findings):
         leftover.extend(
             leftover_hit_exclusions(
@@ -501,6 +628,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
                 task_spec=_ENRICH_SPEC,
             )
             _apply_enrichment(findings, enrich)
+            sanitize_stamps(findings)
         except ParallelDownError:
             leftover.append(
                 Exclusion(
@@ -509,6 +637,10 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
                     detail="Enrichment Task down. Stamps stay missing. No invented citation.",
                 )
             )
+        except Exception as exc:
+            if not _parallel_credit(exc):
+                raise
+            return _credit_hold(packet, hit_urls, leftover, "Live Parallel enrichment task")
     if _wants_entities(packet):
         try:
             ents = entity_search(
@@ -638,11 +770,17 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                     detail=receipt.hold_reason or "Receipt HOLD. No invented source.",
                 )
             ]
+        if "credit" in (receipt.hold_reason or "").lower() or "402" in (
+            receipt.hold_reason or ""
+        ):
+            fresh.collision_hold_reason = (
+                "warning, not a clearance. Parallel credit. "
+                "Never collision=no without a search of the finished VO."
+            )
         write_research_pack(fresh, hit_urls=hit_urls)
         store.upsert_packet(fresh)
         return fresh
 
-    receipt.findings = replace_leftover_slots(fresh, receipt.findings, hit_urls=hit_urls)
     try:
         write_receipt(fresh, receipt)
     except ReceiptInvalidError as exc:

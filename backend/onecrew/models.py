@@ -170,6 +170,8 @@ class Finding(BaseModel):
     propaganda_url: str | None = None
     propaganda_issuer: str = MISSING
     when: str = ""
+    series: str = MISSING
+    print: str = MISSING
 
 
 class CausalLink(BaseModel):

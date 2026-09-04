@@ -360,24 +360,36 @@ def test_when_month_must_sit_next_to_its_year() -> None:
 
 
 def test_foundry_three_bar_gdp_holds_when_cites_have_q1_q2_pair() -> None:
-    from onecrew.foundry import foundry_findings
+    """Three-bar GDP claim vs two-bar cite bag → HOLD; findings kept."""
+    from onecrew.models import Finding
 
-    packet = Packet(
-        id="oc-foundry-gdp-gate",
-        hook="Are we near recession?",
-        script="",
-        topic="Are we near recession?",
-        research_pack=(
-            "USREC July 2026 = 0. Nonfarm payrolls −23k. "
-            "GDP printed 0.5, then 2.1, then 1.5.\n"
-            f"{FRED}\n{BLS}\n{BEA}"
+    findings = [
+        Finding(
+            id="gdp-three-bar",
+            when="Q2 2026",
+            claim="GDP printed 0.5 / 2.1 / 1.5.",
+            stamp="grounded",
+            title="BEA GDP",
+            parallel_url=BEA,
+            parallel_status="hit",
+            note="Three bars must not pass a Q1/Q2 two-bar cite bag.",
         ),
-        task_spine="USREC July 2026 = 0. Nonfarm payrolls −23k. GDP 0.5/2.1/1.5.",
-    )
-    findings = foundry_findings(packet, hit_urls=[FRED, BLS, BEA])
-    receipt = Receipt(packet_id=packet.id, written=False, disposition="READY", findings=findings)
+        Finding(
+            id="usrec-july-2026",
+            when="July 2026",
+            claim="USREC=0.",
+            stamp="grounded",
+            title="FRED USREC",
+            parallel_url=FRED,
+            parallel_status="hit",
+            note="kept on HOLD",
+        ),
+    ]
+    receipt = Receipt(packet_id="oc-foundry-gdp-gate", written=False, disposition="READY", findings=findings)
     held = apply_verify_gate(receipt, _good_bag())
     assert held.disposition == "HOLD"
     assert held.findings == findings
     assert held.findings != []
     assert "gdp" in (held.hold_reason or "").lower()
+
+

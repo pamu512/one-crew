@@ -8,7 +8,7 @@ from onecrew import config
 from onecrew.cut import frame_count, require_cut
 from onecrew.imagen_client import ImagenDownError, generate_frames
 from onecrew.models import MISSING, Finding, Packet, Rails, ScriptBeat, ShotFrame
-from onecrew.parallel_client import ParallelDownError, search
+from onecrew.parallel_client import search
 from onecrew.tell import invents_frame
 
 FOOTAGE_OBJECTIVE = (
@@ -34,7 +34,8 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
             last_scene = None
             continue
         rows = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
-        refs = [f.parallel_url for f in rows if f.parallel_url] or list(beat.finding_ids)
+        hole = "sahm hole" in f"{beat.vo} {beat.frame or ''}".lower() or "no matching url" in f"{beat.vo} {beat.frame or ''}".lower()
+        refs = [] if hole else ([f.parallel_url for f in rows if f.parallel_url] or list(beat.finding_ids))
         shot_no += 1
         key = True if short else (last_scene is None or beat.scene != last_scene or shot_no == 1)
         last_scene = beat.scene
@@ -133,14 +134,27 @@ def _shot_kind(line: str) -> str:
             "receipt board",
             "gulf map",
             "wall map",
+            "close card",
+            "board follows the pack",
+            "near is not a switch",
         )
     ):
         return "infographic"
     return "event"
 
 
+_CLOSE_CARD = ("close card", "board follows the pack", "near is not a switch")
+
+
+def _is_close_card(shot: ShotFrame) -> bool:
+    blob = f"{shot.shot} {shot.line or ''}".lower()
+    return any(key in blob for key in _CLOSE_CARD)
+
+
 def _allows_imagen(shot: ShotFrame, *, fiction: bool) -> bool:
     if shot.footage == "sourced":
+        return False
+    if _is_close_card(shot):
         return False
     if fiction:
         return True
@@ -151,53 +165,121 @@ def _url_ok(url: str | None) -> bool:
     return bool(url) and url.startswith(("http://", "https://"))
 
 
+_OFFICIAL_FOOTAGE = ("stlouisfed.org", "bls.gov", "bea.gov")
+
+
+def _official_series_url(url: str | None) -> bool:
+    low = (url or "").lower()
+    return bool(url) and any(host in low for host in _OFFICIAL_FOOTAGE)
+
+
+_EMPSIT = re.compile(r"empsit_(\d{2})(\d{2})(\d{4})", re.I)
+_MONTH_NUM = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+
+def _when_month_year(when: str) -> tuple[int, int] | None:
+    match = re.search(
+        r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})",
+        when or "",
+        re.I,
+    )
+    if not match:
+        return None
+    return _MONTH_NUM[match.group(1).lower()], int(match.group(2))
+
+
+def _empsit_ok(url: str, when: str) -> bool:
+    stamp = _EMPSIT.search(url or "")
+    if not stamp:
+        return True
+    data = _when_month_year(when)
+    if data is None:
+        return False
+    rel_m, rel_y = int(stamp.group(1)), int(stamp.group(3))
+    month, year = data
+    month += 1
+    if month == 13:
+        month, year = 1, year + 1
+    return (rel_m, rel_y) == (month, year)
+
+
+def _is_hole_shot(shot: ShotFrame) -> bool:
+    blob = f"{shot.shot} {shot.line or ''}".lower()
+    return "sahm hole" in blob or "no matching url" in blob
+
+
+def _cited_official_url(shot: ShotFrame, packet: Packet | None) -> str | None:
+    if _is_hole_shot(shot):
+        return None
+    findings = list(packet.receipt.findings) if packet and packet.receipt else []
+    by_id = {f.id: f for f in findings}
+    by_url = {f.parallel_url: f for f in findings if f.parallel_url}
+    for ref in shot.source_refs or []:
+        if _official_series_url(ref):
+            finding = by_url.get(ref)
+            when = (finding.when or "") if finding else ""
+            if "empsit_" in ref.lower() and not _empsit_ok(ref, when):
+                continue
+            return ref
+        if ref in by_id:
+            finding = by_id[ref]
+            url = finding.parallel_url
+            if _official_series_url(url) and _empsit_ok(url or "", finding.when or ""):
+                return url
+    return None
+
+
+def _ban_missing_event(shots: list[ShotFrame], packet: Packet | None) -> None:
+    fiction = invents_frame(cut=packet.cut, tell=packet.tell or "") if packet else False
+    if fiction:
+        return
+    for shot in shots:
+        if shot.footage == MISSING and shot.kind == "event":
+            shot.kind = "infographic"
+
+
 def prefer_footage(shots: list[ShotFrame], rails: Rails, packet: Packet | None = None) -> bool:
-    """Search Parallel for existing pictures. Not a license. Not a collision/script check."""
+    """Bind cited official finding URLs. Search must not override vintage."""
     if not rails.parallel:
         for shot in shots:
             shot.footage = MISSING
             shot.footage_url = None
             shot.footage_title = MISSING
+        _ban_missing_event(shots, packet)
         return False
-    searched = False
-    try:
-        for shot in shots:
-            queries = [
-                _footage_query(shot.shot, packet) if packet is not None else shot.shot,
-                _footage_query(shot.line or "", packet) if packet is not None else (shot.line or shot.beat_id),
-            ]
-            result = search(
-                objective=FOOTAGE_OBJECTIVE,
-                search_queries=[q for q in queries if q] or [shot.beat_id],
-            )
-            searched = True
-            rows = list(getattr(result, "results", None) or [])
-            url = None
-            title = ""
-            for row in rows:
-                candidate = getattr(row, "url", None)
-                if _url_ok(candidate):
-                    url = candidate
-                    title = (getattr(row, "title", None) or "").strip()
-                    break
-            if url:
-                shot.footage = "sourced"
-                shot.footage_url = url
-                shot.footage_title = title or MISSING
-                shot.imagen = False
-                shot.image_href = ""
-            else:
-                shot.footage = MISSING
-                shot.footage_url = None
-                shot.footage_title = MISSING
-    except ParallelDownError:
-        for shot in shots:
-            if shot.footage != "sourced":
-                shot.footage = MISSING
-                shot.footage_url = None
-                shot.footage_title = MISSING
-        return False
-    return searched
+    fiction = invents_frame(cut=packet.cut, tell=packet.tell or "") if packet else False
+    for shot in shots:
+        if fiction or _is_close_card(shot) or _is_hole_shot(shot):
+            shot.footage = MISSING
+            shot.footage_url = None
+            shot.footage_title = MISSING
+            continue
+        bound = _cited_official_url(shot, packet)
+        if bound:
+            shot.footage = "sourced"
+            shot.footage_url = bound
+            shot.footage_title = MISSING
+            shot.imagen = False
+            shot.image_href = ""
+            continue
+        shot.footage = MISSING
+        shot.footage_url = None
+        shot.footage_title = MISSING
+    _ban_missing_event(shots, packet)
+    return True
 
 
 def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> list[ShotFrame]:
@@ -249,6 +331,7 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
         if shot.imagen:
             shot.footage = "imagen"
         spent += 1
+    _ban_missing_event(shots, packet)
     return shots
 
 

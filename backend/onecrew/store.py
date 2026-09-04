@@ -12,6 +12,15 @@ from onecrew.models import Packet, ShiftRecord
 
 log = logging.getLogger("onecrew.store")
 
+_HORMUZ_ID = "oc-hormuz-decade"
+
+
+def _is_recession_live(packet: Packet) -> bool:
+    if packet.id in {config.SEED_PACKET_ID, _HORMUZ_ID}:
+        return False
+    blob = f"{packet.topic} {packet.hook} {packet.script} {packet.tell}".lower()
+    return "recession" in blob or "usrec" in blob
+
 
 class PacketStore:
     """Packet store. Memory is enough when min-instances=1.
@@ -114,8 +123,19 @@ class PacketStore:
             rows = [Packet.model_validate(d.to_dict()) for d in self._col("packets").stream()]
         else:
             rows = [Packet.model_validate(v) for v in self._mem_packets.values()]
-        rows.sort(key=lambda p: (p.id != config.SEED_PACKET_ID, p.id))
-        return rows
+        live = sorted(
+            [p for p in rows if _is_recession_live(p) and (p.script or "").strip()],
+            key=lambda p: p.id,
+            reverse=True,
+        )
+        seed = [p for p in rows if p.id == config.SEED_PACKET_ID]
+        rest = [
+            p
+            for p in rows
+            if p.id not in {config.SEED_PACKET_ID, _HORMUZ_ID} and p not in live
+        ]
+        leftover = [p for p in rows if p.id == _HORMUZ_ID]
+        return live + seed + rest + leftover
 
     def replace_packets(self, packets: list[Packet]) -> None:
         if self.backend == "firestore" and self._client is not None:

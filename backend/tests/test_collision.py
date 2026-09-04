@@ -105,6 +105,9 @@ def test_empty_script_does_not_search(monkeypatch) -> None:
     stamp_collisions(packet, Rails(parallel=True, vertex=True, imagen=True))
     assert packet.collision_disposition == "HOLD"
     assert packet.collisions == []
+    reason = (packet.collision_hold_reason or "").lower()
+    assert "parallel missing" not in reason
+    assert "warning" in reason
 
 
 def test_parallel_hit_stamps_collision_yes_findings_unchanged(monkeypatch) -> None:
@@ -221,3 +224,107 @@ def test_floor_shows_collision_never_clears_copyright() -> None:
         assert "collision" in page.text.lower()
         bare = client.post("/api/shifts", json={"topic": "Hormuz"})
         assert bare.status_code == 403
+
+
+def test_collision_fred_translate_goog_is_citation(monkeypatch) -> None:
+    wrapped = "https://fred-stlouisfed-org.translate.goog/series/USREC"
+
+    def search(*, objective, search_queries):
+        return _Result(
+            [
+                _Row(
+                    url=wrapped,
+                    title="USREC",
+                    excerpts=["USREC=0 (July 2026) smashed into payrolls −23k."],
+                )
+            ]
+        )
+
+    monkeypatch.setattr("onecrew.collision.search", search)
+    packet = seed_first_open()
+    write_script(packet)
+    stamp_collisions(packet, Rails(parallel=True, vertex=False, imagen=False))
+    for beat in packet.beats:
+        if (beat.kind or "vo") != "vo":
+            continue
+        assert beat.collision != "yes"
+        assert beat.collision_kind != "same_script"
+        assert beat.collision_url != wrapped
+        assert beat.collision == "no"
+    assert packet.collision_disposition == "HOLD"
+    assert "warning" in (packet.collision_hold_reason or "").lower()
+
+
+def test_collision_wikipedia_sahm_is_not_same_script(monkeypatch) -> None:
+    wiki = "https://en.wikipedia.org/wiki/Sahm_rule"
+
+    def search(*, objective, search_queries):
+        return _Result(
+            [_Row(url=wiki, title="Sahm rule", excerpts=["Sahm −0.03 vs the 0.50 trigger."])]
+        )
+
+    monkeypatch.setattr("onecrew.collision.search", search)
+    packet = seed_first_open()
+    write_script(packet)
+    stamp_collisions(packet, Rails(parallel=True, vertex=False, imagen=False))
+    for beat in packet.beats:
+        if (beat.kind or "vo") != "vo":
+            continue
+        assert beat.collision_kind != "same_script"
+        assert beat.collision != "yes"
+        assert beat.collision_url != wiki
+    assert packet.collision_disposition == "HOLD"
+
+
+def test_collision_new_republic_labour_is_not_labor_print(monkeypatch) -> None:
+    nr = "https://newrepublic.com/article/uk-labour-party"
+
+    def search(*, objective, search_queries):
+        return _Result(
+            [
+                _Row(
+                    url=nr,
+                    title="UK Labour Party",
+                    excerpts=["Labor: payrolls −23k and unemployment 4.1%. Named BLS."],
+                )
+            ]
+        )
+
+    monkeypatch.setattr("onecrew.collision.search", search)
+    packet = seed_first_open()
+    write_script(packet)
+    stamp_collisions(packet, Rails(parallel=True, vertex=False, imagen=False))
+    labor = next(b for b in packet.beats if b.id == "labor")
+    assert labor.collision != "yes"
+    assert labor.collision_kind != "same_script"
+    assert labor.collision_url != nr
+    assert labor.collision == "no"
+    assert packet.collision_disposition == "HOLD"
+
+
+def test_collision_disposition_hold_when_no_media_match(monkeypatch) -> None:
+    def search(*, objective, search_queries):
+        return _Result(
+            [
+                _Row(
+                    url="https://fred.stlouisfed.org/series/USREC",
+                    title="USREC",
+                    excerpts=["USREC=0"],
+                ),
+                _Row(
+                    url="https://www.congress.gov/crs-product/recession",
+                    title="Defining Recession",
+                    excerpts=["Defining Recession"],
+                ),
+            ]
+        )
+
+    monkeypatch.setattr("onecrew.collision.search", search)
+    packet = seed_first_open()
+    write_script(packet)
+    stamp_collisions(packet, Rails(parallel=True, vertex=False, imagen=False))
+    assert packet.collision_disposition == "HOLD"
+    assert packet.collision_disposition != "READY"
+    assert all(b.collision == "no" for b in packet.beats if (b.kind or "vo") == "vo")
+    assert "warning" in (packet.collision_hold_reason or "").lower()
+    assert "clearance" in (packet.collision_hold_reason or "").lower()

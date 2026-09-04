@@ -23,10 +23,16 @@ def generate_script(prompt: str) -> str:
         project=project,
         location=config.GOOGLE_CLOUD_LOCATION,
     )
-    result = client.models.generate_content(
-        model=config.GEMINI_MODEL,
-        contents=prompt,
-    )
+    try:
+        result = client.models.generate_content(
+            model=config.GEMINI_MODEL,
+            contents=prompt,
+        )
+    except Exception as exc:
+        name = type(exc).__name__
+        if "ClientError" in name or "NotFound" in name or "404" in str(exc):
+            raise VertexDownError(f"Vertex generate_content down: {exc}") from exc
+        raise
     text = (getattr(result, "text", None) or "").strip()
     if not text:
         for candidate in getattr(result, "candidates", None) or []:

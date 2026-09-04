@@ -102,6 +102,8 @@ def recession_fixture() -> Packet:
                 claim="USREC=0 (July 2026).",
                 stamp="grounded",
                 title="USREC",
+                series="USREC",
+                print="0",
                 parallel_url=FRED_USREC,
                 parallel_status="hit",
                 note="Parallel URL on this row.",
@@ -112,6 +114,8 @@ def recession_fixture() -> Packet:
                 claim="Nonfarm payrolls fell −23k.",
                 stamp="grounded",
                 title="BLS payrolls",
+                series="BLS payrolls",
+                print="−23k",
                 parallel_url=BLS_PAYROLLS,
                 parallel_status="hit",
                 note="Parallel URL on this row.",
@@ -122,6 +126,8 @@ def recession_fixture() -> Packet:
                 claim="Unemployment is 4.1%.",
                 stamp="grounded",
                 title="BLS unemployment",
+                series="U-3",
+                print="4.1%",
                 parallel_url=BLS_UNEMP,
                 parallel_status="hit",
                 note="Parallel URL on this row.",
@@ -132,6 +138,8 @@ def recession_fixture() -> Packet:
                 claim="GDP printed 0.5, then 2.1, then 1.5.",
                 stamp="grounded",
                 title="BEA GDP",
+                series="GDP",
+                print="0.5 / 2.1 / 1.5",
                 parallel_url=BEA_GDP,
                 parallel_status="hit",
                 note="Parallel URL on this row.",
@@ -142,6 +150,8 @@ def recession_fixture() -> Packet:
                 claim="Sahm is −0.03 vs the 0.50 trigger.",
                 stamp="grounded",
                 title="Sahm rule",
+                series="SAHMREALTIME",
+                print="−0.03",
                 parallel_url=FRED_SAHM,
                 parallel_status="hit",
                 note="Parallel URL on this row. NBER dates the cycle; FRED hosts the series.",
@@ -317,7 +327,7 @@ def test_live_shaped_post_unique_packet_id_is_stored(monkeypatch) -> None:
     pid = "oc-are-we-near-recession-cf47test"
     excerpts = [
         "USREC=0 (July 2026).",
-        "Nonfarm payrolls fell −23k.",
+        "Nonfarm payrolls fell −23k in July 2026.",
         "Sahm is −0.03 vs the 0.50 trigger.",
         "GDP printed 0.5, then 2.1, then 1.5.",
     ]
@@ -325,14 +335,37 @@ def test_live_shaped_post_unique_packet_id_is_stored(monkeypatch) -> None:
     def search(*, objective, search_queries):
         blob = f"{objective} {' '.join(search_queries)}".lower()
         if "hidden" in blob or "fringe" in blob:
-            return SimpleNamespace(results=[])
+            return SimpleNamespace(
+                results=[
+                    SimpleNamespace(
+                        url="https://example.com/hidden-treaty",
+                        title="Hidden treaty",
+                        excerpts=["Secret double-dip already started in May."],
+                    )
+                ]
+            )
         return SimpleNamespace(
             results=[
                 SimpleNamespace(
                     url="https://fred.stlouisfed.org/series/USREC",
                     title="USREC",
-                    excerpts=excerpts,
-                )
+                    excerpts=["USREC=0 (July 2026)."],
+                ),
+                SimpleNamespace(
+                    url="https://www.bls.gov/news.release/empsit.nr0.htm",
+                    title="Employment Situation",
+                    excerpts=["Nonfarm payrolls fell −23k in July 2026."],
+                ),
+                SimpleNamespace(
+                    url="https://www.bea.gov/data/gdp/gross-domestic-product",
+                    title="BEA GDP",
+                    excerpts=["GDP printed 0.5, then 2.1, then 1.5."],
+                ),
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+                    title="SAHMREALTIME",
+                    excerpts=["Sahm is −0.03 vs the 0.50 trigger."],
+                ),
             ]
         )
 
@@ -351,7 +384,7 @@ def test_live_shaped_post_unique_packet_id_is_stored(monkeypatch) -> None:
     def task(*, prompt, processor="pro", task_spec=None):
         return SimpleNamespace(
             output=SimpleNamespace(
-                content="USREC=0 smashed into payrolls −23k. Sahm −0.03 vs 0.50.",
+                content="USREC July 2026 = 0. Nonfarm payrolls fell −23k in July 2026. GDP printed 0.5, then 2.1, then 1.5. Sahm −0.03 vs 0.50.",
                 basis=[],
             )
         )
@@ -417,14 +450,37 @@ def test_live_task_spine_mints_named_series_not_leftover_slots(monkeypatch) -> N
     def search(*, objective, search_queries):
         blob = f"{objective} {' '.join(search_queries)}".lower()
         if "hidden" in blob or "fringe" in blob:
-            return SimpleNamespace(results=[])
+            return SimpleNamespace(
+                results=[
+                    SimpleNamespace(
+                        url="https://example.com/hidden-treaty",
+                        title="Hidden treaty",
+                        excerpts=["Secret double-dip already started in May."],
+                    )
+                ]
+            )
         return SimpleNamespace(
             results=[
                 SimpleNamespace(
                     url="https://fred.stlouisfed.org/series/USREC",
                     title="USREC",
                     excerpts=["Federal Reserve Bank of St. Louis recession indicator."],
-                )
+                ),
+                SimpleNamespace(
+                    url="https://www.bls.gov/news.release/empsit.nr0.htm",
+                    title="Employment Situation",
+                    excerpts=["BLS Employment Situation release."],
+                ),
+                SimpleNamespace(
+                    url="https://www.bea.gov/data/gdp/gross-domestic-product",
+                    title="BEA GDP",
+                    excerpts=["BEA GDP release."],
+                ),
+                SimpleNamespace(
+                    url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+                    title="SAHMREALTIME",
+                    excerpts=["FRED Sahm rule series page."],
+                ),
             ]
         )
 
@@ -444,7 +500,7 @@ def test_live_task_spine_mints_named_series_not_leftover_slots(monkeypatch) -> N
         return SimpleNamespace(
             output=SimpleNamespace(
                 content=(
-                    "USREC July 2026 = 0. Nonfarm payrolls −23k. "
+                    "USREC July 2026 = 0. Nonfarm payrolls −23k in July 2026. "
                     "GDP 0.5/2.1/1.5. Sahm −0.03 vs 0.50."
                 ),
                 basis=[],

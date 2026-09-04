@@ -24,7 +24,7 @@ from onecrew.tell import tell_examples_payload
 from onecrew.tone import tone_examples_payload
 from onecrew.floor import FLOOR_HTML
 from onecrew.rails import assess_rails
-from onecrew.seed import ensure_seeded, reset_floor
+from onecrew.seed import reset_floor
 from onecrew.spend import ledger
 from onecrew.store import store
 
@@ -33,8 +33,7 @@ log = logging.getLogger("onecrew.api")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    ensure_seeded()
-    log.info("Seeded oc-recession-july-2026 (no Parallel, no Imagen)")
+    log.info("Floor first-open is empty HOLD until a live POST")
     yield
 
 
@@ -141,11 +140,7 @@ def list_tone_examples() -> dict[str, Any]:
 
 @app.get("/api/packets")
 def list_packets() -> dict[str, Any]:
-    packets = store.list_packets()
-    if not packets:
-        ensure_seeded()
-        packets = store.list_packets()
-    return {"packets": [p.model_dump() for p in packets]}
+    return {"packets": [p.model_dump() for p in store.list_packets()]}
 
 
 @app.get("/api/packets/{packet_id}")

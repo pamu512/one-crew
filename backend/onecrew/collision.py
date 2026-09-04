@@ -8,7 +8,23 @@ from onecrew.parallel_client import ParallelDownError, search
 _CITE = re.compile(r"\[[a-z0-9-]+\]")
 _FRAME_NAME = re.compile(r"\b(Leila|Reza)\b", re.I)
 _SPACE = re.compile(r"\s+")
-_SERIES_HOSTS = ("fred.stlouisfed.org", "bls.gov", "bea.gov")
+_SERIES_HOSTS = (
+    "fred.stlouisfed.org",
+    "stlouisfed.org",
+    "bls.gov",
+    "bea.gov",
+    "cbo.gov",
+    "conference-board.org",
+    "ismworld.org",
+    "nber.org",
+    "congress.gov",
+    "wikipedia.org",
+)
+_MEDIA_HOSTS = ("youtube.com", "youtu.be", "vimeo.com")
+_WARN_REASON = (
+    "warning, not a clearance. Citation pages and news hits are not colliding narration. "
+    "The floor does not post."
+)
 
 COLLISION_OBJECTIVE = (
     "Find existing YouTube videos, documentaries, news packages, or films "
@@ -27,9 +43,20 @@ def _url_ok(url: str | None) -> bool:
 
 
 def _is_series_citation(url: str | None) -> bool:
-    """FRED / BLS / BEA series pages are citations, not colliding media."""
+    """Official series / encyclopedia / CRS pages are citations, not colliding media."""
     low = (url or "").lower()
-    return any(host in low for host in _SERIES_HOSTS)
+    if any(host in low for host in _SERIES_HOSTS):
+        return True
+    if "translate.goog" in low and any(
+        token in low for token in ("fred", "stlouisfed", "bls", "bea", "nber", "cbo")
+    ):
+        return True
+    return False
+
+
+def _is_media(url: str | None, title: str = "") -> bool:
+    blob = f"{url or ''} {title or ''}".lower()
+    return any(host in blob for host in _MEDIA_HOSTS) or "documentary" in blob
 
 
 def _clear_beat(beat: ScriptBeat) -> None:
@@ -106,6 +133,13 @@ def _apply_hit(beat: ScriptBeat, url: str, title: str, excerpts: list[str], quer
 def stamp_collisions(packet: Packet, rails: Rails) -> Packet:
     """Search existing media after VO exists. Do not rewrite the VO. Do not drop beats."""
     if not packet.script.strip() or not packet.beats:
+        if rails.parallel:
+            for beat in packet.beats:
+                _clear_beat(beat)
+            packet.collisions = []
+            packet.collision_disposition = "HOLD"
+            packet.collision_hold_reason = _WARN_REASON
+            return packet
         return hold_collisions(packet)
     if not rails.parallel:
         return hold_collisions(packet)
@@ -136,11 +170,17 @@ def stamp_collisions(packet: Packet, rails: Rails) -> Packet:
             excerpts: list[str] = []
             for row in rows:
                 candidate = getattr(row, "url", None)
-                if _url_ok(candidate) and not _is_series_citation(candidate):
-                    url = candidate
-                    title = getattr(row, "title", None) or ""
-                    excerpts = [str(x) for x in (getattr(row, "excerpts", None) or [])]
-                    break
+                row_title = getattr(row, "title", None) or ""
+                if not _url_ok(candidate) or _is_series_citation(candidate):
+                    continue
+                if not _is_media(candidate, row_title):
+                    continue
+                excerpts = [str(x) for x in (getattr(row, "excerpts", None) or [])]
+                if not _same_script(query, excerpts):
+                    continue
+                url = candidate
+                title = row_title
+                break
             cached[query] = (url, title, excerpts)
             if url:
                 hits.append(_apply_hit(beat, url, title, excerpts, query))
@@ -151,7 +191,17 @@ def stamp_collisions(packet: Packet, rails: Rails) -> Packet:
             beat.collision_kind = MISSING
     except ParallelDownError:
         return hold_collisions(packet)
-    packet.collisions = hits
-    packet.collision_disposition = "READY"
-    packet.collision_hold_reason = None
+    media_same = any(
+        beat.collision == "yes" and beat.collision_kind == "same_script"
+        for beat in packet.beats
+        if (beat.kind or "vo") == "vo"
+    )
+    if media_same:
+        packet.collisions = hits
+        packet.collision_disposition = "READY"
+        packet.collision_hold_reason = _WARN_REASON
+        return packet
+    packet.collisions = []
+    packet.collision_disposition = "HOLD"
+    packet.collision_hold_reason = _WARN_REASON
     return packet

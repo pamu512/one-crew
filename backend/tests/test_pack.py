@@ -179,10 +179,22 @@ def test_live_extra_parallel_hit_is_excluded(monkeypatch) -> None:
     def research_search(*, objective, search_queries):
         blob = f"{objective} {' '.join(search_queries)}".lower()
         if "hidden" in blob or "fringe" in blob:
-            return SimpleNamespace(results=[])
+            return SimpleNamespace(
+                results=[
+                    SimpleNamespace(
+                        url="https://example.com/fringe-miss",
+                        title="Fringe miss",
+                        excerpts=["Secret navy treaty already mined the strait shut."],
+                    )
+                ]
+            )
         return SimpleNamespace(
             results=[
-                SimpleNamespace(url=kept, title="Kept hit"),
+                SimpleNamespace(
+                    url=kept,
+                    title="Kept hit",
+                    excerpts=["Hormuz tanker transits printed 23% below 2023 in March 2024."],
+                ),
                 SimpleNamespace(url=extra, title="Extra hit"),
             ]
         )
@@ -195,7 +207,10 @@ def test_live_extra_parallel_hit_is_excluded(monkeypatch) -> None:
     monkeypatch.setattr(
         "onecrew.agent.shift.run_task",
         lambda **_k: SimpleNamespace(
-            output=SimpleNamespace(content="Task spine.", basis=[])
+            output=SimpleNamespace(
+                content="Hormuz tanker transits printed 23% below 2023 in March 2024. Task spine.",
+                basis=[],
+            )
         ),
     )
     monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
