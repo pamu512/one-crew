@@ -45,7 +45,8 @@ _MONTH_NAMES = {n: [k for k, v in _MONTHS.items() if v == n] for n in range(1, 1
 _MONTH_RE = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _FALL = re.compile(r"\b(fell|declined|dropped|lost|decreased|down)\b", re.I)
 _REV = re.compile(r"revised\b.{0,80}from\s+[+\-−]\d", re.I | re.S)
-_CES = re.compile(r"payroll|nonfarm|ces\b|employment situation|empsit", re.I)
+_CES = re.compile(r"nonfarm|ces\b|employment situation|empsit|payroll employment|\bpayrolls\b", re.I)
+_NAICS_LEVEL = re.compile(r"\bnaics\b|payroll services|employment level", re.I)
 _UNEMP = re.compile(r"unemployment|u-3|\bu3\b", re.I)
 _SAHM = re.compile(r"\bsahm\b", re.I)
 _FORECAST_RE = re.compile(r"\b(?:spf|cei)\b|disposable|final sales", re.I)
@@ -198,7 +199,16 @@ def _bad_window(text: str) -> bool:
 
 
 def _ces_chunks(bag: CiteBag) -> list[str]:
-    return [chunk for chunk in (*(e.text for e in bag.excerpts), bag.spine or "") if _CES.search(chunk or "")]
+    out: list[str] = []
+    for chunk in (*(e.text for e in bag.excerpts), bag.spine or ""):
+        if not _CES.search(chunk or ""):
+            continue
+        if _NAICS_LEVEL.search(chunk or "") and not re.search(
+            r"nonfarm|employment situation|\bces\b|payroll employment", chunk or "", re.I
+        ):
+            continue
+        out.append(chunk)
+    return out
 
 
 def _year_adjacent_month(text: str, year: int, month: int) -> bool:
@@ -344,9 +354,19 @@ def verify_print_in_cite(claim: Claim, bag: CiteBag) -> VerifyResult:
 def verify_payrolls_realized_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     if claim.series != "BLS payrolls":
         return VerifyResult(ok=True, reason=None)
+    bag_blob = _bag_text(bag)
+    cite = _cite_text(claim, bag)
+    window = f"{cite}\n{bag_blob}"
+    if _NAICS_LEVEL.search(window) and not re.search(
+        r"nonfarm payroll|employment situation|\bces\b", window, re.I
+    ):
+        return VerifyResult(ok=False, reason="naics employment level")
+    if _NAICS_LEVEL.search(claim.claim_span or "") and not re.search(
+        r"nonfarm payroll|employment situation|\bces\b", claim.claim_span or "", re.I
+    ):
+        return VerifyResult(ok=False, reason="naics employment level")
     parsed = _parse_when(claim.when)
     chunks = _ces_chunks(bag)
-    cite = _cite_text(claim, bag)
     realized: list[str] = []
     for chunk in chunks:
         if _bad_window(chunk) or not _has_realized_print(chunk):

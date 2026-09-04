@@ -116,6 +116,14 @@ def _named_prints(packet: Packet) -> list[Finding]:
     return rows
 
 
+def _live_findings(packet: Packet) -> list[Finding]:
+    """Writer never opens on leftover 3-slot ids."""
+    receipt = packet.receipt
+    if not receipt:
+        return []
+    return [f for f in receipt.findings if f.id not in _LEFTOVER_IDS]
+
+
 def _cite(finding: Finding | None) -> str:
     return f" [{finding.id}]" if finding else ""
 
@@ -344,8 +352,19 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             },
             {
                 "id": "gdp",
-                "vo": _voice(f"{_gdp_lines(_print_of(gdp, ''))[0]}{_cite(gdp)}", packet),
-                "eyes": _gdp_lines(_print_of(gdp, ""))[1],
+                "vo": _voice(
+                    (
+                        f"{_gdp_lines(_print_of(gdp, ''))[0]}{_cite(gdp)}"
+                        if gdp
+                        else "GDP hole named. No matching URL. Hold."
+                    ),
+                    packet,
+                ),
+                "eyes": (
+                    _gdp_lines(_print_of(gdp, ""))[1]
+                    if gdp
+                    else "GDP hole named. No matching URL."
+                ),
                 "finding_ids": [gdp.id] if gdp else [],
             },
             {
@@ -404,19 +423,31 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             },
         ]
     else:
-        findings = list(packet.receipt.findings) if packet.receipt else []
+        findings = _live_findings(packet)
         named = _named_prints(packet)
         first = named[0] if named else (findings[0] if findings else None)
-        second = named[1] if len(named) > 1 else (named[0] if named else (findings[1] if len(findings) > 1 else first))
+        second = named[1] if len(named) > 1 else None
+        if second is None and first is not None:
+            second = next((f for f in findings if f is not first), None)
         third = named[2] if len(named) > 2 else first
-        if first and first.print not in {MISSING, "", None} and second and second is not first and second.print not in {MISSING, "", None}:
+        leftover_costume = {((first.series or "").lower() if first else ""), ((second.series or "").lower() if second else "")}
+        smash_ok = (
+            first is not None
+            and second is not None
+            and first is not second
+            and {first.series, second.series} == {"USREC", "BLS payrolls"}
+        )
+        if smash_ok:
             smash = f"{first.series}={first.print} smashed into {second.series} {second.print}."
             eyes = f"{first.series}={first.print} and {second.series} {second.print} on screen. Official series cards only."
-        elif first and first.print not in {MISSING, "", None}:
+        elif first and first.print not in {MISSING, "", None} and leftover_costume.isdisjoint({"hormuz", "jcpoa"}):
             smash = f"{first.series}={first.print}."
             eyes = f"{first.series}={first.print} on screen. Official series cards only."
+        elif first:
+            smash = (first.claim or packet.tell or packet.topic or "").strip()
+            eyes = "Cited print on screen. No leftover map."
         else:
-            smash = ""
+            smash = (packet.tell or packet.topic or "").strip()
             eyes = "Official series cards only."
         units = [
         {
@@ -462,7 +493,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             "id": "receipt",
             "vo": _voice("Receipt board: named series from the pack. Holes labeled.", packet),
             "eyes": "Receipt board. Named series. Holes labeled.",
-            "finding_ids": [f.id for f in findings[:4]],
+            "finding_ids": [f.id for f in findings[:4] if f.id not in _LEFTOVER_IDS],
         },
         {
             "id": "close",
@@ -524,7 +555,15 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             return _fail_closed(packet, ["LEI/ISM spoken without a cited beat"])
         if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in _pack_text(packet).lower():
             return _fail_closed(packet, ["invented leftover cast"])
-        pack_blob = _pack_text(packet).lower()
+        pack_blob = " ".join(
+            [
+                packet.research_pack or "",
+                packet.task_spine or "",
+                packet.topic or "",
+                packet.hook or "",
+                *(f.claim for f in _live_findings(packet)),
+            ]
+        ).lower()
         if "hormuz" not in pack_blob and "jcpoa" not in pack_blob:
             if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
                 return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
@@ -632,15 +671,20 @@ def write_script(packet: Packet) -> Packet:
         return _fail_closed(packet, ["empty pack"])
     if _GROUNDED_EVENT.search(text) and not _recession_pack(text):
         return _fail_closed(packet, ["leftover grounded-event template"])
-    if not _numbers_in(text):
+    fiction = _invents(packet)
+    if not fiction and not _numbers_in(text):
         return _fail_closed(packet, ["pack has no numbers"])
     usrec = _by_series(packet, "USREC")
     payrolls = _by_series(packet, "BLS payrolls", "payrolls")
-    if _notes_have_named_prints(text) and not (
-        usrec
-        and (usrec.print or "") in {"0", "1"}
-        and payrolls
-        and _payroll_print_ok(payrolls.print or "")
+    if (
+        not fiction
+        and _notes_have_named_prints(text)
+        and not (
+            usrec
+            and (usrec.print or "") in {"0", "1"}
+            and payrolls
+            and _payroll_print_ok(payrolls.print or "")
+        )
     ):
         return _fail_closed(packet, ["foundry dropped named series"])
     if (

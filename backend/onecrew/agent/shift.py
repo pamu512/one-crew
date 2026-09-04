@@ -29,6 +29,7 @@ from onecrew.receipt import (
     hold_receipt,
     write_receipt,
 )
+from onecrew.claimer import findings_from_claims, frame_findings, propose_claims
 from onecrew.foundry import FoundryHold, leftover_slot_ids, mint, require_minted, sanitize_stamps
 from onecrew.verify import apply_verify_gate, cite_bag_from_rows
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
@@ -336,6 +337,36 @@ _NAMED_SERIES = frozenset(
 )
 
 
+def _fringe_from_rows(miss_rows: list, used: set[str]) -> Finding | None:
+    """One Parallel miss. Never leftover 3-slot ids. Claimer path still needs hit+miss."""
+    for row in miss_rows or []:
+        title = (getattr(row, "title", None) or "").strip()
+        for excerpt in list(getattr(row, "excerpts", None) or []):
+            claim = str(excerpt).strip()
+            if not claim:
+                continue
+            fid = "frame-miss" if "frame-cite" in used else "cite-miss"
+            n = 2
+            base = fid
+            while fid in used or fid in leftover_slot_ids():
+                fid = f"{base}-{n}"
+                n += 1
+            return Finding(
+                id=fid,
+                claim=claim,
+                stamp="fringe",
+                title=title or MISSING,
+                series=MISSING,
+                print=MISSING,
+                parallel_url=None,
+                parallel_status="miss",
+                note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+                propaganda=MISSING,
+                propaganda_issuer=MISSING,
+            )
+    return None
+
+
 def _named_grounded(findings: list) -> bool:
     rows = findings or []
     if any(getattr(f, "id", "") in leftover_slot_ids() for f in rows):
@@ -551,9 +582,17 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         )
         if part
     )
+    bag = cite_bag_from_rows(
+        list(hit_rows) + list(getattr(extracted, "results", None) or []),
+        spine=spine,
+        hit_urls=list(dict.fromkeys((source_urls or []) + list(hit_urls or []))),
+    )
+    foundry_rows: list[Finding] = []
+    foundry_exc: FoundryHold | None = None
     try:
-        findings = mint(packet, hit_rows, miss_rows, extracted, spine)
+        foundry_rows = mint(packet, hit_rows, miss_rows, extracted, spine)
     except FoundryHold as exc:
+        foundry_exc = exc
         leftover.extend(
             leftover_hit_exclusions(
                 hit_rows + miss_rows,
@@ -562,33 +601,69 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
                 detail=str(exc),
             )
         )
-        return _foundry_outcome(packet, rails, leftover, hit_urls, spine, exc, [])
-    before_size = list(findings)
-    findings = _size_live_findings(findings, packet)
-    try:
-        require_minted(findings, spine or packet.research_pack or "")
-    except FoundryHold as exc:
-        leftover.extend(
-            leftover_hit_exclusions(
-                hit_rows + miss_rows,
-                set(),
-                reason="other",
-                detail=str(exc),
+    else:
+        before_size = list(foundry_rows)
+        foundry_rows = _size_live_findings(foundry_rows, packet)
+        try:
+            require_minted(foundry_rows, spine or packet.research_pack or "")
+        except FoundryHold as exc:
+            foundry_exc = exc
+            leftover.extend(
+                leftover_hit_exclusions(
+                    hit_rows + miss_rows,
+                    set(),
+                    reason="other",
+                    detail=str(exc),
+                )
             )
-        )
-        return _foundry_outcome(packet, rails, leftover, hit_urls, spine, exc, findings)
-    kept = {f.id for f in findings}
-    for dropped in before_size:
-        if dropped.id in kept:
-            continue
-        leftover.append(
-            Exclusion(
-                what=dropped.id,
-                reason="other",
-                detail=f"cut cap dropped {dropped.id}",
-                url=dropped.parallel_url,
+        kept = {f.id for f in foundry_rows}
+        for dropped in before_size:
+            if dropped.id in kept:
+                continue
+            leftover.append(
+                Exclusion(
+                    what=dropped.id,
+                    reason="other",
+                    detail=f"cut cap dropped {dropped.id}",
+                    url=dropped.parallel_url,
+                )
             )
+    # Claimer is READY authority when verify says ok. Foundry is a v1 candidate only.
+    claims = propose_claims(bag, packet)
+    claimer_rows = findings_from_claims(claims, bag)
+    used = {f.id for f in claimer_rows}
+    fringe = _fringe_from_rows(miss_rows, used)
+    if fringe and claimer_rows:
+        claimer_rows = list(claimer_rows) + [fringe]
+    fiction = invents_frame(cut=packet.cut, tell=packet.tell or "")
+    claimer_ready = False
+    if claimer_rows:
+        probed = apply_verify_gate(
+            Receipt(
+                packet_id=packet.id,
+                written=False,
+                findings=claimer_rows,
+                causal_links=[],
+                disposition="READY",
+            ),
+            bag,
         )
+        claimer_ready = probed.disposition == "READY"
+    if claimer_ready:
+        findings = claimer_rows
+    elif fiction:
+        findings = frame_findings(hit_rows, miss_rows, packet)
+    elif foundry_rows and not any(
+        f.id in leftover_slot_ids() for f in foundry_rows if f.stamp == "grounded"
+    ):
+        findings = foundry_rows
+    elif claimer_rows:
+        findings = claimer_rows
+    elif foundry_exc is not None:
+        return _foundry_outcome(packet, rails, leftover, hit_urls, spine, foundry_exc, foundry_rows)
+    else:
+        findings = foundry_rows
+    findings = [row for row in findings if row.id not in leftover_slot_ids()]
     if not findings or not any(row.parallel_status == "hit" for row in findings):
         leftover.extend(
             leftover_hit_exclusions(
@@ -598,12 +673,15 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
                 detail="Parallel hit did not become a finding. Not silently dropped.",
             )
         )
-        return (
-            hold_receipt(packet.id, rails.model_copy(update={"parallel": False})),
-            leftover,
-            hit_urls,
-            spine,
-        )
+        if fiction:
+            findings = frame_findings(hit_rows, miss_rows, packet)
+        if not findings or not any(row.parallel_status == "hit" for row in findings):
+            return (
+                hold_receipt(packet.id, rails.model_copy(update={"parallel": False})),
+                leftover,
+                hit_urls,
+                spine,
+            )
     kept_urls = {f.parallel_url for f in findings if f.parallel_url}
     leftover.extend(
         leftover_hit_exclusions(
@@ -641,6 +719,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             if not _parallel_credit(exc):
                 raise
             return _credit_hold(packet, hit_urls, leftover, "Live Parallel enrichment task")
+    sanitize_stamps(findings)
     if _wants_entities(packet):
         try:
             ents = entity_search(
@@ -666,11 +745,6 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             )
     # ponytail: live causal_links stay empty unless Parallel sourced a this-led-to-that URL.
     # Seed shows one missing link; do not invent a 40-year chain here.
-    bag = cite_bag_from_rows(
-        list(hit_rows) + list(getattr(extracted, "results", None) or []),
-        spine=spine,
-        hit_urls=list(dict.fromkeys((source_urls or []) + list(hit_urls or []))),
-    )
     receipt = apply_verify_gate(
         Receipt(
             packet_id=packet.id,
@@ -784,11 +858,23 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     try:
         write_receipt(fresh, receipt)
     except ReceiptInvalidError as exc:
-        held = hold_receipt(fresh.id, rails)
-        prior = (held.hold_reason or "").strip()
-        held.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
-        write_receipt(fresh, held)
-        write_script(fresh)
+        sanitize_stamps(list(receipt.findings or []))
+        receipt.disposition = "HOLD"
+        prior = (receipt.hold_reason or "").strip()
+        receipt.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
+        receipt.written = False
+        try:
+            write_receipt(fresh, receipt)
+        except ReceiptInvalidError:
+            receipt.written = True
+            receipt.packet_id = fresh.id
+            fresh.receipt = receipt
+            fresh.status = "hold"
+        if receipt.findings:
+            fresh.script = ""
+            fresh.beats = []
+        else:
+            write_script(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
         fresh.exclusions = _hold_account_hits(hit_urls, list(leftover or []))
