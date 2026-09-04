@@ -10,6 +10,7 @@ from onecrew.verify import (
     Claim,
     CiteBag,
     CiteExcerpt,
+    _url_in,
     apply_verify_gate,
     claims_from_findings,
     verify_claim_set,
@@ -433,5 +434,182 @@ def test_claims_from_findings_reads_finding_print_and_when_not_blob() -> None:
     usrec = next(c for c in claims if c.series == "USREC")
     assert usrec.print == "0"
     assert usrec.when.lower() == "july 2026"
+
+
+def test_unicode_minus_print_matches_bare_digits_in_cite_and_spine() -> None:
+    """Finding.print −23,000 matches ASCII / bare digits in excerpt or spine."""
+    claim = Claim(
+        series="BLS payrolls",
+        print="−23,000",
+        when="July 2026",
+        id="payrolls-july-2026",
+        cite_url=BLS,
+    )
+    excerpt_bag = _bag(
+        excerpts=[
+            (
+                BLS,
+                "Employment Situation",
+                "Total nonfarm payroll employment fell **23,000** in July 2026.",
+            )
+        ],
+        hit_urls=[BLS],
+    )
+    excerpt_got = verify_print_in_cite(claim, excerpt_bag)
+    assert excerpt_got.ok is True
+    assert excerpt_got.reason is None
+    spine_bag = _bag(
+        excerpts=[(BLS, "Employment Situation", "THE EMPLOYMENT SITUATION -- JULY 2026")],
+        spine="Nonfarm payrolls fell **23,000** in July 2026.",
+        hit_urls=[BLS],
+    )
+    spine_got = verify_print_in_cite(claim, spine_bag)
+    assert spine_got.ok is True
+    assert spine_got.reason is None
+    ascii_claim = Claim(
+        series="BLS payrolls",
+        print="-23,000",
+        when="July 2026",
+        id="payrolls-july-2026",
+        cite_url=BLS,
+    )
+    assert verify_print_in_cite(ascii_claim, excerpt_bag).ok is True
+    missing = Claim(
+        series="BLS payrolls",
+        print="−23,000",
+        when="July 2026",
+        id="payrolls-july-2026",
+        cite_url=BLS,
+    )
+    empty = _bag(
+        excerpts=[(BLS, "Employment Situation", "THE EMPLOYMENT SITUATION -- JULY 2026")],
+        spine="July 2026 CES release. No payroll print.",
+        hit_urls=[BLS],
+    )
+    missed = verify_print_in_cite(missing, empty)
+    assert missed.ok is False
+    assert missed.reason == "print not in cite"
+
+
+def test_gdp_slash_print_matches_percent_bars_in_bag_or_spine() -> None:
+    """GDP print 2.1 / 1.5 matches 2.1% and 1.5% (or 2.1 and 1.5) in bag/spine."""
+    bea_www = "https://www.bea.gov/sites/default/files/2026-08/gdp2q26-2nd.pdf"
+    bea_bare = "http://bea.gov/sites/default/files/2026-08/gdp2q26-2nd.pdf"
+    claim = Claim(
+        series="GDP",
+        print="2.1 / 1.5",
+        when="Q2 2026",
+        id="gdp-2026-q2",
+        cite_url=bea_bare,
+    )
+    percent_bag = _bag(
+        excerpts=[
+            (
+                bea_www,
+                "GDP second estimate",
+                "Real GDP increased **2.1%** in the first quarter of 2026 "
+                "and **1.5%** in the second quarter of 2026.",
+            )
+        ],
+        spine="Q2 2026 GDP printed **2.1%** then **1.5%**.",
+        hit_urls=[bea_www],
+    )
+    got = verify_print_in_cite(claim, percent_bag)
+    assert got.ok is True
+    assert got.reason is None
+    bare_bag = _bag(
+        excerpts=[
+            (
+                bea_www,
+                "GDP second estimate",
+                "Real GDP increased 2.1 in Q1 2026 and 1.5 in Q2 2026.",
+            )
+        ],
+        spine="GDP 2.1 / 1.5 in Q2 2026.",
+        hit_urls=[bea_www],
+    )
+    assert verify_print_in_cite(claim, bare_bag).ok is True
+    invented = Claim(
+        series="GDP",
+        print="2.1 / 9.9",
+        when="Q2 2026",
+        id="gdp-2026-q2",
+        cite_url=bea_bare,
+    )
+    invented_got = verify_print_in_cite(invented, percent_bag)
+    assert invented_got.ok is False
+    assert invented_got.reason == "print not in cite"
+
+
+def test_cite_url_host_drift_still_counts_as_hit() -> None:
+    """http://bea.gov vs https://www.bea.gov is the same hit; other hosts/paths are not."""
+    bea_www = "https://www.bea.gov/sites/default/files/2026-08/gdp2q26-2nd.pdf"
+    bea_bare = "http://bea.gov/sites/default/files/2026-08/gdp2q26-2nd.pdf"
+    bea_other = "https://www.bea.gov/sites/default/files/2025-01/gdp4q24-adv.pdf"
+    assert _url_in(bea_bare, [bea_www]) is True
+    assert _url_in(bea_www, [bea_bare]) is True
+    assert _url_in(bea_bare, [bea_other]) is False
+    assert _url_in(bea_bare, ["https://fred.stlouisfed.org/series/USREC"]) is False
+    claim = Claim(
+        series="GDP",
+        print="2.1 / 1.5",
+        when="Q2 2026",
+        id="gdp-2026-q2",
+        cite_url=bea_bare,
+    )
+    bag = _bag(
+        excerpts=[
+            (
+                bea_www,
+                "GDP second estimate",
+                "Real GDP increased 2.1 percent in Q1 2026 and 1.5 percent in Q2 2026.",
+            )
+        ],
+        spine="GDP 2.1 / 1.5 in Q2 2026.",
+        hit_urls=[bea_www],
+    )
+    got = verify_print_in_cite(claim, bag)
+    assert got.ok is True
+    assert got.reason is None
+    wrong_host = Claim(
+        series="GDP",
+        print="2.1 / 1.5",
+        when="Q2 2026",
+        id="gdp-2026-q2",
+        cite_url="https://example.com/gdp2q26-2nd.pdf",
+    )
+    missed = verify_print_in_cite(wrong_host, bag)
+    assert missed.ok is False
+    assert missed.reason == "cite_url not in hits"
+
+
+def test_usrec_print_zero_must_appear_in_cite_or_spine() -> None:
+    """USREC print 0 is not always-ok; the flag token must sit in cite or spine."""
+    claim = Claim(
+        series="USREC",
+        print="0",
+        when="July 2026",
+        id="usrec-july-2026",
+        cite_url=FRED,
+    )
+    pipe = _bag(
+        excerpts=[(FRED, "USREC", "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n")],
+        hit_urls=[FRED],
+    )
+    assert verify_print_in_cite(claim, pipe).ok is True
+    spine_only = _bag(
+        excerpts=[(FRED, "USREC", "FRED USREC series page. July 2026 release.")],
+        spine="USREC July 2026 = 0.",
+        hit_urls=[FRED],
+    )
+    assert verify_print_in_cite(claim, spine_only).ok is True
+    absent = _bag(
+        excerpts=[(FRED, "USREC", "NBER discussion only. July 2026 release notes.")],
+        spine="July 2026 discussion. No recession flag printed.",
+        hit_urls=[FRED],
+    )
+    missed = verify_print_in_cite(claim, absent)
+    assert missed.ok is False
+    assert missed.reason == "print not in cite"
 
 
