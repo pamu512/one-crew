@@ -178,8 +178,8 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
     if receipt.disposition == "READY":
         validate_ready_receipt(receipt, cut=packet.cut, platform=packet.platform)
     elif receipt.disposition == "HOLD":
-        if receipt.findings:
-            raise ReceiptInvalidError("HOLD must not invent stamps")
+        for finding in receipt.findings:
+            validate_finding(finding)
         if receipt.causal_links:
             raise ReceiptInvalidError("HOLD must not invent a causal chain")
         if receipt.invented_source or receipt.collage or receipt.invented_stamp or receipt.invented_lean:

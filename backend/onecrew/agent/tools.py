@@ -90,8 +90,53 @@ def imagen_shots(script: str, refs: str) -> dict[str, Any]:
     return {"ok": True, "frames": len(images), "used_return": True}
 
 
+def verify_print_in_cite_tool(claim: dict, bag: dict) -> dict[str, Any]:
+    from onecrew.verify import Claim, CiteBag, verify_print_in_cite
+
+    return verify_print_in_cite(Claim(**claim), CiteBag(**bag)).model_dump()
+
+
+def verify_payrolls_realized_ces_tool(claim: dict, bag: dict) -> dict[str, Any]:
+    from onecrew.verify import Claim, CiteBag, verify_payrolls_realized_ces
+
+    return verify_payrolls_realized_ces(Claim(**claim), CiteBag(**bag)).model_dump()
+
+
+def verify_usrec_smash_tool(usrec_claim: dict, bag: dict, payrolls_claim: dict | None = None) -> dict[str, Any]:
+    from onecrew.verify import Claim, CiteBag, verify_usrec_smash
+
+    payrolls = Claim(**payrolls_claim) if payrolls_claim else None
+    return verify_usrec_smash(Claim(**usrec_claim), payrolls, CiteBag(**bag)).model_dump()
+
+
+def verify_gdp_bars_tool(claim: dict, bag: dict) -> dict[str, Any]:
+    from onecrew.verify import Claim, CiteBag, verify_gdp_bars
+
+    return verify_gdp_bars(Claim(**claim), CiteBag(**bag)).model_dump()
+
+
+def verify_u3_ces_tool(claim: dict, bag: dict) -> dict[str, Any]:
+    from onecrew.verify import Claim, CiteBag, verify_u3_ces
+
+    return verify_u3_ces(Claim(**claim), CiteBag(**bag)).model_dump()
+
+
+def verify_claim_set_tool(claims: list[dict], bag: dict) -> dict[str, Any]:
+    from onecrew.verify import Claim, CiteBag, verify_claim_set
+
+    return verify_claim_set([Claim(**row) for row in claims], CiteBag(**bag)).model_dump()
+
+
 RESEARCHER_TOOLS = [get_packet, parallel_search, parallel_extract, parallel_task]
 BOARDER_TOOLS = [get_packet, imagen_shots]
+CRITIC_TOOLS = [
+    verify_print_in_cite_tool,
+    verify_payrolls_realized_ces_tool,
+    verify_usrec_smash_tool,
+    verify_gdp_bars_tool,
+    verify_u3_ces_tool,
+    verify_claim_set_tool,
+]
 
 
 # Keep seed id reachable for tools without importing seed (avoids cycle in ADK load).

@@ -17,6 +17,7 @@ from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import ReceiptInvalidError, attach_frames, hold_receipt, write_receipt
 from onecrew.foundry import foundry_findings, replace_leftover_slots
+from onecrew.verify import apply_verify_gate, cite_bag_from_rows
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.script import pack_numbers, write_script
 from onecrew.store import store
@@ -533,7 +534,12 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             )
     # ponytail: live causal_links stay empty unless Parallel sourced a this-led-to-that URL.
     # Seed shows one missing link; do not invent a 40-year chain here.
-    return (
+    bag = cite_bag_from_rows(
+        list(hit_rows) + list(getattr(extracted, "results", None) or []),
+        spine=spine,
+        hit_urls=hit_urls,
+    )
+    receipt = apply_verify_gate(
         Receipt(
             packet_id=packet.id,
             written=False,
@@ -541,10 +547,9 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
             causal_links=[],
             disposition="READY",
         ),
-        leftover,
-        hit_urls,
-        spine,
+        bag,
     )
+    return receipt, leftover, hit_urls, spine
 
 
 def _board(packet: Packet, rails: Rails) -> list:
@@ -608,7 +613,11 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     fresh.task_spine = spine
     if receipt.disposition == "HOLD":
         write_receipt(fresh, receipt)
-        write_script(fresh)
+        if receipt.findings:
+            fresh.script = ""
+            fresh.beats = []
+        else:
+            write_script(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
         if leftover:
