@@ -393,3 +393,45 @@ def test_foundry_three_bar_gdp_holds_when_cites_have_q1_q2_pair() -> None:
     assert "gdp" in (held.hold_reason or "").lower()
 
 
+def test_claims_from_findings_reads_finding_print_and_when_not_blob() -> None:
+    rows = [
+        Finding(
+            id="payrolls-july-2026",
+            claim=(
+                "Moody's payrolls actually declined by 13,000 jobs in June 2024. "
+                "Suppose employment increases by 50,000. "
+                "Total nonfarm payroll employment fell by 23,000 in July 2026."
+            ),
+            stamp="grounded",
+            title="BLS payrolls",
+            series="BLS payrolls",
+            print="−23,000",
+            when="July 2026",
+            parallel_url=BLS,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="usrec-july-2026",
+            claim="The FRED recession observation for August 2026 is 0. T10Y3M = 1.",
+            stamp="grounded",
+            title="USREC",
+            series="USREC",
+            print="0",
+            when="July 2026",
+            parallel_url=FRED,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+    ]
+    claims = claims_from_findings(rows)
+    pay = next(c for c in claims if c.series == "BLS payrolls")
+    assert "23,000" in pay.print or "23k" in pay.print.lower()
+    assert "13,000" not in pay.print
+    assert "50,000" not in pay.print
+    assert pay.when.lower() == "july 2026"
+    usrec = next(c for c in claims if c.series == "USREC")
+    assert usrec.print == "0"
+    assert usrec.when.lower() == "july 2026"
+
+

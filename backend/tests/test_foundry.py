@@ -1021,15 +1021,20 @@ LIVE_LABOR_103 = (
 
 
 def test_payrolls_print_is_revision_103000_not_digit_23() -> None:
+    from onecrew.foundry import FoundryHold, require_minted
     from onecrew.spend import ledger
 
     before = ledger.parallel_calls
     packet, rows = _mint_notes(LIVE_LABOR_103)
     assert ledger.parallel_calls == before
-    payrolls = next(f for f in rows if f.series == "BLS payrolls")
-    assert "103,000" in payrolls.print
-    assert "−" in payrolls.print or payrolls.print.startswith("-")
-    assert "23" not in payrolls.print
+    pays = [f for f in rows if f.series == "BLS payrolls"]
+    for pay in pays:
+        assert "103,000" not in (pay.print or "")
+        assert "23" not in (pay.print or "")
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print in {"0", "USREC=0"} or "0" in (usrec.print or "")
+    with pytest.raises(FoundryHold, match="foundry dropped named series"):
+        require_minted(rows, LIVE_LABOR_103)
 
 
 def test_missing_payrolls_object_is_foundry_dropped_not_opaque_eight() -> None:
@@ -2683,3 +2688,252 @@ def test_single_realized_gdp_bar_does_not_invent_second() -> None:
     assert "2.1" in (gdp.print or "")
     assert "q2" not in (gdp.when or "").lower()
     assert gdp.id != "gdp-2026-q2"
+
+
+# Live HOLD oc-are-we-near-recession-f41dbb35 shape: realized July CES
+# sits in the same Parallel notes as Moody's June revision, hypo/CI, May
+# +129k, ISO USREC pipe 0, August USREC prose, Sahm June, T10Y3M chrome.
+LIVE_MIXED_PARALLEL = (
+    "Moody's Analytics noted that payrolls actually declined by 13,000 jobs in June 2024. "
+    "May 2026 payrolls were revised up from +80,000 to +129,000. "
+    "Suppose employment increases by 50,000 from one month to the next. "
+    "If, however, the reported nonfarm employment rise was 250,000, then all of "
+    "the values within the 90-percent confidence interval would be greater than zero. "
+    "THE EMPLOYMENT SITUATION -- JULY 2026. "
+    "Total nonfarm payroll employment fell by 23,000 in July 2026. "
+    "The unemployment rate was 4.3 percent in July 2026. "
+    "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n"
+    "The FRED recession observation for August 2026 is 0. "
+    "Updated: Sep 1, 2026. Units: +1 or 0. "
+    "Sahm June 2026 = −0.03 vs 0.50 trigger. "
+    "https://fred.stlouisfed.org/series/T10Y3M T10Y3M = 1. "
+    "Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2. "
+    f"{FRED_USREC} {BLS_JULY_ARCHIVE} {BEA_2026_NEWS} {FRED_SAHM}"
+)
+
+_FORBIDDEN_PAY_PRINTS = ("13,000", "−13,000", "-13,000", "50,000", "250,000", "129,000", "+129,000")
+
+
+def _assert_july_ces_payrolls(payrolls) -> None:
+    printed = payrolls.print or ""
+    claim = payrolls.claim or ""
+    assert "23,000" in printed or "23k" in printed.lower()
+    assert printed.startswith(("−", "-"))
+    for stolen in _FORBIDDEN_PAY_PRINTS:
+        assert stolen not in printed
+        assert stolen not in claim
+    assert (payrolls.when or "").lower() == "july 2026"
+    assert payrolls.id == "payrolls-july-2026"
+    assert "2024" not in (payrolls.when or "")
+    assert "2027" not in (payrolls.when or "")
+    assert "june" not in (payrolls.when or "").lower()
+
+
+def test_mixed_parallel_notes_mint_july_ces_not_revision_or_june() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+    from onecrew.verify import (
+        CiteBag,
+        CiteExcerpt,
+        apply_verify_gate,
+        claims_from_findings,
+        verify_payrolls_realized_ces,
+        verify_usrec_smash,
+    )
+
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = LIVE_MIXED_PARALLEL
+    hit_rows = [
+        _row(FRED_USREC, "USREC", [
+            "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n"
+            "The FRED recession observation for August 2026 is 0. "
+            "Updated: Sep 1, 2026."
+        ]),
+        _row(BLS_JULY_ARCHIVE, "BLS July archive", [
+            "THE EMPLOYMENT SITUATION -- JULY 2026. "
+            "Total nonfarm payroll employment fell by 23,000 in July 2026."
+        ]),
+        _row(BLS_NR0, "BLS technical notes", [
+            "Moody's Analytics noted that payrolls actually declined by 13,000 jobs in June 2024. "
+            "May 2026 payrolls were revised up from +80,000 to +129,000. "
+            "Suppose employment increases by 50,000 from one month to the next. "
+            "If, however, the reported nonfarm employment rise was 250,000, then all of "
+            "the values within the 90-percent confidence interval would be greater than zero."
+        ]),
+        _row(BEA_2026_NEWS, "BEA second estimate", [
+            "Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2."
+        ]),
+        _row(FRED_SAHM, "SAHMREALTIME", ["Sahm June 2026 = −0.03 vs 0.50 trigger."]),
+    ]
+    rows = mint(
+        packet,
+        hit_rows,
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        LIVE_MIXED_PARALLEL,
+    )
+    assert ledger.parallel_calls == before
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    _assert_july_ces_payrolls(payrolls)
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print == "0"
+    assert (usrec.when or "").lower() == "july 2026"
+    assert usrec.id == "usrec-july-2026"
+    assert "august" not in (usrec.when or "").lower()
+    assert "june" not in (usrec.when or "").lower()
+    claims = claims_from_findings(rows)
+    pay_claim = next(c for c in claims if c.series == "BLS payrolls")
+    assert "23" in (pay_claim.print or "")
+    for stolen in _FORBIDDEN_PAY_PRINTS:
+        assert stolen not in (pay_claim.print or "")
+    assert (pay_claim.when or "").lower() == "july 2026"
+    usrec_claim = next(c for c in claims if c.series == "USREC")
+    assert usrec_claim.print == "0"
+    assert (usrec_claim.when or "").lower() == "july 2026"
+    bag = CiteBag(
+        excerpts=[
+            CiteExcerpt(url=r.url, title=r.title, text=" ".join(r.excerpts)) for r in hit_rows
+        ],
+        spine=LIVE_MIXED_PARALLEL,
+        hit_urls=[r.url for r in hit_rows],
+    )
+    ces = verify_payrolls_realized_ces(pay_claim, bag)
+    assert ces.ok is True
+    smash = verify_usrec_smash(usrec_claim, pay_claim, bag)
+    assert smash.ok is True
+    gated = apply_verify_gate(
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+        bag,
+    )
+    assert gated.disposition == "READY"
+    assert gated.findings
+    write_receipt(packet, gated)
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
+    assert "hypo/CI/revision window" not in reason
+    assert "smash mixed months" not in reason.lower()
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert "USREC=0 (July 2026) smashed into payrolls" in spoken
+    assert "−23,000" in spoken or "-23,000" in spoken or "−23k" in spoken or "-23k" in spoken
+    assert "13,000" not in spoken
+    assert "USREC=1" not in spoken
+
+
+def test_fall_unsigned_is_minus_signed_stays_rise_does_not_invent() -> None:
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    _, fell = _mint_notes("USREC July 2026 = 0. Nonfarm payrolls fell 23,000 in July 2026.")
+    pay_fell = next(f for f in fell if f.series == "BLS payrolls")
+    assert pay_fell.print.startswith(("−", "-"))
+    assert "23,000" in pay_fell.print
+    _, signed = _mint_notes("USREC July 2026 = 0. Nonfarm payrolls −23,000 in July 2026.")
+    pay_signed = next(f for f in signed if f.series == "BLS payrolls")
+    assert pay_signed.print.startswith(("−", "-"))
+    assert "23,000" in pay_signed.print
+    _, rose = _mint_notes("USREC July 2026 = 0. Nonfarm payrolls rose 23,000 in July 2026.")
+    pay_rose = next(f for f in rose if f.series == "BLS payrolls")
+    assert not pay_rose.print.startswith(("−", "-"))
+    assert "23,000" in pay_rose.print
+    assert ledger.parallel_calls == before
+
+
+def test_revision_hypo_ci_only_does_not_mint_payrolls_as_ces() -> None:
+    from onecrew.foundry import FoundryHold, mint, require_minted
+    from onecrew.spend import ledger
+
+    spine = (
+        "USREC July 2026 = 0. "
+        "Moody's Analytics noted that payrolls actually declined by 13,000 jobs in June 2024. "
+        "May 2026 payrolls were revised up from +80,000 to +129,000. "
+        "Suppose employment increases by 50,000 from one month to the next. "
+        "If, however, the reported nonfarm employment rise was 250,000, then all of "
+        "the values within the 90-percent confidence interval would be greater than zero."
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", ["USREC July 2026 = 0."]),
+            _row(BLS_NR0, "BLS technical notes", [spine]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    pays = [f for f in rows if f.series == "BLS payrolls"]
+    for pay in pays:
+        printed = pay.print or ""
+        for stolen in _FORBIDDEN_PAY_PRINTS:
+            assert stolen not in printed
+    assert not pays or not any("23" in (p.print or "") for p in pays)
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print == "0"
+    with pytest.raises(FoundryHold, match="foundry dropped named series"):
+        require_minted(rows, spine)
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
+    assert "foundry dropped named series" in reason.lower() or "hypo/CI/revision" in reason
+    assert packet.receipt.findings
+    assert any(f.series == "USREC" for f in packet.receipt.findings)
+    assert "rails missing" not in reason.lower()
+
+
+def test_iso_usrec_pipe_july_smashes_despite_august_prose() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    spine = (
+        "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n"
+        "The FRED recession observation for August 2026 is 0. "
+        "Updated: Sep 1, 2026. Units: +1 or 0. "
+        "https://fred.stlouisfed.org/series/T10Y3M T10Y3M = 1. "
+        "July payrolls fell 23,000 and unemployment was 4.1%. "
+        f"{FRED_USREC} {BLS_JULY_ARCHIVE}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [
+                "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n"
+                "The FRED recession observation for August 2026 is 0. "
+                "Updated: Sep 1, 2026."
+            ]),
+            _row(BLS_JULY_ARCHIVE, "BLS July archive", [
+                "July payrolls fell 23,000 and unemployment was 4.1%."
+            ]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print == "0"
+    assert (usrec.when or "").lower() == "july 2026"
+    assert usrec.id == "usrec-july-2026"
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    assert payrolls.id == "payrolls-july-2026"
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
+    assert "smash mixed months" not in reason.lower()
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert "USREC=0 (July 2026) smashed into payrolls" in spoken
+    assert "USREC=1" not in spoken
+    assert "September" not in (usrec.when or "")
+    assert "Sep 1" not in (usrec.claim or "") or usrec.print == "0"
