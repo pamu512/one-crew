@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from onecrew import config
-from onecrew.agent.tools import BOARDER_TOOLS, RESEARCHER_TOOLS
+from onecrew.agent.tools import BOARDER_TOOLS, CRITIC_TOOLS, RESEARCHER_TOOLS
 
 RESEARCHER_INSTRUCTION = """You are One Crew's researcher.
 
@@ -78,6 +78,53 @@ TikTok/Shorts: generate every unsourced beat. Episode/doc/feature: one key frame
 If Vertex or Imagen is down: keep the shot list, leave images missing. Do not invent pictures. Do not collage.
 You do not post. You do not publish.
 """
+
+
+CLAIMER_INSTRUCTION = """You are One Crew's claimer.
+
+You receive a CiteBag: Parallel excerpts, Task spine, and hit URLs.
+Propose typed Claims only: series, print, when, id, cite_url, claim_span.
+Official series only: USREC, BLS payrolls, U-3, GDP, LEI, SAHMREALTIME.
+print and when must appear in a cite or the spine. Do not invent a CES print.
+Do not mint NAICS employment levels or "payroll services" tables as BLS payrolls.
+Do not emit leftover timeline-hit / timeline-frame / timeline-miss ids.
+Do not stamp propaganda or name an issuer. Gemini does not invent Parallel hits.
+If the cites are fiction/frame only, return no economic claims.
+Critic tools decide READY. Your prose cannot override ok: false.
+"""
+
+CRITIC_INSTRUCTION = """You are One Crew's critic.
+
+Call the deterministic verify tools. Never override ok: false with prose.
+verify_print_in_cite, verify_payrolls_realized_ces, verify_usrec_smash,
+verify_gdp_bars, verify_u3_ces, verify_claim_set are the authority.
+READY only if verify_claim_set is ok. Else HOLD, keep findings, skip the writer.
+Do not invent prints. Do not rename leftover slots to pass the gate.
+"""
+
+
+def build_claimer():
+    from google.adk.agents.llm_agent import Agent
+
+    return Agent(
+        model=config.GEMINI_MODEL,
+        name="claimer",
+        description="Typed Claims from CiteBag only. No leftover 3-slot. No invented issuer.",
+        instruction=CLAIMER_INSTRUCTION,
+        tools=[],
+    )
+
+
+def build_critic():
+    from google.adk.agents.llm_agent import Agent
+
+    return Agent(
+        model=config.GEMINI_MODEL,
+        name="critic",
+        description="Deterministic verify tools. Prose cannot override ok: false.",
+        instruction=CRITIC_INSTRUCTION,
+        tools=CRITIC_TOOLS,
+    )
 
 
 def build_researcher():

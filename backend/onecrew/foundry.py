@@ -142,6 +142,12 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
     for finding in findings:
         if finding.independent == MISSING:
             finding.independent_url = None
+        if finding.propaganda == "yes":
+            issuer = (finding.propaganda_issuer or "").strip()
+            if not finding.propaganda_url or issuer in {"", MISSING}:
+                finding.propaganda = MISSING
+                finding.propaganda_url = None
+                finding.propaganda_issuer = MISSING
         if finding.propaganda == MISSING:
             finding.propaganda_url = None
             if finding.propaganda_issuer == MISSING or not (finding.propaganda_issuer or "").strip():
