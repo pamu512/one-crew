@@ -123,7 +123,7 @@ def test_may_revision_plus_129k_fails_payrolls_when_spine_has_july_minus_23k() -
     )
     got = verify_payrolls_realized_ces(claim, bag)
     assert got.ok is False
-    assert got.reason
+    assert got.reason == "hypo/CI/revision window"
 
 
 def test_usrec_august_plus_july_payrolls_no_jul_pipe_smash_mixed_months() -> None:
@@ -162,7 +162,7 @@ def test_gdp_2_1_percent_q4_fails_when_cites_have_q1_q2_pair() -> None:
     )
     got = verify_gdp_bars(claim, bag)
     assert got.ok is False
-    assert got.reason
+    assert got.reason == "q4 vs q1/q2"
 
 
 def test_u3_4_3_june_2028_fails_when_year_absent_from_cite() -> None:
@@ -185,7 +185,7 @@ def test_u3_4_3_june_2028_fails_when_year_absent_from_cite() -> None:
     )
     got = verify_u3_ces(claim, bag)
     assert got.ok is False
-    assert got.reason
+    assert got.reason == "u3 year absent from ces"
 
 
 def test_verify_claim_set_ignores_agent_critic_prose() -> None:
@@ -320,7 +320,8 @@ def test_claims_from_findings_maps_named_series_not_leftover_slots() -> None:
         ),
     ]
     claims = claims_from_findings(rows)
-    assert any(c.series == "USREC" and c.print in {"0", "USREC=0"} or "0" in c.print for c in claims)
+    usrec = next(c for c in claims if c.series == "USREC")
+    assert usrec.print in {"0", "USREC=0"}
     leftover = [c for c in claims if c.id == "timeline-hit"]
     assert leftover
     result = verify_claim_set(claims, _good_bag())
@@ -334,3 +335,49 @@ def test_hold_receipt_helper_still_empties_only_when_no_named_series() -> None:
     empty = hold_receipt("oc-rails-down", Rails(parallel=False, vertex=True, imagen=True))
     assert empty.findings == []
     assert empty.disposition == "HOLD"
+
+
+def test_usrec_print_one_fails_against_july_pipe_zero() -> None:
+    bag = _good_bag()
+    claim = Claim(series="USREC", print="1", when="July 2026", id="usrec-july-2026", cite_url=FRED)
+    got = verify_print_in_cite(claim, bag)
+    assert got.ok is False
+    assert got.reason == "print not in cite"
+    smash = verify_usrec_smash(claim, _good_claims()[1], bag)
+    assert smash.ok is False
+    assert smash.reason == "print not in cite"
+
+
+def test_when_month_must_sit_next_to_its_year() -> None:
+    bag = _bag(
+        excerpts=[(FRED, "USREC", "USREC=0. July 2025 observation. January 2026 note.")],
+        hit_urls=[FRED],
+    )
+    claim = Claim(series="USREC", print="0", when="July 2026", id="usrec-july-2026", cite_url=FRED)
+    got = verify_print_in_cite(claim, bag)
+    assert got.ok is False
+    assert got.reason == "when not in cite"
+
+
+def test_foundry_three_bar_gdp_holds_when_cites_have_q1_q2_pair() -> None:
+    from onecrew.foundry import foundry_findings
+
+    packet = Packet(
+        id="oc-foundry-gdp-gate",
+        hook="Are we near recession?",
+        script="",
+        topic="Are we near recession?",
+        research_pack=(
+            "USREC July 2026 = 0. Nonfarm payrolls −23k. "
+            "GDP printed 0.5, then 2.1, then 1.5.\n"
+            f"{FRED}\n{BLS}\n{BEA}"
+        ),
+        task_spine="USREC July 2026 = 0. Nonfarm payrolls −23k. GDP 0.5/2.1/1.5.",
+    )
+    findings = foundry_findings(packet, hit_urls=[FRED, BLS, BEA])
+    receipt = Receipt(packet_id=packet.id, written=False, disposition="READY", findings=findings)
+    held = apply_verify_gate(receipt, _good_bag())
+    assert held.disposition == "HOLD"
+    assert held.findings == findings
+    assert held.findings != []
+    assert "gdp" in (held.hold_reason or "").lower()

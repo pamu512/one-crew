@@ -47,7 +47,7 @@ _REV = re.compile(r"revised\b.{0,80}from\s+[+\-−]\d", re.I | re.S)
 _CES = re.compile(r"payroll|nonfarm|ces\b|employment situation|empsit", re.I)
 _UNEMP = re.compile(r"unemployment|u-3|\bu3\b", re.I)
 _SAHM = re.compile(r"\bsahm\b", re.I)
-_FORECAST = ("spf", "cei", "disposable", "final sales")
+_FORECAST_RE = re.compile(r"\b(?:spf|cei)\b|disposable|final sales", re.I)
 _PIPE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})\s*[|,]?\s*([01])\b")
 
 
@@ -115,9 +115,12 @@ def _bar_in(bar: str, text: str) -> bool:
     nt = _norm(text)
     if not nb:
         return False
+    unsigned = nb.lstrip("+-")
+    # Single-digit flags must be a pipe/equals token, not a digit inside 2026-07-01.
+    if unsigned in {"0", "1"}:
+        return bool(re.search(rf"(?:usrec\s*=\s*|[|=]\s*){unsigned}\b", nt))
     if nb in nt:
         return True
-    unsigned = nb.lstrip("+-")
     return bool(unsigned) and unsigned in nt
 
 
@@ -137,17 +140,13 @@ def _when_in_text(when: str, text: str) -> bool:
     if parsed is None:
         return not (when or "").strip()
     kind, year, num = parsed
-    if str(year) not in text and str(year) not in _norm(text):
-        return False
     if kind == "quarter":
         blob = _norm(text)
+        if str(year) not in blob and str(year) not in (text or ""):
+            return False
         words = ("first", "second", "third", "fourth")
         return f"q{num}" in blob or words[num - 1] + " quarter" in blob
-    names = _MONTH_NAMES.get(num, [])
-    blob = _norm(text)
-    if any(re.search(rf"\b{re.escape(n)}\b", blob) for n in names):
-        return True
-    return f"{year}-{num:02d}" in text
+    return _year_adjacent_month(text, year, num)
 
 
 def _usrec_month_on_table(bag: CiteBag, year: int, month: int) -> int | None:
@@ -167,8 +166,7 @@ def _legal_usrec_print(print_: str) -> bool:
 def _strip_forecast(text: str) -> str:
     keep: list[str] = []
     for sent in re.split(r"(?<=[.!?])\s+", text or ""):
-        low = sent.lower()
-        if any(tok in low for tok in _FORECAST):
+        if _FORECAST_RE.search(sent):
             continue
         keep.append(sent)
     return " ".join(keep)
@@ -382,6 +380,13 @@ def verify_usrec_smash(
         ):
             return VerifyResult(ok=False, reason="smash mixed months")
         # ponytail: table miss does not mint July. Upgrade: require pipe 0/1 before smash READY.
+    flag_when = u_when if u_when and u_when[0] == "month" else None
+    if flag_when:
+        flag = _usrec_month_on_table(bag, flag_when[1], flag_when[2])
+        if flag in (0, 1) and usrec_claim.print:
+            digit = _norm(usrec_claim.print).lstrip("+-")
+            if digit not in {str(flag)}:
+                return VerifyResult(ok=False, reason="print not in cite")
     if usrec_claim.print and not _legal_usrec_print(usrec_claim.print):
         return VerifyResult(ok=False, reason="print not in cite")
     return VerifyResult(ok=True, reason=None)
@@ -428,9 +433,13 @@ def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
         if unemp and all(_SAHM.search(s) for s in unemp):
             return VerifyResult(ok=False, reason="sahm-trigger window")
     parsed = _parse_when(claim.when)
-    year = str(parsed[1]) if parsed else ""
-    if year and not any(year in s for s in unemp):
-        return VerifyResult(ok=False, reason="u3 year absent from ces")
+    if parsed and parsed[0] == "month":
+        if not any(_year_adjacent_month(s, parsed[1], parsed[2]) for s in unemp):
+            return VerifyResult(ok=False, reason="u3 year absent from ces")
+    elif parsed:
+        year = str(parsed[1])
+        if year and not any(year in s for s in unemp):
+            return VerifyResult(ok=False, reason="u3 year absent from ces")
     return VerifyResult(ok=True, reason=None, matched_in=" ".join(unemp) or None)
 
 

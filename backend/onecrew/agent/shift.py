@@ -537,7 +537,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
     bag = cite_bag_from_rows(
         list(hit_rows) + list(getattr(extracted, "results", None) or []),
         spine=spine,
-        hit_urls=hit_urls,
+        hit_urls=list(dict.fromkeys((source_urls or []) + list(hit_urls or []))),
     )
     receipt = apply_verify_gate(
         Receipt(
@@ -612,7 +612,15 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     receipt, leftover, hit_urls, spine = _research(fresh, rails, shift.depth)
     fresh.task_spine = spine
     if receipt.disposition == "HOLD":
-        write_receipt(fresh, receipt)
+        try:
+            write_receipt(fresh, receipt)
+        except ReceiptInvalidError as exc:
+            prior = (receipt.hold_reason or "").strip()
+            receipt.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
+            receipt.written = True
+            receipt.packet_id = fresh.id
+            fresh.receipt = receipt
+            fresh.status = "hold"
         if receipt.findings:
             fresh.script = ""
             fresh.beats = []
