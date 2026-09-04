@@ -352,8 +352,19 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             },
             {
                 "id": "gdp",
-                "vo": _voice(f"{_gdp_lines(_print_of(gdp, ''))[0]}{_cite(gdp)}", packet),
-                "eyes": _gdp_lines(_print_of(gdp, ""))[1],
+                "vo": _voice(
+                    (
+                        f"{_gdp_lines(_print_of(gdp, ''))[0]}{_cite(gdp)}"
+                        if gdp
+                        else "GDP hole named. No matching URL. Hold."
+                    ),
+                    packet,
+                ),
+                "eyes": (
+                    _gdp_lines(_print_of(gdp, ""))[1]
+                    if gdp
+                    else "GDP hole named. No matching URL."
+                ),
                 "finding_ids": [gdp.id] if gdp else [],
             },
             {

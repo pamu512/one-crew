@@ -628,20 +628,37 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
                     url=dropped.parallel_url,
                 )
             )
-    # Claimer is READY authority. Foundry rows are v1 candidates only.
+    # Claimer is READY authority when verify says ok. Foundry is a v1 candidate only.
     claims = propose_claims(bag, packet)
     claimer_rows = findings_from_claims(claims, bag)
+    used = {f.id for f in claimer_rows}
+    fringe = _fringe_from_rows(miss_rows, used)
+    if fringe and claimer_rows:
+        claimer_rows = list(claimer_rows) + [fringe]
     fiction = invents_frame(cut=packet.cut, tell=packet.tell or "")
+    claimer_ready = False
     if claimer_rows:
+        probed = apply_verify_gate(
+            Receipt(
+                packet_id=packet.id,
+                written=False,
+                findings=claimer_rows,
+                causal_links=[],
+                disposition="READY",
+            ),
+            bag,
+        )
+        claimer_ready = probed.disposition == "READY"
+    if claimer_ready:
         findings = claimer_rows
-        used = {f.id for f in findings}
-        fringe = _fringe_from_rows(miss_rows, used)
-        if fringe:
-            findings.append(fringe)
     elif fiction:
         findings = frame_findings(hit_rows, miss_rows, packet)
-    elif foundry_rows and not any(f.id in leftover_slot_ids() for f in foundry_rows if f.stamp == "grounded"):
+    elif foundry_rows and not any(
+        f.id in leftover_slot_ids() for f in foundry_rows if f.stamp == "grounded"
+    ):
         findings = foundry_rows
+    elif claimer_rows:
+        findings = claimer_rows
     elif foundry_exc is not None:
         return _foundry_outcome(packet, rails, leftover, hit_urls, spine, foundry_exc, foundry_rows)
     else:

@@ -28,19 +28,12 @@ _NAICS = re.compile(r"\bnaics\b|payroll services|employment level", re.I)
 _CES_FALL = re.compile(
     r"(?:total\s+)?nonfarm payroll(?:s| employment)\s+"
     r"(fell|declined|dropped|lost|decreased|rose|gained|increased|fell by)\s+"
-    r"(?:by\s+)?([\d,]+)",
+    r"(?:by\s+)?([+\-−]?\s*[\d,]+(?:\.\d+)?\s*k?)",
     re.I,
 )
 _MONTH_YEAR = re.compile(
     r"(January|February|March|April|May|June|July|August|September|"
     r"October|November|December)\s+(20\d{2})",
-    re.I,
-)
-_GDP_Q = re.compile(
-    r"(?:real\s+)?gdp\s+(?:increased|rose|grew)\s+(\d+(?:\.\d+)?)\s*%?"
-    r".{0,48}?(?:q([1-4])|first|second|third|fourth)\s+(?:quarter\s+)?(20\d{2})|"
-    r"(?:q([1-4])|first|second|third|fourth)\s+(?:quarter\s+of\s+)?(20\d{2})"
-    r".{0,48}?(?:real\s+)?gdp\s+(?:increased|rose|grew)\s+(\d+(?:\.\d+)?)",
     re.I,
 )
 _U3 = re.compile(
@@ -119,11 +112,17 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
         if parsed and parsed[0] == "month":
             _, year, month = parsed
             flag = _usrec_month_on_table(bag, year, month)
+            if flag not in (0, 1):
+                search = "\n".join([*(e.text for e in bag.excerpts), bag.spine or ""])
+                if _year_adjacent_month(search, year, month):
+                    eq = re.search(r"usrec[^\n.]{0,48}=\s*([01])\b", search, re.I)
+                    if eq:
+                        flag = int(eq.group(1))
             if flag in (0, 1):
                 url = next(
-                    (e.url for e in bag.excerpts if _year_adjacent_month(e.text, year, month) and re.search(r"[|=]\s*[01]\b|usrec", e.text, re.I)),
+                    (e.url for e in bag.excerpts if re.search(r"usrec", f"{e.title} {e.text}", re.I)),
                     "",
-                ) or next((e.url for e in bag.excerpts if "usrec" in (e.title or "").lower() or "fred" in (e.url or "")), "")
+                ) or next((e.url for e in bag.excerpts if "fred" in (e.url or "")), "")
                 if url:
                     claims.append(
                         Claim(
@@ -136,7 +135,6 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
                         )
                     )
                     seen.add("USREC")
-    blob = "\n".join([*(e.text for e in bag.excerpts), bag.spine or ""])
     qbars: dict[tuple[int, int], str] = {}
     for excerpt in bag.excerpts:
         for match in re.finditer(
@@ -210,7 +208,6 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
                 )
             )
             seen.add("SAHMREALTIME")
-    _ = blob
     return claims
 
 
