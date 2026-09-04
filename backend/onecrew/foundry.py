@@ -78,6 +78,26 @@ _PAY_HYP = re.compile(
     re.I,
 )
 _PAY_CI = re.compile(r"confidence interval|90-percent", re.I)
+_PAY_REV = re.compile(
+    r"\brevis(?:ed|ion)\b|actually declined|were revised|revised (?:up|down)",
+    re.I,
+)
+_USREC_ISO = re.compile(r"(20\d{2})-(\d{2})-(?:\d{2})\s*[|,]?\s*([01])\b")
+_ISO_MONTH = (
+    "",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
 _GDP_PROJ = re.compile(
     r"\b(spf|fomc|philadelphia fed|survey of professional forecasters)\b",
     re.I,
@@ -291,6 +311,23 @@ def _usrec_cell(after: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _iso_month_stamp(year: str, month: str) -> str:
+    idx = int(month)
+    if idx < 1 or idx > 12:
+        return ""
+    return f"{_ISO_MONTH[idx]} {year}"
+
+
+def _usrec_iso_hits(text: str) -> list[tuple[str, str]]:
+    """FRED pipe rows like 2026-07-01 | 0. Chrome Updated: Sep 1 is not a row."""
+    hits: list[tuple[str, str]] = []
+    for match in _USREC_ISO.finditer(text or ""):
+        stamp = _iso_month_stamp(match.group(1), match.group(2))
+        if stamp:
+            hits.append((match.group(3), stamp))
+    return hits
+
+
 def _usrec_blob(text: str) -> str:
     blob = _URL.sub(" ", text or "")
     blob = re.sub(r"units:\s*\+?1 or 0", " ", blob, flags=re.I)
@@ -340,6 +377,7 @@ def _usrec_legal_print(text: str) -> str | None:
         val = _usrec_cell(blob[match.end() : match.end() + 16])
         if val:
             hits.append((val, _month_stamp(match)))
+    hits.extend(_usrec_iso_hits(blob))
     if hits:
         return max(hits, key=lambda row: _month_key(row[1]))[0]
     flag = re.search(r"official recession flag.{0,40}?(?:=|is|:)?\s*([01])\b", blob, re.I)
@@ -359,7 +397,7 @@ def _usrec_month_on_table(text: str, when: str) -> bool:
         around = blob[max(0, match.start() - 24) : match.end() + 16]
         if _usrec_cell(after) or re.search(r"usrec\s*=\s*[01]", around, re.I):
             return True
-    return False
+    return any(stamp.lower() == want for _val, stamp in _usrec_iso_hits(blob))
 
 
 def _usrec_latest_when(text: str) -> str:
@@ -403,6 +441,7 @@ def _usrec_latest_when(text: str) -> str:
         around = blob[max(0, match.start() - 48) : match.end() + 16]
         if _usrec_cell(after) or re.search(r"usrec\s*=\s*[01]", around, re.I):
             hits.append(_month_stamp(match))
+    hits.extend(stamp for _val, stamp in _usrec_iso_hits(blob))
     if not hits:
         return ""
     return max(hits, key=_month_key)
@@ -587,7 +626,7 @@ def _ces_when(text: str, printed: str, years_from: str = "") -> str:
     """CES observation month on the payrolls/unemployment clause, not empsit release chrome."""
     loc = _print_index(text, printed) if printed else -1
     start = max(0, loc - 120) if loc >= 0 else 0
-    blob = text[start : loc + 8] if loc >= 0 else (text or "")
+    blob = text[start : loc + 48] if loc >= 0 else (text or "")
     attached = list(
         re.finditer(
             r"(January|February|March|April|June|July|August|September|October|November|December|"
@@ -598,6 +637,21 @@ def _ces_when(text: str, printed: str, years_from: str = "") -> str:
             re.I,
         )
     )
+    if not attached and loc >= 0:
+        after = text[loc : loc + 64]
+        in_month = re.search(
+            r"\bin\s+"
+            r"(January|February|March|April|June|July|August|September|October|November|December|"
+            r"Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+            r"(?:\s+(20\d{2}))?",
+            after,
+            re.I,
+        )
+        if in_month:
+            year = in_month.group(2) or _ces_year(in_month.group(1), years_from or text or "", printed)
+            if year:
+                return f"{_FULL_MONTH[in_month.group(1).lower()]} {year}"
+        return ""
     if not attached:
         return ""
     pin = loc - start if loc >= 0 else len(blob)
@@ -997,10 +1051,24 @@ def _legal_print(series: str, text: str) -> str | None:
                 continue
             if not _PAY_CUE.search(win):
                 continue
+            isol_l = re.split(r"\d{1,3}(?:,\d{3})+|\d+\s*k\b", text[max(0, match.start() - 80) : match.start()], flags=re.I)[-1]
+            isol_r = re.split(r"\d{1,3}(?:,\d{3})+|\d+\s*k\b", text[match.end() : match.end() + 80], flags=re.I)[0]
+            prev = max(
+                (text.rfind(mark, 0, match.start()) for mark in ".;"),
+                default=-1,
+            )
+            nxt = min(
+                (i for i in (text.find(mark, match.end()) for mark in ".;") if i >= 0),
+                default=len(text),
+            )
+            clause = text[prev + 1 : nxt]
+            if _PAY_REV.search(clause):
+                continue
             raw = _sign_payroll(win, match.group(0))
-            isol_l = re.split(r"\d{1,3}(?:,\d{3})+|\d+\s*k\b", text[max(0, match.start() - 48) : match.start()], flags=re.I)[-1]
-            isol_r = re.split(r"\d{1,3}(?:,\d{3})+|\d+\s*k\b", text[match.end() : match.end() + 48], flags=re.I)[0]
-            scored.append((raw, _stamp_near_print(isol_l + match.group(0) + isol_r, raw)))
+            stamp = _stamp_near_print(isol_l + match.group(0) + isol_r, raw)
+            if not stamp:
+                stamp = _loose_month_year(win, raw, text)
+            scored.append((raw, stamp))
         dated = [row for row in scored if row[1]]
         if dated:
             return max(dated, key=lambda row: _month_key(row[1]))[0]
@@ -1381,6 +1449,8 @@ def _mint_from_notes(
         used_ids.discard(usrec.id)
         usrec.when = pay.when
         usrec.id = _unique_id(_slug("USREC", pay.when), used_ids)
+        if (pay.when or "").lower() not in (usrec.claim or "").lower():
+            usrec.claim = f"USREC={usrec.print} ({usrec.when})"
     return findings
 
 
@@ -1428,10 +1498,13 @@ def _has_usrec_and_payrolls(notes: str) -> bool:
     for sentence in _sentences(blob) + [blob]:
         if not _sentence_has_cue(sentence, cues):
             continue
+        # Revision/hypo/CI numbers still count: mint must produce realized CES or HOLD.
+        if _PAY_PRINT.search(sentence):
+            return True
         if _legal_print("BLS payrolls", sentence):
             return True
         for window in _cue_spans(sentence, cues):
-            if _legal_print("BLS payrolls", window):
+            if _PAY_PRINT.search(window) or _legal_print("BLS payrolls", window):
                 return True
     return False
 

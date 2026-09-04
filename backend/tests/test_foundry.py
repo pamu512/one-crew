@@ -2711,7 +2711,17 @@ LIVE_MIXED_PARALLEL = (
     f"{FRED_USREC} {BLS_JULY_ARCHIVE} {BEA_2026_NEWS} {FRED_SAHM}"
 )
 
-_FORBIDDEN_PAY_PRINTS = ("13,000", "−13,000", "-13,000", "50,000", "250,000", "129,000", "+129,000")
+_FORBIDDEN_PAY_PRINTS = (
+    "13,000",
+    "−13,000",
+    "-13,000",
+    "50,000",
+    "80,000",
+    "+80,000",
+    "250,000",
+    "129,000",
+    "+129,000",
+)
 
 
 def _assert_july_ces_payrolls(payrolls) -> None:
@@ -2752,7 +2762,8 @@ def test_mixed_parallel_notes_mint_july_ces_not_revision_or_june() -> None:
         ]),
         _row(BLS_JULY_ARCHIVE, "BLS July archive", [
             "THE EMPLOYMENT SITUATION -- JULY 2026. "
-            "Total nonfarm payroll employment fell by 23,000 in July 2026."
+            "Total nonfarm payroll employment fell by 23,000 in July 2026. "
+            "The unemployment rate was 4.3 percent in July 2026."
         ]),
         _row(BLS_NR0, "BLS technical notes", [
             "Moody's Analytics noted that payrolls actually declined by 13,000 jobs in June 2024. "
@@ -2818,6 +2829,23 @@ def test_mixed_parallel_notes_mint_july_ces_not_revision_or_june() -> None:
     assert "−23,000" in spoken or "-23,000" in spoken or "−23k" in spoken or "-23k" in spoken
     assert "13,000" not in spoken
     assert "USREC=1" not in spoken
+
+
+def test_same_sentence_ces_survives_revision_clause() -> None:
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    spine = (
+        "USREC July 2026 = 0. "
+        "Nonfarm payrolls July 2026 = −23,000; May+June revised −103,000."
+    )
+    _, rows = _mint_notes(spine)
+    assert ledger.parallel_calls == before
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    assert "23,000" in (payrolls.print or "")
+    assert "103" not in (payrolls.print or "")
+    assert (payrolls.when or "").lower() == "july 2026"
+    assert payrolls.id == "payrolls-july-2026"
 
 
 def test_fall_unsigned_is_minus_signed_stays_rise_does_not_invent() -> None:
@@ -2897,7 +2925,8 @@ def test_iso_usrec_pipe_july_smashes_despite_august_prose() -> None:
         "Updated: Sep 1, 2026. Units: +1 or 0. "
         "https://fred.stlouisfed.org/series/T10Y3M T10Y3M = 1. "
         "July payrolls fell 23,000 and unemployment was 4.1%. "
-        f"{FRED_USREC} {BLS_JULY_ARCHIVE}"
+        "Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2. "
+        f"{FRED_USREC} {BLS_JULY_ARCHIVE} {BEA_2026_NEWS}"
     )
     before = ledger.parallel_calls
     packet = _packet()
@@ -2912,6 +2941,9 @@ def test_iso_usrec_pipe_july_smashes_despite_august_prose() -> None:
             ]),
             _row(BLS_JULY_ARCHIVE, "BLS July archive", [
                 "July payrolls fell 23,000 and unemployment was 4.1%."
+            ]),
+            _row(BEA_2026_NEWS, "BEA second estimate", [
+                "Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2."
             ]),
         ],
         _miss_rows(),

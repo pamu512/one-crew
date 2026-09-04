@@ -8,7 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from onecrew.foundry import leftover_slot_ids
-from onecrew.models import Finding, Receipt
+from onecrew.models import MISSING, Finding, Receipt
 
 SeriesName = Literal["USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME"]
 CLOSED_SERIES = frozenset({"USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME"})
@@ -301,10 +301,12 @@ def claims_from_findings(findings: list[Finding]) -> list[Claim]:
         series = _series_of(finding)
         if not series:
             continue
+        minted = (finding.print or "").strip()
+        printed = minted if minted and minted != MISSING else _print_of(series, finding.claim)
         out.append(
             Claim(
                 series=series,
-                print=_print_of(series, finding.claim),
+                print=printed,
                 when=_when_of(finding),
                 id=finding.id,
                 cite_url=finding.parallel_url or "",
