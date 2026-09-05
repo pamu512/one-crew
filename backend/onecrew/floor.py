@@ -84,8 +84,13 @@ FLOOR_HTML = """<!DOCTYPE html>
       <div class="depths" id="platforms"></div>
       <label>Length / cut — required</label>
       <div class="depths" id="cuts"></div>
-      <label>Depth — required</label>
+      <label>Depth — required (not the Parallel research horizon)</label>
       <div class="depths" id="depths"></div>
+      <label class="depths" style="margin-top:8px">
+        <input type="checkbox" id="deeper_history" name="deeper_history"/>
+        Deeper history — go past recent news / first trigger
+      </label>
+      <p class="note">Default research goes to the first event that actually triggered the topic, scoped to recent news. Check this only if you explicitly want deeper history. The depth pick is not forwarded to Parallel as the horizon.</p>
       <label>Script lean — required (does not restamp sources)</label>
       <div class="depths" id="leans"></div>
       <label for="tell">Tell — pick 6, required free text</label>
@@ -164,6 +169,7 @@ FLOOR_HTML = """<!DOCTYPE html>
       const lean = chosenRadio("script_lean");
       const tell = document.getElementById("tell").value.trim();
       const tone = document.getElementById("tone").value.trim();
+      const deeper = document.getElementById("deeper_history").checked;
       const needTone = cut !== "feature_film";
       const btn = document.getElementById("research");
       const live = window.__shiftsOn === true;
@@ -177,7 +183,9 @@ FLOOR_HTML = """<!DOCTYPE html>
       if (!tell) { msg.textContent = "No tell chosen = no run."; return; }
       if (needTone && !tone) { msg.textContent = "No tone chosen = no run."; return; }
       msg.textContent = live
-        ? "Picks locked. Research spends Parallel only after this."
+        ? (deeper
+          ? "Picks locked. Deeper history on. Research spends Parallel only after this."
+          : "Picks locked. First-trigger / recent news. Research spends Parallel only after this.")
         : "Live spend off. Token-gate still on spend.";
     }
 
@@ -240,7 +248,12 @@ FLOOR_HTML = """<!DOCTYPE html>
       document.getElementById("packet").innerHTML = `
         <div class="brand">${packet.id}</div>
         <h1 class="hook">${packet.topic || packet.hook}</h1>
-        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.tell || "none"} · tone: ${packet.tone || "none"}</p>
+        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · deeper history: ${packet.deeper_history ? "yes" : "no (first trigger / recent news)"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.tell || "none"} · tone: ${packet.tone || "none"}</p>
+        ${packet.grade_artifact ? `<div class="brand" style="margin:16px 0 8px">Room grade artifact</div>
+        <p class="note">packet ${packet.grade_artifact.packet_id}</p>
+        <p class="script">${packet.grade_artifact.research_pack_summary || ""}</p>
+        <p class="script">${packet.grade_artifact.script || ""}</p>
+        <p class="note">room: ${(packet.room_grade && packet.room_grade.vote) || "ungraded"}${(packet.room_grade && packet.room_grade.recut_reason) ? " · " + packet.room_grade.recut_reason : ""}</p>` : ""}
         <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
         <div class="brand" style="margin:16px 0 8px">Existing media · collision</div>
@@ -309,6 +322,7 @@ FLOOR_HTML = """<!DOCTYPE html>
     document.getElementById("topic").addEventListener("input", syncDesk);
     document.getElementById("tell").addEventListener("input", syncDesk);
     document.getElementById("tone").addEventListener("input", syncDesk);
+    document.getElementById("deeper_history").addEventListener("change", syncDesk);
     document.getElementById("research").addEventListener("click", async () => {
       const platform = chosenRadio("platform");
       const cut = chosenRadio("cut");
@@ -317,6 +331,7 @@ FLOOR_HTML = """<!DOCTYPE html>
       const topic = document.getElementById("topic").value.trim();
       const tell = document.getElementById("tell").value.trim();
       const tone = document.getElementById("tone").value.trim();
+      const deeper_history = document.getElementById("deeper_history").checked;
       if (!topic || !platform || !cut || !depth || !script_lean || !tell || (cut !== "feature_film" && !tone)) {
         document.getElementById("desk-msg").textContent = "Any missing pick = no run.";
         return;
@@ -328,7 +343,7 @@ FLOOR_HTML = """<!DOCTYPE html>
           "content-type": "application/json",
           ...(token ? {"X-Shift-Token": token} : {})
         },
-        body: JSON.stringify({topic, platform, cut, depth, script_lean, tell, tone, goal: topic || "Research the topic. Do not post."})
+        body: JSON.stringify({topic, platform, cut, depth, script_lean, tell, tone, deeper_history, goal: topic || "Research the topic. Do not post."})
       });
       const text = await res.text();
       document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);

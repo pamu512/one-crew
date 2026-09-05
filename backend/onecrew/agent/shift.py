@@ -33,7 +33,10 @@ from onecrew.claimer import findings_from_claims, frame_findings, propose_claims
 from onecrew.foundry import FoundryHold, leftover_slot_ids, mint, require_minted, sanitize_stamps
 from onecrew.verify import apply_verify_gate, cite_bag_from_rows
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
-from onecrew.script import pack_numbers, write_script
+from onecrew.research import extract_objective, search_objective, search_queries, task_research_prompt
+from onecrew.room import make_grade_artifact, run_room_loop
+from onecrew.script import pack_numbers
+from onecrew.script_writer import write_vo_from_pack
 from onecrew.store import store
 from onecrew.tell import invents_frame
 
@@ -72,6 +75,7 @@ def open_shift(
     tell: str | None = None,
     tone: str | None = None,
     topic: str = "",
+    deeper_history: bool = False,
 ) -> ShiftRecord:
     (
         chosen_topic,
@@ -103,6 +107,7 @@ def open_shift(
         topic=chosen_topic,
         rails=rails,
         store_backend=store.backend,
+        deeper_history=bool(deeper_history),
     )
     store.upsert_shift(shift)
     return shift
@@ -142,18 +147,13 @@ def _row_urls(rows: list) -> list[str]:
     return [url for url in (getattr(row, "url", None) for row in rows) if url]
 
 
-def _search_queries(packet: Packet, depth: Depth) -> list[str]:
-    """Named official series when the topic is recession. No leftover Hormuz."""
-    topic = packet.topic or packet.hook or "topic"
-    blob = f"{topic} {packet.tell or ''}".lower()
-    if "recession" in blob or "usrec" in blob or "payroll" in blob:
-        return [
-            topic,
-            f"{topic} USREC FRED",
-            f"{topic} nonfarm payrolls BLS",
-            f"{topic} Sahm rule",
-        ]
-    return [topic, f"{topic} {depth}"]
+def _search_queries(packet: Packet, depth: Depth, *, deeper_history: bool = False) -> list[str]:
+    """Named official series when the topic is recession. Floor depth is not the horizon."""
+    return search_queries(
+        packet.topic or packet.hook or "topic",
+        tell=packet.tell or "",
+        deeper_history=deeper_history,
+    )
 
 
 def _fringe_queries(packet: Packet) -> list[str]:
@@ -455,18 +455,28 @@ def _apply_enrichment(findings: list, result: Any) -> None:
         grounded.propaganda_url = grounded.parallel_url
 
 
-def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list[Exclusion], list[str], str]:
+def _research(
+    packet: Packet,
+    rails: Rails,
+    depth: Depth,
+    *,
+    deeper_history: bool | None = None,
+    missing_ask: str | None = None,
+) -> tuple[Receipt, list[Exclusion], list[str], str]:
+    topic = packet.topic or packet.hook
+    if deeper_history is None:
+        deeper_history = bool(packet.deeper_history)
     if not rails.parallel:
         held = hold_receipt(packet.id, rails)
         pre = pre1980_fail_closed(packet_id=packet.id, depth=depth, rails=rails, parallel_hits=0)
         return (pre or held), [], [], ""
     try:
         hit = search(
-            objective=f"Timeline for {packet.topic or packet.hook} inside depth={depth}",
-            search_queries=_search_queries(packet, depth),
+            objective=search_objective(topic, deeper_history=deeper_history),
+            search_queries=_search_queries(packet, depth, deeper_history=deeper_history),
         )
         miss = search(
-            objective=f"Unsourced fringe claim in {packet.topic or packet.hook}",
+            objective=search_objective(topic, fringe=True),
             search_queries=_fringe_queries(packet),
         )
     except ParallelDownError:
@@ -530,10 +540,7 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
     try:
         extracted = extract(
             urls=hit_urls,
-            objective=(
-                f"Thesis quotes, ownership, propaganda, and independence text for "
-                f"{packet.topic or packet.hook}"
-            ),
+            objective=extract_objective(topic),
         )
     except ParallelDownError:
         leftover.append(
@@ -547,10 +554,10 @@ def _research(packet: Packet, rails: Rails, depth: Depth) -> tuple[Receipt, list
         return hold_receipt(packet.id, down), _hold_account_hits(hit_urls, leftover), hit_urls, ""
     try:
         task = run_task(
-            prompt=(
-                f"Write a citable thesis timeline for {packet.topic or packet.hook} "
-                f"inside depth={depth}. Use only sourced events. Name missing causal "
-                "links. Do not invent sources."
+            prompt=task_research_prompt(
+                topic,
+                deeper_history=deeper_history,
+                missing_ask=missing_ask,
             ),
             processor="pro",
         )
@@ -791,8 +798,9 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         script="",
         status="running",
         shift_id=shift.id,
+        deeper_history=bool(shift.deeper_history),
     )
-    bus.emit(shift.id, agent="researcher", kind="plan", message=f"Research {fresh.id} depth={shift.depth}")
+    bus.emit(shift.id, agent="researcher", kind="plan", message=f"Research {fresh.id} first-trigger")
     if not rails.parallel:
         write_receipt(
             fresh,
@@ -801,7 +809,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             )
             or hold_receipt(fresh.id, rails),
         )
-        write_script(fresh)
+        write_vo_from_pack(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
         fresh.exclusions = [
@@ -817,6 +825,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
 
     receipt, leftover, hit_urls, spine = _research(fresh, rails, shift.depth)
     fresh.task_spine = spine
+    fresh.parallel_research_loops = 1
     if receipt.disposition == "HOLD":
         try:
             write_receipt(fresh, receipt)
@@ -831,7 +840,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             fresh.script = ""
             fresh.beats = []
         else:
-            write_script(fresh)
+            write_vo_from_pack(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
         if leftover:
@@ -874,20 +883,67 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             fresh.script = ""
             fresh.beats = []
         else:
-            write_script(fresh)
+            write_vo_from_pack(fresh)
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
         fresh.exclusions = _hold_account_hits(hit_urls, list(leftover or []))
         write_research_pack(fresh, hit_urls=hit_urls)
         store.upsert_packet(fresh)
         return fresh
-    write_script(fresh)
+    write_vo_from_pack(fresh)
+
+    def _research_again(missing_ask: str | None = None) -> None:
+        nonlocal leftover, hit_urls, receipt
+        try:
+            rec, leftover, hit_urls, again_spine = _research(
+                fresh,
+                rails,
+                shift.depth,
+                deeper_history=bool(shift.deeper_history),
+                missing_ask=missing_ask,
+            )
+        except TypeError:
+            rec, leftover, hit_urls, again_spine = _research(fresh, rails, shift.depth)
+        receipt = rec
+        fresh.task_spine = again_spine
+        fresh.parallel_research_loops += 1
+        if rec.disposition == "READY":
+            try:
+                write_receipt(fresh, rec)
+            except ReceiptInvalidError:
+                fresh.receipt = rec
+        else:
+            fresh.receipt = rec
+
+    loop = run_room_loop(
+        fresh,
+        research=_research_again,
+        rewrite=lambda: write_vo_from_pack(fresh),
+        grader=getattr(shift, "room_grader", None),
+        parallel_already=fresh.parallel_research_loops,
+    )
+    fresh.grade_artifact = make_grade_artifact(fresh)
+    fresh.room_grade = loop.grade
+    if loop.disposition == "HOLD":
+        if fresh.receipt is not None:
+            fresh.receipt.disposition = "HOLD"
+            prior = (fresh.receipt.hold_reason or "").strip()
+            fresh.receipt.hold_reason = f"{prior} {loop.hold_reason or ''}".strip()
+        fresh.status = "hold"
+        stamp_collisions(fresh, rails)
+        attach_frames(fresh, [], rails=rails)
+        fresh.exclusions = leftover
+        write_research_pack(fresh, hit_urls=hit_urls)
+        store.upsert_packet(fresh)
+        return fresh
+
     stamp_collisions(fresh, rails)
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
     fresh.exclusions = leftover
     write_research_pack(fresh, hit_urls=hit_urls)
+    fresh.grade_artifact = make_grade_artifact(fresh)
     store.upsert_packet(fresh)
     return fresh
 
@@ -904,6 +960,7 @@ async def run_shift(
     tell: str | None = None,
     tone: str | None = None,
     topic: str = "",
+    deeper_history: bool = False,
 ) -> ShiftRecord:
     if shift is None:
         shift = open_shift(
@@ -916,6 +973,7 @@ async def run_shift(
             tell=tell,
             tone=tone,
             topic=topic,
+            deeper_history=deeper_history,
         )
     try:
         packet = run_live_packet(shift)
