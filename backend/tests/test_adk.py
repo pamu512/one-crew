@@ -7,7 +7,14 @@ from onecrew.parallel_client import search
 
 pytest.importorskip("google.adk")
 
-from onecrew.agent.adk_agents import build_claimer, build_critic, build_root_agent  # noqa: E402
+from onecrew.agent.adk_agents import (  # noqa: E402
+    build_claimer,
+    build_critic,
+    build_root_agent,
+    build_room,
+    build_script_writer,
+    build_writer_room,
+)
 
 
 def test_adk_crew_builds_with_vertex_flash() -> None:
@@ -17,8 +24,14 @@ def test_adk_crew_builds_with_vertex_flash() -> None:
     agent = build_root_agent()
     assert agent.name == "one_crew"
     names = [child.name for child in agent.sub_agents]
-    assert names == ["researcher", "boarder"]
+    assert names == ["researcher", "script_writer", "room", "boarder"]
     assert "floor" not in names
+    writer = build_script_writer()
+    room = build_room()
+    assert writer.name == "script_writer"
+    assert room.name == "room"
+    pair = build_writer_room()
+    assert [child.name for child in pair.sub_agents] == ["script_writer", "room"]
     # Claimer + Critic are on the live shift path; ADK builders stay loadable.
     claimer = build_claimer()
     critic = build_critic()

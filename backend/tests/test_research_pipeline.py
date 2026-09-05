@@ -1,4 +1,4 @@
-"""Locked pipeline: Parallel researches, Vertex writes VO, room grades, one extra loop max."""
+"""Locked pipeline: Parallel researches, ADK writer, ADK room, storyboard on ship."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from onecrew.room import (
     GradeArtifact,
     RoomGrade,
     claim_supported_after_churn,
+    grade_room,
     make_grade_artifact,
     relink_cite_if_supported,
     run_room_loop,
@@ -1045,6 +1046,235 @@ def test_verify_hold_after_vo_still_reaches_room_and_can_ship(monkeypatch) -> No
     assert packet.receipt.disposition == "HOLD"
     assert packet.receipt.findings
     assert packet.status == "hold"
+
+
+def _adk_eight_from_pack(prompt: str) -> str:
+    """Stub ADK writer: 8 beats from pack numbers, not foundry mint stamps."""
+    pack = prompt or ""
+    spoken = "USREC=0 smashed into payrolls −41,000." if "41,000" in pack or "USREC" in pack else "pack beat"
+    return (
+        f'[{{"id":"cold-open","vo":"{spoken} [usrec-march-2025] [payrolls-march-2025]",'
+        '"eyes":"March CES","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"promise","vo":"Three objects from the pack. [usrec-march-2025]","eyes":"pack","finding_ids":["usrec-march-2025"]},'
+        '{"id":"gdp","vo":"USREC=0 (March 2025). [usrec-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]},'
+        '{"id":"labor","vo":"Nonfarm payrolls fell −41,000. [payrolls-march-2025]","eyes":"ces","finding_ids":["payrolls-march-2025"]},'
+        '{"id":"turn","vo":"Hold on the pack number. [usrec-march-2025]","eyes":"hold","finding_ids":["usrec-march-2025"]},'
+        '{"id":"complication","vo":"Those are not the same object. [usrec-march-2025]","eyes":"gap","finding_ids":["usrec-march-2025"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-march-2025] [payrolls-march-2025]","eyes":"board","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-march-2025]","eyes":"close","finding_ids":["usrec-march-2025"]}]'
+    )
+
+
+def test_stub_adk_writer_eight_beats_from_pack_nonempty_script(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    writer_prompts: list[str] = []
+
+    def stub_writer(prompt: str) -> str:
+        writer_prompts.append(prompt)
+        return _adk_eight_from_pack(prompt)
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", stub_writer)
+    monkeypatch.setattr(
+        "onecrew.script_writer.generate_script",
+        lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("live path is ADK writer, not generate_script")),
+    )
+    written = write_vo_from_pack(packet)
+    assert writer_prompts, "ADK script_writer must run on the pack"
+    assert any("41,000" in p or "USREC" in p for p in writer_prompts)
+    assert written.script
+    assert len(written.beats) == 8
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "41,000" in spoken or "41k" in spoken.lower()
+    assert "−23k" not in spoken and "-23k" not in spoken
+
+
+def test_empty_pack_skips_adk_writer_fail_closed(monkeypatch) -> None:
+    packet = Packet(
+        id="oc-empty-adk-pack",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="should clear",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read",
+        tone="On the cited print",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="HOLD",
+        hold_reason="empty pack",
+        findings=[],
+    )
+    called = {"n": 0}
+
+    def stub_writer(_prompt: str) -> str:
+        called["n"] += 1
+        return _adk_eight_from_pack(_prompt)
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", stub_writer)
+    write_vo_from_pack(packet)
+    assert called["n"] == 0
+    assert packet.script == ""
+    assert packet.beats == []
+    assert packet.status == "hold"
+
+
+def test_grade_room_invokes_adk_room_not_always_ship(monkeypatch) -> None:
+    artifact = GradeArtifact(
+        packet_id="oc-adk-room",
+        research_pack_summary="thin pack",
+        script="draft VO",
+    )
+    monkeypatch.setattr(
+        "onecrew.room.run_adk_room",
+        lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="not_enough_information",
+            recut_detail="need first trigger cite",
+        ),
+    )
+    grade = grade_room(artifact)
+    assert grade.vote == "recut"
+    assert grade.recut_reason == "not_enough_information"
+
+
+def test_stub_adk_reviewer_recut_not_enough_information_one_parallel_then_rewrite(
+    monkeypatch,
+) -> None:
+    from onecrew.agent.shift import open_shift, run_live_packet
+    from onecrew.script_writer import write_vo_from_pack as real_write_vo
+
+    research_calls = {"n": 0}
+    writer_calls = {"n": 0}
+    grades = iter(
+        [
+            RoomGrade(
+                vote="recut",
+                recut_reason="not_enough_information",
+                recut_detail="need first trigger cite",
+            ),
+            RoomGrade(vote="ship"),
+        ]
+    )
+
+    def research(packet, rails, depth, **_k):
+        research_calls["n"] += 1
+        packet.research_pack = _HOLD_PACK
+        packet.task_spine = _HOLD_PACK
+        return (
+            Receipt(
+                packet_id=packet.id,
+                written=False,
+                disposition="READY",
+                findings=_hold_findings(),
+                causal_links=[],
+            ),
+            [],
+            [FRED, BLS_OLD],
+            _HOLD_PACK,
+        )
+
+    def stub_writer(prompt: str) -> str:
+        writer_calls["n"] += 1
+        return _adk_eight_from_pack(prompt)
+
+    def tracking_vo(packet):
+        return real_write_vo(packet)
+
+    monkeypatch.setattr("onecrew.agent.shift._research", research)
+    monkeypatch.setattr("onecrew.agent.shift.write_vo_from_pack", tracking_vo)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", stub_writer)
+    monkeypatch.setattr("onecrew.room.run_adk_room", lambda _a: next(grades))
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    shift = open_shift(
+        "Are we near recession?",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        topic="Are we near recession?",
+    )
+    shift.rails = Rails(parallel=True, vertex=True, imagen=False)
+    packet = run_live_packet(shift)
+    assert research_calls["n"] == 2, "recut not_enough_information must run one extra Parallel loop"
+    assert writer_calls["n"] == 2, "rewrite must run ADK writer after the extra Parallel loop"
+    assert packet.script
+    assert packet.room_grade is not None
+    assert packet.room_grade.vote == "ship"
+    assert packet.parallel_research_loops == 2
+
+
+def test_stub_adk_reviewer_ship_reaches_board(monkeypatch) -> None:
+    from onecrew.agent.shift import _board as real_board
+    from onecrew.agent.shift import open_shift, run_live_packet
+    from onecrew.script_writer import write_vo_from_pack as real_write_vo
+
+    board_calls = {"n": 0}
+
+    def research(packet, rails, depth, **_k):
+        packet.research_pack = _HOLD_PACK
+        packet.task_spine = _HOLD_PACK
+        return (
+            Receipt(
+                packet_id=packet.id,
+                written=False,
+                disposition="READY",
+                findings=_hold_findings(),
+                causal_links=[],
+            ),
+            [],
+            [FRED, BLS_OLD],
+            _HOLD_PACK,
+        )
+
+    def tracking_board(packet, rails):
+        board_calls["n"] += 1
+        return real_board(packet, rails)
+
+    monkeypatch.setattr("onecrew.agent.shift._research", research)
+    monkeypatch.setattr("onecrew.agent.shift.write_vo_from_pack", real_write_vo)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", _adk_eight_from_pack)
+    monkeypatch.setattr("onecrew.room.run_adk_room", lambda _a: RoomGrade(vote="ship"))
+    monkeypatch.setattr("onecrew.agent.shift._board", tracking_board)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    shift = open_shift(
+        "Are we near recession?",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        topic="Are we near recession?",
+    )
+    shift.rails = Rails(parallel=True, vertex=True, imagen=True)
+    packet = run_live_packet(shift)
+    assert packet.script
+    assert packet.room_grade is not None
+    assert packet.room_grade.vote == "ship"
+    assert board_calls["n"] >= 1
+    assert packet.frames is not None
+
+
+def test_critic_instruction_does_not_skip_writer() -> None:
+    from onecrew.agent.adk_agents import CRITIC_INSTRUCTION
+
+    assert "skip the writer" not in CRITIC_INSTRUCTION.lower()
+    assert "writer" in CRITIC_INSTRUCTION.lower()
+    assert "HOLD" in CRITIC_INSTRUCTION
 
 
 def test_floor_and_api_signal_deeper_history_vs_default() -> None:

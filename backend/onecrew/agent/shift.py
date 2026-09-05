@@ -24,6 +24,7 @@ from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import (
     ReceiptInvalidError,
+    ReceiptWriteOnceError,
     attach_frames,
     credit_hold_receipt,
     hold_receipt,
@@ -771,7 +772,7 @@ def _board(packet: Packet, rails: Rails) -> list:
 
 
 def run_live_packet(shift: ShiftRecord) -> Packet:
-    """Spend path. Picks → sources → script → storyboard. Boards are not optional."""
+    """Spend path. Picks → Parallel pack → ADK writer → ADK room → storyboard on ship."""
     require_picks(
         shift.topic,
         shift.platform,
@@ -886,6 +887,9 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                 write_receipt(fresh, rec)
             except ReceiptInvalidError:
                 fresh.receipt = rec
+            except ReceiptWriteOnceError:
+                # ponytail: write-once already fired. Pack/spine already updated for rewrite.
+                pass
         else:
             fresh.receipt = rec
 

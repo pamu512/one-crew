@@ -103,7 +103,8 @@ CRITIC_INSTRUCTION = """You are One Crew's critic.
 Call the deterministic verify tools. Never override ok: false with prose.
 verify_print_in_cite, verify_payrolls_realized_ces, verify_usrec_smash,
 verify_gdp_bars, verify_u3_ces, verify_claim_set are the authority.
-READY only if verify_claim_set is ok. Else HOLD, keep findings, skip the writer.
+READY only if verify_claim_set is ok. Else HOLD, keep findings, and still run the writer.
+HOLD annotates the receipt. It must not blank the script.
 Do not invent prints. Do not rename leftover slots to pass the gate.
 """
 
@@ -159,18 +160,21 @@ def build_boarder():
 SCRIPT_WRITER_INSTRUCTION = """You are One Crew's script writer.
 
 You receive the Parallel research pack plus user picks (topic, platform, cut, tell, tone, script_lean).
-Write the timed VO from that pack. Parallel does not write the timed VO.
-Pack numbers only. Do not invent stats. Do not hardcode leftover July −23k or Hormuz 3-slot lines.
+Write the timed VO from that pack text. Pack text is the authority, not foundry mint stamps.
+Parallel does not write the timed VO.
+Return 8-beat JSON. Pack numbers only. Do not invent stats. Do not hardcode leftover July −23k or Hormuz 3-slot lines.
 Host/reporter only on news cuts. You do not post.
 """
 
-ROOM_INSTRUCTION = """You are the Devpost-review / Vertex discussant room.
+ROOM_INSTRUCTION = """You are the discussant room.
 
 You receive an artifact: packet id, research pack summary, full script.
+Grade bar: a cite-faithful script and storyboard for the end user. Floor never posts.
 Vote ship or recut. Recut requires why: not_enough_information | other (short reason).
 not_enough_information may trigger at most one extra Parallel fetch, then a rewrite.
 A second recut for information does not call Parallel a third time — HOLD and surface to the user.
-You do not post. Floor never posts.
+Return JSON only: {"vote":"ship"} or {"vote":"recut","recut_reason":"not_enough_information|other","recut_detail":"..."}.
+You do not post.
 """
 
 
@@ -198,14 +202,25 @@ def build_room():
     )
 
 
+def build_writer_room():
+    """Live pair: ADK writer then ADK room. Shift still owns Parallel + recut."""
+    from google.adk.agents.sequential_agent import SequentialAgent
+
+    return SequentialAgent(
+        name="writer_room",
+        description="ADK script writer then discussant room. Floor never posts.",
+        sub_agents=[build_script_writer(), build_room()],
+    )
+
+
 def build_root_agent():
-    """Gemini ADK crew: researcher then boarder. Floor is not in the crew."""
+    """Gemini ADK crew: Parallel research, writer, room, storyboard. Floor is not in the crew."""
     from google.adk.agents.sequential_agent import SequentialAgent
 
     return SequentialAgent(
         name="one_crew",
-        description="Researcher (Parallel) then boarder (Imagen). Floor never posts.",
-        sub_agents=[build_researcher(), build_boarder()],
+        description="Researcher (Parallel), ADK writer, ADK room, then boarder. Floor never posts.",
+        sub_agents=[build_researcher(), build_script_writer(), build_room(), build_boarder()],
     )
 
 
