@@ -173,7 +173,10 @@ Grade bar: a cite-faithful script and storyboard for the end user. Floor never p
 Vote ship or recut. Recut requires why: not_enough_information | other (short reason).
 not_enough_information may trigger at most one extra Parallel fetch, then a rewrite.
 A second recut for information does not call Parallel a third time — HOLD and surface to the user.
-Return JSON only: {"vote":"ship"} or {"vote":"recut","recut_reason":"not_enough_information|other","recut_detail":"..."}.
+Return JSON only, one of:
+{"vote":"ship"}
+{"vote":"recut","recut_reason":"not_enough_information","recut_detail":"..."}
+{"vote":"recut","recut_reason":"other","recut_detail":"..."}
 You do not post.
 """
 

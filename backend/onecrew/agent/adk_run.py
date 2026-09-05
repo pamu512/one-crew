@@ -64,7 +64,12 @@ def live_adk_text(name: str, prompt: str) -> str:
     builder = _builders().get(name)
     if builder is None:
         raise VertexDownError(f"unknown ADK agent {name}")
-    return _run_sync(_run_agent_async(builder(), prompt))
+    try:
+        return _run_sync(_run_agent_async(builder(), prompt))
+    except VertexDownError:
+        raise
+    except Exception as exc:
+        raise VertexDownError(f"ADK {name} down: {exc}") from exc
 
 
 def artifact_prompt(artifact: GradeArtifact) -> str:
@@ -72,9 +77,10 @@ def artifact_prompt(artifact: GradeArtifact) -> str:
         "Grade this deliverable. Vote ship or recut.\n"
         "Recut requires why: not_enough_information | other.\n"
         "Bar: cite-faithful script + storyboard for the end user. Floor never posts.\n"
-        "Return JSON only: {\"vote\":\"ship\"} or "
-        "{\"vote\":\"recut\",\"recut_reason\":\"not_enough_information|other\","
-        "\"recut_detail\":\"...\"}.\n"
+        "Return JSON only, one of:\n"
+        "{\"vote\":\"ship\"}\n"
+        "{\"vote\":\"recut\",\"recut_reason\":\"not_enough_information\",\"recut_detail\":\"...\"}\n"
+        "{\"vote\":\"recut\",\"recut_reason\":\"other\",\"recut_detail\":\"...\"}\n"
         f"packet_id={artifact.packet_id}\n"
         f"research_pack_summary:\n{artifact.research_pack_summary}\n"
         f"script:\n{artifact.script}\n"
@@ -98,10 +104,17 @@ def parse_room_grade(raw: str) -> RoomGrade:
     vote = data.get("vote")
     if vote not in {"ship", "recut"}:
         raise ValueError("ADK room vote must be ship or recut")
+    reason = data.get("recut_reason")
+    detail = str(data.get("recut_detail") or "")
+    if vote == "recut" and reason not in {"not_enough_information", "other"}:
+        # ponytail: model may copy the enum pipe. Coerce so RoomGrade cannot crash the spend.
+        if reason:
+            detail = f"{reason} {detail}".strip()
+        reason = "other"
     return RoomGrade(
         vote=vote,
-        recut_reason=data.get("recut_reason"),
-        recut_detail=str(data.get("recut_detail") or ""),
+        recut_reason=reason,
+        recut_detail=detail,
     )
 
 

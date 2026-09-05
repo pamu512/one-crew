@@ -51,8 +51,12 @@ def run_adk_room(artifact: GradeArtifact) -> RoomGrade:
     if not config.has_vertex() or not config.has_adc():
         return RoomGrade(vote="ship")
     from onecrew.agent.adk_run import live_adk_room
+    from onecrew.vertex_client import VertexDownError
 
-    return live_adk_room(artifact)
+    try:
+        return live_adk_room(artifact)
+    except (VertexDownError, ValueError) as exc:
+        return RoomGrade(vote="recut", recut_reason="other", recut_detail=f"ADK room down: {exc}")
 
 
 def grade_room(artifact: GradeArtifact, *, grader: GraderFn | None = None) -> RoomGrade:

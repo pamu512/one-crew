@@ -1269,6 +1269,42 @@ def test_stub_adk_reviewer_ship_reaches_board(monkeypatch) -> None:
     assert packet.frames is not None
 
 
+def test_parse_room_grade_coerces_pipe_enum() -> None:
+    from onecrew.agent.adk_run import parse_room_grade
+
+    shipped = parse_room_grade('{"vote":"ship"}')
+    assert shipped.vote == "ship"
+    recut = parse_room_grade(
+        '{"vote":"recut","recut_reason":"not_enough_information","recut_detail":"need cite"}'
+    )
+    assert recut.recut_reason == "not_enough_information"
+    piped = parse_room_grade(
+        '{"vote":"recut","recut_reason":"not_enough_information|other","recut_detail":"muddy"}'
+    )
+    assert piped.vote == "recut"
+    assert piped.recut_reason == "other"
+    assert "not_enough_information|other" in piped.recut_detail
+
+
+def test_adk_writer_prompt_sends_pack_and_picks(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    prompts: list[str] = []
+
+    def stub_writer(prompt: str) -> str:
+        prompts.append(prompt)
+        return _adk_eight_from_pack(prompt)
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", stub_writer)
+    write_vo_from_pack(packet)
+    assert prompts
+    joined = " ".join(prompts)
+    assert "Pack text is the authority" in joined
+    assert '"platform"' in joined
+    assert packet.platform and packet.platform in joined
+    assert (packet.research_pack or "")[:20] in joined
+
+
 def test_critic_instruction_does_not_skip_writer() -> None:
     from onecrew.agent.adk_agents import CRITIC_INSTRUCTION
 
