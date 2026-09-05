@@ -474,7 +474,11 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         {
             "id": "labor",
             "vo": _voice(f"{(second or first).claim}{_cite(second or first)}" if (second or first) else smash, packet),
-            "eyes": f"Named official series: {(second or first).claim}. Official page only.",
+            "eyes": (
+                f"Named official series: {(second or first).claim}. Official page only."
+                if (second or first)
+                else "Official series cards only."
+            ),
             "finding_ids": [(second or first).id] if (second or first) else [],
         },
         {
