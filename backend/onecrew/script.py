@@ -526,9 +526,48 @@ def _tc(total_s: int, *, hours: bool) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def _vo_uses_pack(packet: Packet, vo: str) -> bool:
+    pack_n = {n.replace("−", "-") for n in _numbers_in(_pack_text(packet))}
+    vo_n = {n.replace("−", "-") for n in _numbers_in(vo)}
+    return bool(pack_n & vo_n)
+
+
+def _vertex_keeps(packet: Packet, units: list[dict] | None) -> bool:
+    """Keep Vertex 8-beats that cite pack findings or speak pack numbers."""
+    if not units or len(units) != 8:
+        return False
+    spoken = _units_spoken(units)
+    if _leftover_vo(spoken) or _GROUNDED_EVENT.search(spoken):
+        return False
+    known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
+    cited = any(fid in known for u in units for fid in (u.get("finding_ids") or []))
+    return cited or _vo_uses_pack(packet, spoken)
+
+
+def _warn_mint(packet: Packet, holes: list[str]) -> None:
+    extra = "; ".join(dict.fromkeys(h for h in holes if h.strip()))
+    if not extra:
+        return
+    receipt = packet.receipt
+    if receipt is None:
+        return
+    receipt.disposition = "HOLD"
+    prior = (receipt.hold_reason or "").strip()
+    if extra not in prior:
+        receipt.hold_reason = f"{prior} {extra}".strip() if prior else extra
+
+
+def _pack_source(packet: Packet) -> bool:
+    if (packet.research_pack or "").strip() or (packet.task_spine or "").strip():
+        return True
+    receipt = packet.receipt
+    return bool(receipt and receipt.findings)
+
+
 def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if len(units) != 8:
         return _fail_closed(packet, ["writer must emit 8 beats"])
+    held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
     cut = require_cut(packet.cut) if packet.cut else None
     short = cut in _SHORT
@@ -545,7 +584,8 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         eyes = (unit.get("eyes") or "").strip()
         hole = "sahm hole" in f"{vo} {eyes}".lower() or "no matching url" in f"{vo} {eyes}".lower()
         if not fids and known and not hole:
-            return _fail_closed(packet, [f"{bid} cites nothing in the pack"])
+            if not (held and _vo_uses_pack(packet, vo)):
+                return _fail_closed(packet, [f"{bid} cites nothing in the pack"])
         for fid in fids:
             if f"[{fid}]" not in vo:
                 vo = f"{vo} [{fid}]"
@@ -616,7 +656,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if _leftover_vo(spoken):
         return _fail_closed(packet, ["VO is leftover template"])
     holes = _missing_pack_marks(packet, spoken)
-    if holes:
+    if holes and not held:
         return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
     packet.status = "ready" if packet.receipt is None or packet.receipt.disposition != "HOLD" else "hold"
     return packet
@@ -659,22 +699,21 @@ def _parse_units(raw: str) -> list[dict] | None:
 
 
 def write_script(packet: Packet, writer=None) -> Packet:
-    """8-beat timed VO from the pack. Fail-closed if the pack is empty or has no numbers."""
+    """8-beat timed VO from the pack. Mint/verify HOLD does not blank before Vertex."""
     receipt = packet.receipt
     emit = writer or generate_script
-    if receipt is None or not receipt.findings:
+    if not _pack_source(packet):
         holes = ["empty pack"]
         if receipt is not None and receipt.disposition == "HOLD":
             holes = [receipt.hold_reason or "HOLD pack"]
         return _fail_closed(packet, holes)
     text = _pack_text(packet)
-    if not (packet.research_pack or "").strip() and not receipt.findings:
-        return _fail_closed(packet, ["empty pack"])
     if _GROUNDED_EVENT.search(text) and not _recession_pack(text):
         return _fail_closed(packet, ["leftover grounded-event template"])
     fiction = _invents(packet)
+    mint_holes: list[str] = []
     if not fiction and not _numbers_in(text):
-        return _fail_closed(packet, ["pack has no numbers"])
+        mint_holes.append("pack has no numbers")
     usrec = _by_series(packet, "USREC")
     payrolls = _by_series(packet, "BLS payrolls", "payrolls")
     if (
@@ -687,38 +726,43 @@ def write_script(packet: Packet, writer=None) -> Packet:
             and _payroll_print_ok(payrolls.print or "")
         )
     ):
-        return _fail_closed(packet, ["foundry dropped named series"])
+        mint_holes.append("foundry dropped named series")
     if (
         payrolls
         and re.search(r"\b(fell|dropped|declined|lost|decreased|down)\b", text, re.I)
         and not _print_has_minus(payrolls.print or "")
     ):
-        return _fail_closed(packet, ["foundry dropped named series"])
+        mint_holes.append("foundry dropped named series")
     if usrec and payrolls:
         if not (usrec.when or "").strip() or not (payrolls.when or "").strip():
-            return _fail_closed(packet, ["empty when"])
+            mint_holes.append("empty when")
         if not _same_month(usrec.when, payrolls.when):
-            return _fail_closed(packet, ["smash mixed months"])
+            mint_holes.append("smash mixed months")
     if ("−0.03" in text or "-0.03" in text) and re.search(r"sahm", text, re.I) and not _by_series(
         packet, "SAHMREALTIME"
     ):
-        return _fail_closed(packet, ["Sahm no_url"])
+        mint_holes.append("Sahm no_url")
     gdp = _by_series(packet, "GDP")
     if gdp and not (gdp.print or "").strip():
-        return _fail_closed(packet, ["gdp print empty"])
+        mint_holes.append("gdp print empty")
     local = _eight_from_pack(packet)
-    if not _accept_units(packet, local):
-        return _fail_closed(packet, ["_eight_from_pack cannot place minted prints"])
-    units = local
+    local_ok = bool(local) and _accept_units(packet, local) and not mint_holes
+    units = local if local_ok else []
+    spine = local if local and len(local) == 8 else []
     # Seed / leftover Hormuz stamp locally. Cloud Run boot has ADC so has_vertex
     # is true; Vertex Agent Platform 403 must not crash-loop first-open.
     if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
         try:
-            parsed = _parse_units(emit(_prompt(packet, local)))
-            if parsed and _accept_units(packet, parsed, spine=local):
+            parsed = _parse_units(emit(_prompt(packet, spine)))
+            if parsed and _accept_units(packet, parsed, spine=local if local_ok else None):
+                units = parsed
+            elif parsed and _vertex_keeps(packet, parsed):
                 units = parsed
         except VertexDownError:
             pass
-    if not _accept_units(packet, units, spine=local) and _accept_units(packet, local):
+    if not units and local_ok:
         units = local
-    return _assemble(packet, units)
+    if units and len(units) == 8:
+        _warn_mint(packet, mint_holes)
+        return _assemble(packet, units)
+    return _fail_closed(packet, mint_holes or ["_eight_from_pack cannot place minted prints"])
