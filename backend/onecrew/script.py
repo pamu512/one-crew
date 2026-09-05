@@ -658,10 +658,11 @@ def _parse_units(raw: str) -> list[dict] | None:
     return beats
 
 
-def write_script(packet: Packet) -> Packet:
+def write_script(packet: Packet, writer=None) -> Packet:
     """8-beat timed VO from the pack. Fail-closed if the pack is empty or has no numbers."""
     receipt = packet.receipt
-    if receipt is None or receipt.disposition != "READY" or not receipt.findings:
+    emit = writer or generate_script
+    if receipt is None or not receipt.findings:
         holes = ["empty pack"]
         if receipt is not None and receipt.disposition == "HOLD":
             holes = [receipt.hold_reason or "HOLD pack"]
@@ -713,7 +714,7 @@ def write_script(packet: Packet) -> Packet:
     # is true; Vertex Agent Platform 403 must not crash-loop first-open.
     if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
         try:
-            parsed = _parse_units(generate_script(_prompt(packet, local)))
+            parsed = _parse_units(emit(_prompt(packet, local)))
             if parsed and _accept_units(packet, parsed, spine=local):
                 units = parsed
         except VertexDownError:
