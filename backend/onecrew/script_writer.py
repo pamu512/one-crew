@@ -9,7 +9,7 @@ from onecrew.vertex_client import generate_script
 
 def write_vo_from_pack(packet: Packet) -> Packet:
     """Existing Vertex client. Stub generate_script in tests. Pack-faithful, no hardcoded prints."""
-    return write_script(packet)
+    return write_script(packet, writer=generate_script)
 
 
 __all__ = ["write_vo_from_pack", "generate_script"]

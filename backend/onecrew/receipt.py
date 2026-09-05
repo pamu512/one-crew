@@ -211,9 +211,6 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
 
 def attach_frames(packet: Packet, frames: list[ShotFrame], *, rails: Rails) -> Packet:
     """Keep the shot list from the VO. If Imagen/Vertex is down, images stay missing."""
-    if packet.receipt is not None and packet.receipt.disposition == "HOLD":
-        packet.frames = []
-        return packet
     if not packet.script.strip() and not packet.beats:
         packet.frames = []
         return packet

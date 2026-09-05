@@ -414,6 +414,224 @@ def test_unrelated_topic_has_no_leftover_hormuz_3slot(monkeypatch) -> None:
     assert "hormuz=13" not in spoken.lower()
 
 
+_HOLD_PACK = (
+    "First trigger: March 2025 CES. USREC March 2025 = 0. "
+    "Total nonfarm payroll employment fell by 41,000 in March 2025."
+)
+_HOLD_VERTEX_BEATS = (
+    '[{"id":"cold-open","vo":"USREC=0 smashed into payrolls −41,000. [usrec-march-2025] [payrolls-march-2025]",'
+    '"eyes":"March CES","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+    '{"id":"promise","vo":"Three objects from the pack. [usrec-march-2025]","eyes":"pack","finding_ids":["usrec-march-2025"]},'
+    '{"id":"gdp","vo":"USREC=0 (March 2025). [usrec-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]},'
+    '{"id":"labor","vo":"Nonfarm payrolls fell −41,000. [payrolls-march-2025]","eyes":"ces","finding_ids":["payrolls-march-2025"]},'
+    '{"id":"turn","vo":"Hold on the pack number. [usrec-march-2025]","eyes":"hold","finding_ids":["usrec-march-2025"]},'
+    '{"id":"complication","vo":"Those are not the same object. [usrec-march-2025]","eyes":"gap","finding_ids":["usrec-march-2025"]},'
+    '{"id":"receipt","vo":"Receipt board: named series. [usrec-march-2025] [payrolls-march-2025]","eyes":"board","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+    '{"id":"close","vo":"Near is not a switch. [usrec-march-2025]","eyes":"close","finding_ids":["usrec-march-2025"]}]'
+)
+
+
+def _hold_findings() -> list[Finding]:
+    return [
+        Finding(
+            id="usrec-march-2025",
+            claim="USREC=0 (March 2025).",
+            stamp="grounded",
+            title="USREC",
+            series="USREC",
+            print="0",
+            when="March 2025",
+            parallel_url=FRED,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="payrolls-march-2025",
+            claim="Nonfarm payrolls fell −41,000 in March 2025.",
+            stamp="grounded",
+            title="BLS payrolls",
+            series="BLS payrolls",
+            print="−41,000",
+            when="March 2025",
+            parallel_url=BLS_OLD,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+    ]
+
+
+def _hold_packet(*, disposition: str) -> Packet:
+    packet = Packet(
+        id="oc-hold-vo-pack",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        research_pack=_HOLD_PACK,
+        task_spine=_HOLD_PACK,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition=disposition,
+        hold_reason="verify: print not in cite" if disposition == "HOLD" else None,
+        findings=_hold_findings(),
+    )
+    return packet
+
+
+def _vertex_stub(bucket: list[str]):
+    def fake_vertex(prompt: str) -> str:
+        bucket.append(prompt)
+        return _HOLD_VERTEX_BEATS
+
+    return fake_vertex
+
+
+def test_write_vo_from_pack_uses_vertex_when_receipt_is_hold(monkeypatch) -> None:
+    packet = _hold_packet(disposition="HOLD")
+    writer_prompts: list[str] = []
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("script.generate_script must not be the only Vertex path")))
+    monkeypatch.setattr("onecrew.script_writer.generate_script", _vertex_stub(writer_prompts))
+    written = write_vo_from_pack(packet)
+    assert writer_prompts, "write_vo_from_pack must invoke Vertex from the pack"
+    assert "41,000" in " ".join(writer_prompts) or _HOLD_PACK[:20] in " ".join(writer_prompts)
+    assert written.script
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "41,000" in spoken or "41k" in spoken.lower()
+    assert "−23k" not in spoken and "-23k" not in spoken
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "HOLD"
+    assert packet.receipt.findings
+    assert packet.status == "hold"
+
+
+def test_verify_hold_with_findings_still_writes_vo(monkeypatch) -> None:
+    from onecrew.agent.shift import open_shift, run_live_packet
+    from onecrew.script_writer import write_vo_from_pack as real_write_vo
+
+    vo_calls = {"n": 0}
+    writer_prompts: list[str] = []
+
+    def research(packet, rails, depth, **_k):
+        packet.research_pack = _HOLD_PACK
+        receipt = Receipt(
+            packet_id=packet.id,
+            written=False,
+            disposition="HOLD",
+            hold_reason="verify: print not in cite",
+            findings=_hold_findings(),
+            causal_links=[],
+        )
+        return receipt, [], [FRED, BLS_OLD], _HOLD_PACK
+
+    def tracking_vo(packet):
+        vo_calls["n"] += 1
+        return real_write_vo(packet)
+
+    monkeypatch.setattr("onecrew.agent.shift._research", research)
+    monkeypatch.setattr("onecrew.agent.shift.write_vo_from_pack", tracking_vo)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", _vertex_stub(writer_prompts))
+    shift = open_shift(
+        "Are we near recession?",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        topic="Are we near recession?",
+    )
+    shift.rails = Rails(parallel=True, vertex=True, imagen=False)
+    packet = run_live_packet(shift)
+    assert vo_calls["n"] >= 1
+    assert writer_prompts, "generate_script must run after verify HOLD"
+    assert packet.script, "verify HOLD must not blank script when findings exist"
+    assert packet.script != ""
+    assert packet.beats
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "HOLD"
+    assert {f.id for f in packet.receipt.findings} == {"usrec-march-2025", "payrolls-march-2025"}
+    spoken = packet.script + "".join(b.vo for b in packet.beats)
+    assert "−23k" not in spoken and "-23k" not in spoken
+    assert "July 2026" not in spoken
+
+
+def test_verify_hold_after_vo_still_reaches_room_and_can_ship(monkeypatch) -> None:
+    from onecrew.agent.shift import _board as real_board
+    from onecrew.agent.shift import open_shift, run_live_packet
+    from onecrew.room import run_room_loop as real_room
+
+    room_calls = {"n": 0}
+    board_calls = {"n": 0}
+
+    def research(packet, rails, depth, **_k):
+        packet.research_pack = _HOLD_PACK
+        return (
+            Receipt(
+                packet_id=packet.id,
+                written=False,
+                disposition="HOLD",
+                hold_reason="verify: print not in cite",
+                findings=_hold_findings(),
+                causal_links=[],
+            ),
+            [],
+            [FRED, BLS_OLD],
+            _HOLD_PACK,
+        )
+
+    def tracking_room(*args, **kwargs):
+        room_calls["n"] += 1
+        kwargs["grader"] = lambda _a: RoomGrade(vote="ship")
+        return real_room(*args, **kwargs)
+
+    def tracking_board(packet, rails):
+        board_calls["n"] += 1
+        return real_board(packet, rails)
+
+    monkeypatch.setattr("onecrew.agent.shift._research", research)
+    monkeypatch.setattr("onecrew.agent.shift.run_room_loop", tracking_room)
+    monkeypatch.setattr("onecrew.agent.shift._board", tracking_board)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", _vertex_stub([]))
+    shift = open_shift(
+        "Are we near recession?",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        topic="Are we near recession?",
+    )
+    shift.rails = Rails(parallel=True, vertex=True, imagen=True)
+    packet = run_live_packet(shift)
+    assert packet.script
+    assert room_calls["n"] >= 1
+    assert packet.room_grade is not None
+    assert packet.room_grade.vote == "ship"
+    assert packet.grade_artifact is not None
+    assert board_calls["n"] >= 1
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "HOLD"
+    assert packet.receipt.findings
+    assert packet.status == "hold"
+
+
 def test_floor_and_api_signal_deeper_history_vs_default() -> None:
     assert 'id="deeper_history"' in FLOOR_HTML
     assert "deeper history" in FLOOR_HTML.lower()
