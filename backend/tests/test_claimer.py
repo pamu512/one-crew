@@ -326,3 +326,52 @@ def test_leftover_hormuz_slots_are_not_cold_open_on_unrelated_topic() -> None:
         assert "smashed into jcpoa" not in cold.vo.lower()
     assert "hormuz=13 smashed into jcpoa" not in spoken.lower()
     assert "timeline-hit" not in spoken
+
+
+_PAYEMS_162K = "PAYEMS August 2026 = 162,000. All employees, thousands."
+_GDP_34_28 = (
+    "Real GDP increased 3.4 percent in the first quarter of 2025. "
+    "Real GDP increased 2.8 percent in the second quarter of 2025."
+)
+BEA_2025 = (
+    "https://www.bea.gov/news/2025/gross-domestic-product-"
+    "second-quarter-2025-second-estimate"
+)
+
+
+def test_claims_from_cites_fall_ces_not_unsigned_162k_and_gdp_bars() -> None:
+    from onecrew.claimer import claims_from_cites, findings_from_claims
+
+    bag = _bag(
+        excerpts=[
+            (FRED, "USREC", _OCT_PIPE + "The FRED recession observation for June 2026 is 0."),
+            (BLS, "Employment Situation", _OCT_CES + " " + _PAYEMS_162K),
+            (BEA_2025, "BEA GDP", _GDP_34_28),
+        ],
+        spine=(
+            "Nonfarm payrolls fell. PAYEMS August 2026 = 162,000. "
+            "USREC June 2026 = 0. "
+            + _OCT_CES
+        ),
+        hit_urls=[FRED, BLS, BEA_2025],
+    )
+    claims = claims_from_cites(bag)
+    pay = next(c for c in claims if c.series == "BLS payrolls")
+    assert pay.print.startswith(("−", "-"))
+    assert "18,000" in pay.print
+    assert "162" not in pay.print.replace(",", "")
+    assert pay.when.lower() == "october 2024"
+    usrec = next(c for c in claims if c.series == "USREC")
+    assert usrec.print == "0"
+    assert usrec.when.lower() == "october 2024"
+    gdp = next(c for c in claims if c.series == "GDP")
+    assert "3.4" in gdp.print and "2.8" in gdp.print
+    assert gdp.print != "2.1 / 1.5"
+    assert gdp.when.upper().replace(" ", "") == "Q22025"
+    assert gdp.cite_url.startswith("http")
+    checked = verify_claim_set(claims, bag)
+    assert checked.ok, checked.hold_reasons
+    findings = findings_from_claims(claims, bag)
+    pay_f = next(f for f in findings if f.series == "BLS payrolls")
+    assert pay_f.print.startswith(("−", "-"))
+    assert "162" not in (pay_f.print or "").replace(",", "")

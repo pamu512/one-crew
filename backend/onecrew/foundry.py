@@ -82,6 +82,18 @@ _PAY_REV = re.compile(
     r"\brevis(?:ed|ion)\b|actually declined|were revised|revised (?:up|down)",
     re.I,
 )
+_PAY_LEVEL = re.compile(r"\bpayems\b|employment level|all employees", re.I)
+_PAY_CES = re.compile(r"nonfarm payroll|payroll employment|employment situation|\bces\b", re.I)
+_QWORD = {
+    "first": 1,
+    "1st": 1,
+    "second": 2,
+    "2nd": 2,
+    "third": 3,
+    "3rd": 3,
+    "fourth": 4,
+    "4th": 4,
+}
 _USREC_ISO = re.compile(r"(20\d{2})-(\d{2})-(?:\d{2})\s*[|,]?\s*([01])\b")
 _ISO_MONTH = (
     "",
@@ -508,6 +520,10 @@ def _print_index(text: str, printed: str) -> int:
 
 
 _QUARTER_LOOSE = re.compile(r"Q([1-4])(?:\s+(\d{4}))?", re.I)
+_QUARTER_WORD = re.compile(
+    r"(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter(?:\s+of)?(?:\s+(20\d{2}))?",
+    re.I,
+)
 
 
 def _gdp_quarter_at(blob: str, match: re.Match[str], last_year: str) -> tuple[str, str]:
@@ -544,6 +560,14 @@ def _gdp_when(text: str, printed: str = "") -> str:
                         near.append(
                             (abs(qm.start() - pin), qm.start() > pin, stamp, year_cursor)
                         )
+                for wm in _QUARTER_WORD.finditer(around):
+                    qn = _gdp_qnum(wm.group(1) or "")
+                    year = wm.group(2) or year_cursor
+                    if qn and year:
+                        year_cursor = year
+                        near.append(
+                            (abs(wm.start() - pin), wm.start() > pin, f"Q{qn} {year}", year)
+                        )
                 if near:
                     _, _, picked, last_year = min(
                         near, key=lambda row: (0 if row[1] else 1, row[0])
@@ -562,6 +586,15 @@ def _gdp_when(text: str, printed: str = "") -> str:
         stamp, last_year = _gdp_quarter_at(blob, match, last_year)
         if stamp:
             found.append(stamp)
+    for wm in _QUARTER_WORD.finditer(blob):
+        around = blob[max(0, wm.start() - 80) : wm.end() + 24]
+        if _GDP_PROJ.search(around):
+            continue
+        qn = _gdp_qnum(wm.group(1) or "")
+        year = wm.group(2) or last_year
+        if qn and year:
+            last_year = year
+            found.append(f"Q{qn} {year}")
     return found[-1] if found else ""
 
 
@@ -570,6 +603,160 @@ def _gdp_stamp_key(when: str) -> tuple[int, int]:
     if not q:
         return (0, 0)
     return (int(q.group(2)), int(q.group(1)))
+
+
+def _gdp_strip(text: str) -> str:
+    stripped = re.sub(
+        r"final sales(?:\s+to\s+private\s+domestic\s+purchasers)?[^.%]{0,80}[\d.]+(?:\s*%|percent)?",
+        " ",
+        text or "",
+        flags=re.I,
+    )
+    stripped = re.sub(
+        r"(?:disposable(?:\s+personal)?\s+income|\bcei\b|\bpce\b|personal consumption)[^.%]{0,80}[\d.]+(?:\s*%|percent)?",
+        " ",
+        stripped,
+        flags=re.I,
+    )
+    return re.sub(
+        r"(?:spf|fomc|philadelphia fed|survey of professional forecasters)"
+        r"(?:(?!\breal\s+gdp\b).){0,220}",
+        " ",
+        stripped,
+        flags=re.I,
+    )
+
+
+def _gdp_qnum(token: str) -> int | None:
+    if token.isdigit():
+        n = int(token)
+        return n if 1 <= n <= 4 else None
+    return _QWORD.get((token or "").lower())
+
+
+def _quarter_after(a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """True if b is the next quarter after a."""
+    y1, q1 = a
+    y2, q2 = b
+    if y1 == y2:
+        return q2 == q1 + 1
+    return y2 == y1 + 1 and q1 == 4 and q2 == 1
+
+
+def gdp_quarter_bars(text: str) -> list[tuple[tuple[int, int], str]]:
+    """Dated realized GDP percents from cites/notes. No vintage literals."""
+    stripped = _gdp_strip(text)
+    found: dict[tuple[int, int], str] = {}
+    last_year = 0
+    patterns = (
+        re.compile(
+            r"Q([1-4])(?:\s+(20\d{2}))?\s+(\d+\.\d+)\s*(?:%|percent)?",
+            re.I,
+        ),
+        re.compile(
+            r"(\d+\.\d+)\s*(?:%|percent)?(?:\s+annualized)?(?:\s+in)?\s+Q([1-4])(?:\s+(20\d{2}))?",
+            re.I,
+        ),
+        re.compile(
+            r"(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter(?:\s+of)?\s+(20\d{2})"
+            r"\s+(\d+\.\d+)",
+            re.I,
+        ),
+        re.compile(
+            r"(\d+\.\d+)\s*(?:%|percent)?(?:\s+annualized)?(?:\s+in(?:\s+the)?)?\s+"
+            r"(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter(?:\s+of)?\s+(20\d{2})",
+            re.I,
+        ),
+    )
+    raw_hits: list[tuple[int, int | None, int | None, str]] = []
+    for pat in patterns:
+        q_first = pat.pattern.startswith("Q") or pat.pattern.startswith("(first")
+        for match in pat.finditer(stripped):
+            around = stripped[max(0, match.start() - 80) : match.end() + 24]
+            if _GDP_PROJ.search(around):
+                continue
+            if re.search(r"\b(projects?|outlook)\b", around, re.I) and not re.search(
+                r"\bincreased|\brose|\bgrew|\bprinted\b", around, re.I
+            ):
+                continue
+            if not re.search(r"\bgdp\b", around, re.I):
+                continue
+            groups = match.groups()
+            if q_first:
+                qn = _gdp_qnum(groups[0] or "")
+                year = int(groups[1]) if groups[1] else None
+                bar = groups[2]
+            else:
+                bar = groups[0]
+                qn = _gdp_qnum(groups[1] or "")
+                year = int(groups[2]) if groups[2] else None
+            if not qn or not bar:
+                continue
+            raw_hits.append((match.start(), year, qn, bar))
+    raw_hits.sort(key=lambda row: row[0])
+    hits: list[tuple[int, tuple[int, int], str]] = []
+    for pos, year, qn, bar in raw_hits:
+        around = stripped[max(0, pos - 80) : pos + 48]
+        if not year:
+            local = re.search(r"\b(20\d{2})\b", around)
+            if local and not re.search(r"\b(projects?|forecast|outlook)\b", around, re.I):
+                year = int(local.group(1))
+            elif last_year:
+                year = last_year
+        if year:
+            last_year = year
+        if not year or not qn:
+            continue
+        hits.append((pos, (year, qn), bar))
+    then = re.search(
+        r"\bgdp\b[^.]{0,48}printed\s+(\d+\.\d+(?:\s*(?:%|percent))?"
+        r"(?:\s*,?\s*then\s+\d+\.\d+(?:\s*(?:%|percent))?){1,3})",
+        stripped,
+        re.I,
+    )
+    slash = re.search(
+        r"\bgdp\b[^.]{0,32}(\d+\.\d+)\s*/\s*(\d+\.\d+)(?:\s*/\s*(\d+\.\d+))?",
+        stripped,
+        re.I,
+    )
+    if then and not hits:
+        bars = re.findall(r"(\d+\.\d+)", then.group(1))
+        return [((0, i + 1), b) for i, b in enumerate(bars)]
+    if slash and not hits:
+        bars = [b for b in slash.groups() if b]
+        return [((0, i + 1), b) for i, b in enumerate(bars)]
+    hits.sort(key=lambda row: row[0])
+    for _pos, key, bar in hits:
+        if key not in found:
+            found[key] = bar
+    return [(key, found[key]) for key in sorted(found)]
+
+
+def _gdp_print_from_bars(bars: list[tuple[tuple[int, int], str]]) -> str | None:
+    if not bars:
+        return None
+    dated = [(k, v) for k, v in bars if k[0]]
+    if not dated:
+        return " / ".join(v for _k, v in bars)
+    run = [dated[-1]]
+    for prev in reversed(dated[:-1]):
+        if _quarter_after(prev[0], run[0][0]):
+            run.insert(0, prev)
+            continue
+        break
+    latest_year = dated[-1][0][0]
+    year_run = [(k, v) for k, v in dated if k[0] == latest_year]
+    if len(year_run) >= 2:
+        chosen = year_run
+        prior = next((row for row in dated if row[0] == (latest_year - 1, 4)), None)
+        if prior and year_run[0][0][1] == 1 and _quarter_after(prior[0], year_run[0][0]):
+            # Same GDP listing can keep Q4(prev)+Q1+Q2; a lone older Q4 stays out of a later pair.
+            if prior in run:
+                chosen = [prior, *year_run]
+        return " / ".join(v for _k, v in chosen)
+    if len(run) >= 2:
+        return " / ".join(v for _k, v in run)
+    return dated[-1][1]
 
 
 def _ces_year(month: str, extra: str, printed: str = "") -> str:
@@ -916,9 +1103,20 @@ def _bea_vintage(url: str) -> tuple[str, str] | None:
     return None
 
 
-def _pick_gdp_cite(table: list[_Cite], when: str) -> _Cite | None:
+def _cite_has_bars(cite: _Cite, printed: str) -> bool:
+    blob = " ".join(cite.excerpts)
+    bars = [re.sub(r"[^\d.]+", "", part) for part in (printed or "").split("/") if part.strip()]
+    return bool(bars) and all(bar and bar in blob.replace(",", "") for bar in bars)
+
+
+def _pick_gdp_cite(table: list[_Cite], when: str, printed: str = "") -> _Cite | None:
     ok = [row for row in table if "bea.gov" in row.url.lower() and not _broken_href(row.url)]
     if not ok:
+        for row in table:
+            if not _broken_href(row.url) and (_cite_has_bars(row, printed) or any(
+                "gdp" in (ex + row.title).lower() for ex in row.excerpts
+            )):
+                return row
         return None
     want = re.search(r"Q([1-4])\s+(\d{4})", when or "", re.I)
     stamped = [row for row in ok if _bea_vintage(row.url)]
@@ -1068,6 +1266,7 @@ def _legal_print(series: str, text: str) -> str | None:
     if series == "USREC":
         return _usrec_legal_print(text)
     if series == "BLS payrolls":
+        notes_fall = bool(_PAY_FALL.search(text))
         scored: list[tuple[str, str]] = []
         for match in _PAY_PRINT.finditer(text):
             left = text[max(0, match.start() - 120) : match.start()]
@@ -1093,14 +1292,20 @@ def _legal_print(series: str, text: str) -> str | None:
                 default=len(text),
             )
             clause = text[prev + 1 : nxt]
+            if _PAY_LEVEL.search(clause) and not _PAY_CES.search(clause):
+                continue
             ces_verb = bool(_PAY_FALL.search(isol_l) or _PAY_RISE.search(isol_l))
             if _PAY_REV.search(isol_l) or (_PAY_REV.search(clause) and not ces_verb):
                 continue
-            raw = _sign_payroll(win, match.group(0))
+            raw = _sign_payroll(isol_l, match.group(0))
+            if notes_fall and not raw.startswith(("−", "-")) and not _PAY_RISE.search(isol_l):
+                continue
             stamp = _stamp_near_print(isol_l + match.group(0) + isol_r, raw)
             if not stamp:
                 stamp = _loose_month_year(win, raw, text)
             scored.append((raw, stamp))
+        if notes_fall:
+            scored = [row for row in scored if row[0].startswith(("−", "-"))]
         dated = [row for row in scored if row[1]]
         if dated:
             return max(dated, key=lambda row: _month_key(row[1]))[0]
@@ -1110,45 +1315,18 @@ def _legal_print(series: str, text: str) -> str | None:
     if series == "GDP":
         if not re.search(r"\bgdp\b", text, re.I):
             return None
-        stripped = re.sub(
-            r"final sales(?:\s+to\s+private\s+domestic\s+purchasers)?[^.%]{0,80}[\d.]+(?:\s*%|percent)?",
-            " ",
-            text,
-            flags=re.I,
+        bars = gdp_quarter_bars(text)
+        printed = _gdp_print_from_bars(bars)
+        if printed:
+            return printed
+        stripped = _gdp_strip(text)
+        match = _PCT.search(stripped) or re.search(
+            r"(\d+\.\d+)\s*(?:%|percent)\b", stripped, re.I
         )
-        stripped = re.sub(
-            r"(?:disposable(?:\s+personal)?\s+income|\bcei\b|\bpce\b|personal consumption)[^.%]{0,80}[\d.]+(?:\s*%|percent)?",
-            " ",
-            stripped,
-            flags=re.I,
-        )
-        stripped = re.sub(
-            r"(?:spf|fomc|philadelphia fed|survey of professional forecasters)"
-            r"(?:(?!\breal\s+gdp\b).){0,220}",
-            " ",
-            stripped,
-            flags=re.I,
-        )
-        has_05 = False
-        for hit in re.finditer(
-            r"Q[1-4]\s+20\d{2}.{0,16}0\.5|0\.5\s*%?.{0,12}Q[1-4]\s+20\d{2}",
-            stripped,
-            re.I,
-        ):
-            around = stripped[max(0, hit.start() - 48) : hit.end() + 24]
-            if re.search(r"\bgdp\b", around, re.I):
-                has_05 = True
-                break
-        has_21 = bool(re.search(r"2\.1", stripped))
-        has_15 = bool(re.search(r"1\.5", stripped))
-        if has_05 and has_21 and has_15:
-            return "0.5 / 2.1 / 1.5"
-        if has_21 and has_15:
-            return "2.1 / 1.5"
-        match = _PCT.search(stripped)
         if not match:
             return None
         raw = re.sub(r"\s+", "", match.group(0))
+        raw = re.sub(r"percent", "%", raw, flags=re.I)
         if raw in {"0", "0%"}:
             return None
         return raw
@@ -1317,6 +1495,12 @@ def _hit_for_series(notes: str, series: str, tokens: tuple[str, ...]) -> tuple[s
         wide = _legal_print(series, notes)
         if wide and "/" in wide:
             found.append((wide, notes))
+    if series == "BLS payrolls" and _PAY_FALL.search(notes or ""):
+        falls = [h for h in found if (h[0] or "").startswith(("−", "-"))]
+        if falls:
+            found = falls
+        else:
+            found = []
     if found:
         return max(found, key=lambda h: _hit_rank(series, h[0], h[1], notes))
     return None
@@ -1412,7 +1596,7 @@ def _mint_from_notes(
         if series in {"BLS payrolls", "U-3"}:
             cite = _pick_bls_cite(table, when) or cite
         if series == "GDP":
-            cite = _pick_gdp_cite(table, when)
+            cite = _pick_gdp_cite(table, when, printed) or cite
         if series == "LEI":
             cite = _pick_lei_cite(table, when)
         if cite is None or _broken_href(cite.url):
