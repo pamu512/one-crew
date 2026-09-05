@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app/backend \
     ONECREW_HOST=0.0.0.0 \
     ONECREW_PORT=8080 \
-    GEMINI_MODEL=gemini-3.5-flash \
+    GEMINI_MODEL=gemini-2.5-flash \
     GOOGLE_GENAI_USE_VERTEXAI=true
 
 COPY backend/requirements.txt /app/backend/requirements.txt

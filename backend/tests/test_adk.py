@@ -18,9 +18,9 @@ from onecrew.agent.adk_agents import (  # noqa: E402
 
 
 def test_adk_crew_builds_with_vertex_flash() -> None:
-    assert config.GEMINI_MODEL == "gemini-3.5-flash"
+    assert config.GEMINI_MODEL == "gemini-2.5-flash"
     src = Path(config.__file__).read_text()
-    assert "gemini-3.5-flash" in src
+    assert "gemini-2.5-flash" in src
     agent = build_root_agent()
     assert agent.name == "one_crew"
     names = [child.name for child in agent.sub_agents]
