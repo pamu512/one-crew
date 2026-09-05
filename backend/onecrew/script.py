@@ -694,6 +694,7 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
     payload = {
         "id": packet.id,
         "topic": packet.topic,
+        "platform": packet.platform,
         "tell": packet.tell,
         "tone": packet.tone,
         "cut": packet.cut,
@@ -703,9 +704,10 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
     }
     return (
         f"Read this research pack. Voice the 8-beat spine. {config.GEMINI_MODEL}.\n"
+        "Pack text is the authority. Do not treat foundry mint stamps as the VO source.\n"
         "Pack numbers only. Do not invent stats. LEI and ISM stay off unless a beat cites them.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
-        "Return the same 8-beat JSON.\n"
+        "Return 8-beat JSON from the pack.\n"
         f"{_PACKET_MARK}\n{json.dumps(payload, ensure_ascii=True)}\n{_PACKET_END}\n"
         f"PACK:\n{packet.research_pack or ''}\n"
     )

@@ -44,12 +44,27 @@ def make_grade_artifact(packet: Packet) -> GradeArtifact:
     )
 
 
+def run_adk_room(artifact: GradeArtifact) -> RoomGrade:
+    """ADK room reviewer. Tests stub this. No ADC → ship (cannot invent a recut)."""
+    from onecrew import config
+
+    if not config.has_vertex() or not config.has_adc():
+        return RoomGrade(vote="ship")
+    from onecrew.agent.adk_run import live_adk_room
+    from onecrew.vertex_client import VertexDownError
+
+    try:
+        return live_adk_room(artifact)
+    except (VertexDownError, ValueError) as exc:
+        return RoomGrade(vote="recut", recut_reason="other", recut_detail=f"ADK room down: {exc}")
+
+
 def grade_room(artifact: GradeArtifact, *, grader: GraderFn | None = None) -> RoomGrade:
-    """Default ships so existing live tests stay on the first Parallel pass."""
+    """ADK room when Vertex is up. grader= is the test stub hook."""
     if grader is not None:
         grade = grader(artifact)
     else:
-        grade = RoomGrade(vote="ship")
+        grade = run_adk_room(artifact)
     if grade.vote == "recut" and grade.recut_reason not in {"not_enough_information", "other"}:
         raise ValueError("recut requires why: not_enough_information | other")
     if grade.vote == "recut" and grade.recut_reason == "other" and not (grade.recut_detail or "").strip():
