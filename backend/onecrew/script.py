@@ -133,6 +133,9 @@ def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
     packet.beats = []
     packet.status = "hold"
     detail = "; ".join(h for h in holes if h.strip()) or "script held"
+    prior = next((row for row in packet.exclusions if row.what == _VERTEX_HOLE), None)
+    if prior is not None and (prior.detail or "").strip() and prior.detail not in detail:
+        detail = f"{prior.detail}; {detail}"
     kept = [row for row in packet.exclusions if row.what != _VERTEX_HOLE]
     kept.append(Exclusion(what=_VERTEX_HOLE, reason="rails_down", detail=detail))
     packet.exclusions = kept
@@ -291,13 +294,26 @@ def _missing_pack_marks(packet: Packet, vo: str) -> list[str]:
     return holes
 
 
-def _accept_units(packet: Packet, units: list[dict] | None, *, spine: list[dict] | None = None) -> bool:
+def _mint_held(packet: Packet, mint_holes: list[str] | None) -> bool:
+    if mint_holes:
+        return True
+    return packet.receipt is not None and packet.receipt.disposition == "HOLD"
+
+
+def _accept_units(
+    packet: Packet,
+    units: list[dict] | None,
+    *,
+    spine: list[dict] | None = None,
+    mint_holes: list[str] | None = None,
+) -> bool:
     if not units or len(units) != 8:
         return False
     spoken = _units_spoken(units)
     if _leftover_vo(spoken):
         return False
-    if _missing_pack_marks(packet, spoken):
+    # HOLD/mint-hole packets must not require speaking broken minted prints.
+    if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
     if spine:
         key = {"cold-open", "gdp", "labor", "turn"}
@@ -536,8 +552,10 @@ def _vo_uses_pack(packet: Packet, vo: str) -> bool:
     return bool(pack_n & vo_n)
 
 
-def _vertex_keeps(packet: Packet, units: list[dict] | None) -> bool:
-    """Keep Vertex 8-beats that cite pack findings or speak pack numbers."""
+def _vertex_keeps(
+    packet: Packet, units: list[dict] | None, *, mint_holes: list[str] | None = None
+) -> bool:
+    """Keep leftover-free Vertex 8-beats that cite findings or speak pack numbers."""
     if not units or len(units) != 8:
         return False
     spoken = _units_spoken(units)
@@ -545,7 +563,9 @@ def _vertex_keeps(packet: Packet, units: list[dict] | None) -> bool:
         return False
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
     cited = any(fid in known for u in units for fid in (u.get("finding_ids") or []))
-    return cited or _vo_uses_pack(packet, spoken)
+    if cited or _vo_uses_pack(packet, spoken):
+        return True
+    return _mint_held(packet, mint_holes)
 
 
 def _warn_mint(packet: Packet, holes: list[str]) -> None:
@@ -573,6 +593,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         return _fail_closed(packet, ["writer must emit 8 beats"])
     held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
+    spoken_all = _units_spoken(units)
+    pack_grounded = _vo_uses_pack(packet, spoken_all) or any(
+        fid in known for u in units for fid in (u.get("finding_ids") or [])
+    )
     cut = require_cut(packet.cut) if packet.cut else None
     short = cut in _SHORT
     hours = bool(cut and is_long_cut(cut) and not short)
@@ -588,7 +612,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         eyes = (unit.get("eyes") or "").strip()
         hole = "sahm hole" in f"{vo} {eyes}".lower() or "no matching url" in f"{vo} {eyes}".lower()
         if not fids and known and not hole:
-            if not (held and _vo_uses_pack(packet, vo)):
+            if not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
                 return _fail_closed(packet, [f"{bid} cites nothing in the pack"])
         for fid in fids:
             if f"[{fid}]" not in vo:
@@ -750,23 +774,31 @@ def write_script(packet: Packet, writer=None) -> Packet:
     if gdp and not (gdp.print or "").strip():
         mint_holes.append("gdp print empty")
     local = _eight_from_pack(packet)
-    local_ok = bool(local) and _accept_units(packet, local) and not mint_holes
-    units = local if local_ok else []
+    local_ok = bool(local) and _accept_units(packet, local, mint_holes=mint_holes) and not mint_holes
+    units: list[dict] = []
     spine = local if local and len(local) == 8 else []
+    vertex_detail = ""
     # Seed / leftover Hormuz stamp locally. Cloud Run boot has ADC so has_vertex
     # is true; Vertex Agent Platform 403 must not crash-loop first-open.
     if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
         try:
             parsed = _parse_units(emit(_prompt(packet, spine)))
-            if parsed and _accept_units(packet, parsed, spine=local if local_ok else None):
+            if parsed and _vertex_keeps(packet, parsed, mint_holes=mint_holes):
                 units = parsed
-            elif parsed and _vertex_keeps(packet, parsed):
+            elif parsed and _accept_units(
+                packet, parsed, spine=local if local_ok else None, mint_holes=mint_holes
+            ):
                 units = parsed
+            elif parsed is None:
+                vertex_detail = "Vertex script unusable"
         except VertexDownError:
-            pass
-    if not units and local_ok:
+            vertex_detail = "Vertex script down"
+    if not units and local and len(local) == 8:
         units = local
     if units and len(units) == 8:
         _warn_mint(packet, mint_holes)
         return _assemble(packet, units)
-    return _fail_closed(packet, mint_holes or ["_eight_from_pack cannot place minted prints"])
+    holes = list(mint_holes) if mint_holes else ["_eight_from_pack cannot place minted prints"]
+    if vertex_detail:
+        holes.append(vertex_detail)
+    return _fail_closed(packet, holes)
