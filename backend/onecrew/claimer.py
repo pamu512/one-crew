@@ -10,7 +10,14 @@ import re
 from typing import Any, Callable
 
 from onecrew import config
-from onecrew.foundry import leftover_slot_ids
+from onecrew.foundry import (
+    _has_usrec_and_payrolls,
+    leftover_slot_ids,
+    gdp_quarter_bars,
+    _gdp_print_from_bars,
+    _legal_print,
+    _when,
+)
 from onecrew.models import MISSING, Finding, Packet
 from onecrew.verify import (
     CLOSED_SERIES,
@@ -83,13 +90,19 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
     claims: list[Claim] = []
     seen: set[str] = set()
     pay: Claim | None = None
+    bag_blob = "\n".join([*(e.text for e in bag.excerpts), bag.spine or ""])
+    notes_fall = bool(re.search(r"\b(fell|dropped|declined|lost|decreased|down)\b", bag_blob, re.I))
+    ces_hits: list[Claim] = []
     for excerpt in bag.excerpts:
         if _excerpt_is_naics(excerpt.text):
             continue
-        fall = _CES_FALL.search(excerpt.text)
-        if fall and excerpt.url:
-            month = _MONTH_YEAR.search(excerpt.text)
-            if not month:
+        if re.search(r"\bpayems\b|employment level", excerpt.text, re.I) and not re.search(
+            r"nonfarm payroll|employment situation|\bces\b", excerpt.text, re.I
+        ):
+            continue
+        for fall in _CES_FALL.finditer(excerpt.text):
+            month = _MONTH_YEAR.search(excerpt.text[max(0, fall.start() - 80) : fall.end() + 48]) or _MONTH_YEAR.search(excerpt.text)
+            if not month or not excerpt.url:
                 continue
             when = f"{month.group(1).title()} {month.group(2)}"
             printed = _sign_fall(fall.group(1), fall.group(2))
@@ -103,10 +116,17 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
             )
             if not verify_payrolls_realized_ces(claim, bag).ok:
                 continue
-            if "BLS payrolls" not in seen:
-                claims.append(claim)
-                seen.add("BLS payrolls")
-                pay = claim
+            ces_hits.append(claim)
+    if notes_fall:
+        ces_hits = [c for c in ces_hits if (c.print or "").startswith(("−", "-"))]
+    if ces_hits:
+        def _when_key(claim: Claim) -> tuple[int, int]:
+            parsed = _parse_when(claim.when)
+            return (parsed[1], parsed[2]) if parsed else (0, 0)
+
+        pay = max(ces_hits, key=_when_key)
+        claims.append(pay)
+        seen.add("BLS payrolls")
     if pay:
         parsed = _parse_when(pay.when)
         if parsed and parsed[0] == "month":
@@ -135,48 +155,41 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
                         )
                     )
                     seen.add("USREC")
-    qbars: dict[tuple[int, int], str] = {}
-    for excerpt in bag.excerpts:
-        for match in re.finditer(
-            r"real gdp (?:increased|rose|grew)\s+(\d+(?:\.\d+)?)\s*%?.{0,40}?"
-            r"(?:(?:q([1-4]))|(first|second|third|fourth))\s+(?:quarter\s+)?(?:of\s+)?(20\d{2})",
-            excerpt.text,
-            re.I | re.S,
-        ):
-            bar = match.group(1)
-            qn = int(match.group(2)) if match.group(2) else {"first": 1, "second": 2, "third": 3, "fourth": 4}[match.group(3).lower()]
-            year = int(match.group(4))
-            qbars[(year, qn)] = bar
-            url = excerpt.url
-        for match in re.finditer(
-            r"(?:q([1-4])|(first|second|third|fourth))\s+(?:quarter\s+)?(?:of\s+)?(20\d{2})"
-            r".{0,40}?real gdp (?:increased|rose|grew)\s+(\d+(?:\.\d+)?)",
-            excerpt.text,
-            re.I | re.S,
-        ):
-            qn = int(match.group(1)) if match.group(1) else {"first": 1, "second": 2, "third": 3, "fourth": 4}[match.group(2).lower()]
-            year = int(match.group(3))
-            qbars[(year, qn)] = match.group(4)
-            url = excerpt.url
-    if len(qbars) >= 2:
-        keys = sorted(qbars)
-        (y1, q1), (y2, q2) = keys[-2], keys[-1]
-        if y1 == y2:
-            printed = f"{qbars[(y1, q1)]} / {qbars[(y2, q2)]}"
-            when = f"Q{q2} {y2}"
-            gdp_url = next((e.url for e in bag.excerpts if "gdp" in (e.text + e.title).lower()), "")
-            if gdp_url and "GDP" not in seen:
-                claims.append(
-                    Claim(
-                        series="GDP",
-                        print=printed,
-                        when=when,
-                        id=f"gdp-{y2}-q{q2}",
-                        cite_url=gdp_url,
-                        claim_span=f"GDP {printed} in {when}",
-                    )
+    gdp_blob = "\n".join([*(e.text for e in bag.excerpts), bag.spine or ""])
+    gdp_printed = _gdp_print_from_bars(gdp_quarter_bars(gdp_blob)) or _legal_print("GDP", gdp_blob)
+    if gdp_printed and "/" in gdp_printed and "GDP" not in seen:
+        when = _when(gdp_blob, "GDP", gdp_blob, gdp_printed)
+        if not when:
+            dated = [k for k, _v in gdp_quarter_bars(gdp_blob) if k[0]]
+            if dated:
+                y2, q2 = dated[-1]
+                when = f"Q{q2} {y2}"
+        q = re.search(r"Q([1-4])\s+(20\d{2})", when or "", re.I)
+        gdp_url = next(
+            (
+                e.url
+                for e in bag.excerpts
+                if all(
+                    re.sub(r"[^\d.]+", "", part) in (e.text or "").replace(",", "")
+                    for part in gdp_printed.split("/")
+                    if part.strip()
                 )
-                seen.add("GDP")
+            ),
+            "",
+        ) or next((e.url for e in bag.excerpts if "gdp" in (e.text + e.title).lower()), "")
+        if gdp_url and q:
+            y2, q2 = int(q.group(2)), int(q.group(1))
+            claims.append(
+                Claim(
+                    series="GDP",
+                    print=gdp_printed,
+                    when=when,
+                    id=f"gdp-{y2}-q{q2}",
+                    cite_url=gdp_url,
+                    claim_span=f"GDP {gdp_printed} in {when}",
+                )
+            )
+            seen.add("GDP")
     for excerpt in bag.excerpts:
         u3 = _U3.search(excerpt.text)
         month = _MONTH_YEAR.search(excerpt.text)
@@ -208,6 +221,11 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
                 )
             )
             seen.add("SAHMREALTIME")
+    if _has_usrec_and_payrolls(bag_blob) and (
+        "USREC" not in seen or "BLS payrolls" not in seen
+    ):
+        # ponytail: incomplete cite scan yields to foundry. Do not READY a GDP-only set.
+        return []
     return claims
 
 
