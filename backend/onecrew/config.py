@@ -13,7 +13,7 @@ FRAMES_DIR = Path(os.getenv("ONECREW_FRAMES", ROOT / "sample_data" / "frames"))
 DATA_DIR = Path(os.getenv("ONECREW_DATA_DIR", ROOT / "data"))
 
 APP_NAME = "onecrew"
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 FIRESTORE_COLLECTION = os.getenv("FIRESTORE_COLLECTION", "onecrew")
 GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 IMAGEN_MODEL = os.getenv("IMAGEN_MODEL", "imagen-3.0-generate-001")

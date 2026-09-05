@@ -129,7 +129,7 @@ gcloud run deploy onecrew \
   --min-instances 1 \
   --max-instances 2 \
   --set-secrets "SHIFT_TOKEN=SHIFT_TOKEN:latest,PARALLEL_API_KEY=PARALLEL_API_KEY:latest" \
-  --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GEMINI_MODEL=gemini-3.5-flash,GOOGLE_GENAI_USE_VERTEXAI=true"
+  --set-env-vars "GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GEMINI_MODEL=gemini-2.5-flash,GOOGLE_GENAI_USE_VERTEXAI=true"
 ```
 
 Memory store is enough at `--min-instances 1`. Do not require Firestore. `SHIFT_TOKEN` and `PARALLEL_API_KEY` stay secrets. The floor never posts. Do not add an unauthenticated control that bills Parallel or Imagen.
@@ -144,7 +144,7 @@ Memory store is enough at `--min-instances 1`. Do not require Firestore. `SHIFT_
 | `GOOGLE_CLOUD_PROJECT` | Operator export only. Empty if unset. |
 | `GOOGLE_CLOUD_LOCATION` | Vertex / Cloud Run region |
 | `GOOGLE_APPLICATION_CREDENTIALS` | ADC JSON locally; Cloud Run uses the runtime SA |
-| `GEMINI_MODEL` | Default `gemini-3.5-flash` |
+| `GEMINI_MODEL` | Default `gemini-2.5-flash` |
 | `PARALLEL_API_KEY` | Official Parallel SDK. Empty → Parallel rail down. |
 | `SHIFT_TOKEN` | Unset → live spend disabled (403). Set → require header `X-Shift-Token`. |
 
