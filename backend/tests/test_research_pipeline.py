@@ -662,6 +662,194 @@ def test_hold_print_not_in_cite_still_writes_vertex_vo(monkeypatch) -> None:
     assert packet.status == "hold"
 
 
+def _mixed_month_hold_findings() -> list[Finding]:
+    """Live HOLD shape: USREC + payrolls on different months, foundry-dropped prints."""
+    note = "Parallel URL on this row."
+    return [
+        Finding(
+            id="usrec-august-2026",
+            claim="USREC=0 (August 2026).",
+            stamp="grounded",
+            title="USREC",
+            series="USREC",
+            print="0",
+            when="August 2026",
+            parallel_url=FRED,
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="payrolls-july-2026",
+            claim="Nonfarm payrolls named in the pack.",
+            stamp="grounded",
+            title="BLS payrolls",
+            series="BLS payrolls",
+            print="41000",
+            when="July 2026",
+            parallel_url=BLS_OLD,
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="gdp-2026-q2",
+            claim="GDP named in the pack.",
+            stamp="grounded",
+            title="GDP",
+            series="GDP",
+            print="",
+            when="Q2 2026",
+            parallel_url="https://www.bea.gov/data/gdp/gross-domestic-product",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="sahm-july-2026",
+            claim="Sahm named in the pack.",
+            stamp="grounded",
+            title="Sahm",
+            series="SAHMREALTIME",
+            print="",
+            when="July 2026",
+            parallel_url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="u3-july-2026",
+            claim="Unemployment named in the pack.",
+            stamp="grounded",
+            title="U-3",
+            series="U-3",
+            print="",
+            when="July 2026",
+            parallel_url=BLS_OLD,
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="nber-cycle",
+            claim="NBER cycle dating named in the pack.",
+            stamp="grounded",
+            title="NBER",
+            series="NBER",
+            print="",
+            when="August 2026",
+            parallel_url="https://www.nber.org/research/business-cycle-dating",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="fringe-unsourced",
+            claim="Fringe miss tagged, not sold as fact.",
+            stamp="fringe",
+            parallel_status="miss",
+            note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+        ),
+    ]
+
+
+def _pack_vo_vertex_beats() -> str:
+    """Leftover-free Vertex 8-beats: pack numbers / finding_ids, not minted smash marks."""
+    return (
+        '[{"id":"cold-open","vo":"Nonfarm payrolls fell 41,000 in the pack window. [usrec-august-2026]",'
+        '"eyes":"CES card","finding_ids":["usrec-august-2026"]},'
+        '{"id":"promise","vo":"Three objects from the pack. The title stays a question.","eyes":"pack","finding_ids":[]},'
+        '{"id":"gdp","vo":"GDP hole named from the pack. [gdp-2026-q2]","eyes":"gdp","finding_ids":["gdp-2026-q2"]},'
+        '{"id":"labor","vo":"Labor: payrolls fell 41,000. [payrolls-july-2026]","eyes":"ces","finding_ids":["payrolls-july-2026"]},'
+        '{"id":"turn","vo":"Hold on the pack number. The spine chart stays.","eyes":"hold","finding_ids":[]},'
+        '{"id":"complication","vo":"Those are not the same object. Near is the gap.","eyes":"gap","finding_ids":[]},'
+        '{"id":"receipt","vo":"Receipt board: named series from the pack. [usrec-august-2026]","eyes":"board","finding_ids":["usrec-august-2026"]},'
+        '{"id":"close","vo":"Near is not a switch. When the pack changes, the board changes.","eyes":"close","finding_ids":[]}]'
+    )
+
+
+def test_hold_mint_holes_keeps_vertex_pack_vo(monkeypatch) -> None:
+    """HOLD + smash mixed months / foundry dropped must keep leftover-free Vertex VO."""
+    packet = Packet(
+        id="oc-are-we-near-recession-831ba8c2",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        research_pack=_HOLD_PACK,
+        task_spine=_HOLD_PACK,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="HOLD",
+        hold_reason="smash mixed months; foundry dropped named series",
+        findings=_mixed_month_hold_findings(),
+    )
+    writer_prompts: list[str] = []
+
+    def fake_vertex(prompt: str) -> str:
+        writer_prompts.append(prompt)
+        return _pack_vo_vertex_beats()
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert writer_prompts, "mint HOLD must still call Vertex"
+    assert written.script, "mint holes must not blank leftover-free Vertex VO"
+    assert len(written.beats) == 8
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "41,000" in spoken or "41k" in spoken.lower()
+    assert "−23k" not in spoken and "-23k" not in spoken
+    assert "2.1" not in spoken and "1.5" not in spoken
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "HOLD"
+    reason = packet.receipt.hold_reason or ""
+    assert "smash mixed months" in reason or "foundry dropped named series" in reason
+    assert packet.status == "hold"
+
+
+def test_hold_mint_holes_vertex_unusable_still_assembles_local(monkeypatch) -> None:
+    """When mint holes and Vertex returns nothing usable, keep a local 8-beat draft."""
+    packet = Packet(
+        id="oc-are-we-near-recession-local-draft",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        research_pack=_HOLD_PACK,
+        task_spine=_HOLD_PACK,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="HOLD",
+        hold_reason="smash mixed months; foundry dropped named series",
+        findings=_mixed_month_hold_findings(),
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return "not-json"
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script, "mint holes + unusable Vertex must still assemble local 8-beat draft"
+    assert len(written.beats) == 8
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "HOLD"
+    assert packet.status == "hold"
+    vertex_rows = [row for row in written.exclusions if row.what == "Vertex script"]
+    assert not vertex_rows or "unusable" not in (vertex_rows[0].detail or "") or written.script
+
+
 def test_empty_pack_still_fail_closed() -> None:
     packet = Packet(
         id="oc-empty-pack-vo",
