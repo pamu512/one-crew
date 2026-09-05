@@ -1,305 +1,520 @@
 from __future__ import annotations
 
+import json
 import re
 
-from onecrew.cut import event_cap, is_long_cut, require_cut, scene_seconds
-from onecrew.models import Finding, Packet, ScriptBeat
-from onecrew.picks import require_tell_pairing
+from onecrew import config
+from onecrew.cut import is_long_cut, require_cut
+from onecrew.models import MISSING, Exclusion, Finding, Packet, ScriptBeat
+from onecrew.tell import invents_frame
+from onecrew.tone import apply_tone
+from onecrew.vertex_client import VertexDownError, generate_script
+
+_VERTEX_HOLE = "Vertex script"
+_NUM = re.compile(
+    r"USREC\s*=\s*0|[-−+]?\d+(?:\.\d+)?\s*%|[-−]\d+\s*k|\b[-−]?\d+\.\d+\b|\b\d{1,4}\b",
+    re.I,
+)
+_DEPTH_TOKEN = re.compile(r"\b\d+(?:-\d+)?y\b", re.I)
+_GROUNDED_EVENT = re.compile(r"grounded event inside\s+\S+:", re.I)
+_LEFTOVER_VO = re.compile(
+    r"grounded event inside\s+\S+:|fringe claim about\s+|widely repeated frame about\s+",
+    re.I,
+)
+_OFF_UNLESS_CITED = ("LEI", "+0.2%", "ISM", "55.6")
+_PACKET_MARK = "<<<PACKET>>>"
+_PACKET_END = "<<<END>>>"
+_SHORT = frozenset({"tiktok-length", "shorts"})
+_EPISODE_DURS = (20, 55, 75, 70, 70, 55, 70, 65)
+_SHORT_DURS = (5, 6, 8, 7, 7, 6, 7, 6)
+_EIGHT_IDS = (
+    "cold-open",
+    "promise",
+    "gdp",
+    "labor",
+    "turn",
+    "complication",
+    "receipt",
+    "close",
+)
 
 
-def _cite(finding_id: str) -> str:
-    return f" [{finding_id}]"
+def _pack_text(packet: Packet) -> str:
+    parts = [
+        packet.research_pack or "",
+        packet.task_spine or "",
+        packet.topic or "",
+        packet.hook or "",
+    ]
+    receipt = packet.receipt
+    if receipt:
+        for finding in receipt.findings:
+            parts.extend([finding.id, finding.claim, finding.title, finding.note, finding.when or ""])
+        for link in receipt.causal_links:
+            parts.extend([link.id, link.claim])
+    return "\n".join(parts)
 
 
-def _theme(finding: Finding) -> str:
-    claim = finding.claim.lower()
-    if finding.id == "jcpoa-2018" or "jcpoa" in claim:
-        return "jcpoa"
-    if finding.id == "hormuz-share" or "seaborne" in claim or "transits" in claim:
-        return "oil_lane"
-    if finding.id == "oil-panic" or "crashes the world" in claim or "scare means oil" in claim:
-        return "panic"
-    if finding.id == "producer-frame" or "producer states" in claim:
-        return "producer"
-    if finding.id == "secret-closure" or "mined shut" in claim or "hidden navy" in claim:
-        return "mine_rumor"
-    if finding.stamp == "fringe":
-        return "fringe_other"
-    if finding.stamp == "mainstream":
-        return "talking_point"
-    return "fact"
+def _numbers_in(text: str) -> list[str]:
+    """Pack numbers only. Depth tokens like 2-3y are not a series print."""
+    cleaned = _DEPTH_TOKEN.sub(" ", text or "")
+    return [m.group(0).strip() for m in _NUM.finditer(cleaned)]
 
 
-def _recast(finding: Finding, lean: str, *, long_form: bool) -> str:
-    """Spoken line from a claim. Same facts, different emphasis. No invented events."""
-    body = finding.claim.rstrip(".")
-    when = (finding.when or "").strip()
-    after = re.match(r"^(.+?) after (.+)$", body, flags=re.I)
-    if lean == "right":
-        if after:
-            line = f"After {after.group(2)}, {after.group(1)[0].lower() + after.group(1)[1:]}."
-        elif when:
-            line = f"{when}: {body}."
-        else:
-            line = f"{body}. That's the print."
-        if long_form:
-            line += " I'm not stacking anything else on it."
-        return line
-    if lean in {"left", "far_left"}:
-        if after:
-            line = f"{after.group(1)} once {after.group(2)} printed."
-        elif when:
-            line = f"When this lands in {when}: {body}."
-        else:
-            line = f"What we can say out loud is this — {body}."
-        if long_form:
-            line += " Stay on that sentence."
-        return line
-    if lean in {"far_right"}:
-        line = f"{when + ': ' if when else ''}{body}."
-        if long_form:
-            line += " Date and claim. Stop there."
-        return line
-    if lean == "unhinged_fringe":
-        line = f"Plain: {body}."
-        if long_form:
-            line += " I still don't get to invent the next beat."
-        return line
-    line = f"{('In ' + when + ', ') if when else ''}{body}."
-    if long_form:
-        line += " I'm staying on that."
-    return line
+def pack_numbers(text: str) -> list[str]:
+    return _numbers_in(text)
 
 
-def _vo_body(finding: Finding, lean: str, *, long_form: bool) -> str:
-    theme = _theme(finding)
-    if theme == "jcpoa":
-        return _vo_jcpoa(lean, long_form=long_form)
-    if theme == "oil_lane":
-        return _vo_oil_lane(finding, lean, long_form=long_form)
-    if theme == "panic":
-        return _vo_panic(lean, long_form=long_form)
-    if theme == "producer":
-        return _vo_producer(finding, lean, long_form=long_form)
-    if theme == "mine_rumor":
-        return _vo_mine(lean, long_form=long_form)
-    if theme == "fringe_other":
-        body = finding.claim.rstrip(".")
-        if lean == "unhinged_fringe":
-            line = f"The wild one: {body}. I don't have it, so I'm not running it."
-        else:
-            line = f"There's a claim that {body[0].lower() + body[1:]}. I can't run that as fact."
-        if long_form:
-            line += " It stays on the list. It does not become the story."
-        return line
-    if theme == "talking_point":
-        body = finding.claim.rstrip(".")
-        if lean == "right":
-            line = f"The take you'll hear is that {body[0].lower() + body[1:]}. Treat it as a take."
-        elif lean in {"left", "far_left"}:
-            line = f"The line that {body[0].lower() + body[1:]} gets repeated. Who drives it is not on our list."
-        else:
-            line = f"You'll hear that {body[0].lower() + body[1:]}."
-        if long_form:
-            line += " I'm not converting a talking point into a measurement."
-        return line
-    return _recast(finding, lean, long_form=long_form)
+_LEFTOVER_IDS = frozenset({"timeline-hit", "timeline-frame", "timeline-miss"})
+_SHORT_IDS = {
+    "USREC": frozenset({"usrec", "usrec-july-2026"}),
+    "BLS payrolls": frozenset({"payrolls", "payrolls-july-2026"}),
+    "payrolls": frozenset({"payrolls", "payrolls-july-2026"}),
+    "GDP": frozenset({"gdp", "gdp-2026-q2"}),
+    "SAHMREALTIME": frozenset({"sahm", "sahm-july-2026"}),
+    "U-3": frozenset({"unemployment", "unemployment-july-2026"}),
+}
 
 
-def _vo_jcpoa(lean: str, *, long_form: bool) -> str:
-    if lean == "right":
-        line = "Twenty-eighteen: the United States withdrew from the JCPOA and the Iran file around the Gulf tightened."
-        extra = " That's the withdrawal on the date. I'm not stretching it."
+def _by_series(packet: Packet, *names: str) -> Finding | None:
+    receipt = packet.receipt
+    if not receipt:
+        return None
+    wanted = set(names)
+    ids = set()
+    for name in names:
+        ids |= _SHORT_IDS.get(name, frozenset())
+    for finding in receipt.findings:
+        if finding.id in _LEFTOVER_IDS:
+            continue
+        if finding.series in wanted or finding.id in ids:
+            return finding
+    return None
+
+
+def _print_of(finding: Finding | None, fallback: str = "") -> str:
+    if finding is None:
+        return fallback
+    printed = finding.print
+    if printed not in {MISSING, "", None}:
+        return printed
+    return fallback
+
+
+def _named_prints(packet: Packet) -> list[Finding]:
+    receipt = packet.receipt
+    if not receipt:
+        return []
+    rows = [
+        f
+        for f in receipt.findings
+        if f.id not in _LEFTOVER_IDS
+        and f.stamp == "grounded"
+        and f.print not in {MISSING, "", None}
+    ]
+    rows.sort(key=lambda f: f.id)
+    return rows
+
+
+def _live_findings(packet: Packet) -> list[Finding]:
+    """Writer never opens on leftover 3-slot ids."""
+    receipt = packet.receipt
+    if not receipt:
+        return []
+    return [f for f in receipt.findings if f.id not in _LEFTOVER_IDS]
+
+
+def _cite(finding: Finding | None) -> str:
+    return f" [{finding.id}]" if finding else ""
+
+
+def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
+    packet.script = ""
+    packet.beats = []
+    packet.status = "hold"
+    detail = "; ".join(h for h in holes if h.strip()) or "script held"
+    kept = [row for row in packet.exclusions if row.what != _VERTEX_HOLE]
+    kept.append(Exclusion(what=_VERTEX_HOLE, reason="rails_down", detail=detail))
+    packet.exclusions = kept
+    receipt = packet.receipt
+    if receipt is not None:
+        receipt.disposition = "HOLD"
+        prior = (receipt.hold_reason or "").strip()
+        receipt.hold_reason = f"{prior} {detail}".strip() if prior else detail
+    return packet
+
+
+def _invents(packet: Packet) -> bool:
+    return invents_frame(cut=packet.cut, tell=packet.tell or "")
+
+
+def _voice(line: str, packet: Packet) -> str:
+    lean = packet.script_lean or "centered_independent"
+    spoken = line
+    if lean == "left" or lean == "far_left":
+        spoken = f"What we can say out loud is this — {line}"
+    elif lean == "right":
+        spoken = f"{line} That's the print."
     elif lean == "far_right":
-        line = "In 2018 the United States left the JCPOA. The Gulf file on Iran tightened."
-        extra = " Withdrawal. Tighter file. Stop."
-    elif lean == "left":
-        line = "When the United States withdrew from the JCPOA in 2018, the Iran file around the Gulf got tighter."
-        extra = " Stay with the public date and that tighter file."
-    elif lean == "far_left":
-        line = "In 2018 the United States withdrew from the JCPOA. The Iran file around the Gulf tightened with it."
-        extra = " Hold the date. Don't let a later scare rewrite 2018."
+        spoken = f"{line} Date and claim. Stop there."
     elif lean == "unhinged_fringe":
-        line = "2018, plain: the United States withdrew from the JCPOA and the Iran file around the Gulf tightened. That's all I've got on this beat."
-        extra = " I'm not hanging a secret treaty on it."
+        spoken = f"Plain: {line}"
+    return apply_tone(spoken.rstrip(), packet.tone, fiction=_invents(packet))
+
+
+def _recession_pack(text: str) -> bool:
+    blob = text.lower()
+    return "usrec" in blob and ("payroll" in blob or "23k" in blob) and "sahm" in blob
+
+
+def _units_spoken(units: list[dict]) -> str:
+    return "\n".join(f"{u.get('vo') or ''} {u.get('eyes') or ''}" for u in units)
+
+
+def _leftover_vo(text: str) -> bool:
+    return bool(_LEFTOVER_VO.search(text or ""))
+
+
+_PAY_HEAD = re.compile(r"([\-−+])?\s*\d{1,3}(?:,\d{3})+\b|([\-−+])?\s*\d+\s*k\b", re.I)
+_PAY_CUE = re.compile(r"payroll|nonfarm|payems|\bces\b", re.I)
+
+
+def _notes_have_named_prints(text: str) -> bool:
+    blob = text or ""
+    usrec = bool(re.search(r"usrec.{0,60}?(?:=|is|:)?\s*(?<![\d.])0(?!\.\d)", blob, re.I))
+    payrolls = False
+    for match in _PAY_CUE.finditer(blob):
+        if _PAY_HEAD.search(blob[match.start() : match.start() + 200]):
+            payrolls = True
+            break
+    return usrec and payrolls
+
+
+def _payroll_print_ok(printed: str) -> bool:
+    return bool(_PAY_HEAD.search(printed or "")) and "%" not in (printed or "")
+
+
+_MONTH_YEAR = re.compile(
+    r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
+    re.I,
+)
+
+
+def _month_year(when: str) -> tuple[str, str] | None:
+    match = _MONTH_YEAR.search(when or "")
+    if not match:
+        return None
+    return (match.group(1).lower(), match.group(2))
+
+
+def _same_month(left: str, right: str) -> bool:
+    a, b = _month_year(left), _month_year(right)
+    return a is not None and a == b
+
+
+def _print_has_minus(printed: str) -> bool:
+    return bool(re.search(r"[\-−]\s*\d", printed or ""))
+
+
+def _vo_has_payroll(vo: str, printed: str) -> bool:
+    if not printed:
+        return False
+    if _print_has_minus(printed) and not re.search(r"[\-−]\s*\d", vo or ""):
+        return False
+    vo_n = (vo or "").replace("−", "-").replace(",", "").lower()
+    p_n = printed.replace("−", "-").replace(",", "").replace(" ", "").lower()
+    if printed in (vo or "") or printed.replace("−", "-") in (vo or "").replace("−", "-"):
+        return True
+    if p_n and p_n in vo_n:
+        return True
+    digits = re.sub(r"[^\d]", "", p_n)
+    if not digits:
+        return False
+    if printed.lower().rstrip().endswith("k"):
+        return digits + "k" in vo_n or digits in vo_n
+    return digits in vo_n
+
+
+def _gdp_bars(printed: str) -> list[str]:
+    return [part.strip().rstrip("%") for part in (printed or "").split("/") if part.strip()]
+
+
+def _gdp_lines(printed: str) -> tuple[str, str]:
+    bars = _gdp_bars(printed)
+    if not bars:
+        return "", ""
+    if len(bars) == 1:
+        return f"GDP printed {bars[0]}. One bar at a time.", f"New GDP bars: {bars[0]}. New art, not a leftover map."
+    spoken = ", then ".join(bars)
+    eyes = " then ".join(bars)
+    return (
+        f"GDP printed {spoken}. One bar at a time.",
+        f"New GDP bars: {eyes}. New art, not a leftover map.",
+    )
+
+
+def _missing_pack_marks(packet: Packet, vo: str) -> list[str]:
+    """HOLD if minted objects exist and the VO never says those prints."""
+    holes: list[str] = []
+    vlow = vo or ""
+    usrec = _by_series(packet, "USREC")
+    if usrec:
+        printed = _print_of(usrec, "0")
+        mark = f"USREC={printed}"
+        if mark.lower() not in vlow.lower() and f"usrec = {printed}" not in vlow.lower():
+            holes.append(mark)
+    pay = _by_series(packet, "BLS payrolls", "payrolls")
+    if pay:
+        printed = _print_of(pay, "")
+        if not _vo_has_payroll(vlow, printed):
+            holes.append(f"payrolls {printed}")
+    sahm = _by_series(packet, "SAHMREALTIME")
+    if sahm and not (("−0.03" in vlow or "-0.03" in vlow) and "0.50" in vlow):
+        holes.append("Sahm −0.03 vs 0.50")
+    gdp = _by_series(packet, "GDP")
+    if gdp:
+        printed = _print_of(gdp, "")
+        bars = _gdp_bars(printed)
+        chunks = re.findall(
+            r"GDP printed\s+(.+?)(?:\.\s|$)|New GDP bars:\s+(.+?)(?:\.\s|$)",
+            vlow,
+            re.I,
+        )
+        chunk = " ".join(part for pair in chunks for part in pair if part)
+        spoken = re.findall(r"\d+\.\d+|\d+", chunk)
+        for bar in bars:
+            if bar not in spoken:
+                holes.append(f"GDP {bar}")
+        for bar in spoken:
+            if bar not in bars:
+                holes.append(f"GDP leftover {bar}")
+    return holes
+
+
+def _accept_units(packet: Packet, units: list[dict] | None, *, spine: list[dict] | None = None) -> bool:
+    if not units or len(units) != 8:
+        return False
+    spoken = _units_spoken(units)
+    if _leftover_vo(spoken):
+        return False
+    if _missing_pack_marks(packet, spoken):
+        return False
+    if spine:
+        key = {"cold-open", "gdp", "labor", "turn"}
+        need = " ".join(u.get("vo") or "" for u in spine if u.get("id") in key)
+        have = spoken.replace("−", "-")
+        for token in _numbers_in(need):
+            if token.replace("−", "-") not in have:
+                return False
+    return True
+
+
+def _eight_from_pack(packet: Packet) -> list[dict]:
+    """8-beat spine from minted series/print. LEI/ISM stay off unless a beat cites them."""
+    usrec = _by_series(packet, "USREC")
+    payrolls = _by_series(packet, "BLS payrolls", "payrolls")
+    unemp = _by_series(packet, "U-3")
+    gdp = _by_series(packet, "GDP")
+    sahm = _by_series(packet, "SAHMREALTIME")
+    nber = None
+    usrec_print = _print_of(usrec, "")
+    usrec_when = (usrec.when or "").strip() if usrec else ""
+    pay_print = _print_of(payrolls, "")
+    unemp_print = _print_of(unemp, "")
+    if unemp and not unemp_print and "4.1" in (unemp.claim or ""):
+        unemp_print = "4.1%"
+    sahm_print = _print_of(sahm, "")
+    if usrec and payrolls:
+        labor = (
+            f"Labor: payrolls {pay_print} and unemployment {unemp_print}. Named BLS."
+            if unemp_print
+            else f"Labor: payrolls {pay_print}. Named BLS."
+        )
+        units = [
+            {
+                "id": "cold-open",
+                "vo": _voice(
+                    f"USREC={usrec_print} ({usrec_when}) smashed into payrolls {pay_print}.{_cite(usrec)}{_cite(payrolls)}",
+                    packet,
+                ),
+                "eyes": f"USREC={usrec_print} and payrolls {pay_print} on screen. Official series cards only.",
+                "finding_ids": [f.id for f in (usrec, payrolls) if f],
+            },
+            {
+                "id": "promise",
+                "vo": _voice(
+                    "Three objects: the official call, the GDP prints, the Sahm alarm. "
+                    "The title is a question we will not answer with a forecast.",
+                    packet,
+                ),
+                "eyes": "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map.",
+                "finding_ids": [f.id for f in (usrec, gdp, sahm) if f],
+            },
+            {
+                "id": "gdp",
+                "vo": _voice(
+                    (
+                        f"{_gdp_lines(_print_of(gdp, ''))[0]}{_cite(gdp)}"
+                        if gdp
+                        else "GDP hole named. No matching URL. Hold."
+                    ),
+                    packet,
+                ),
+                "eyes": (
+                    _gdp_lines(_print_of(gdp, ""))[1]
+                    if gdp
+                    else "GDP hole named. No matching URL."
+                ),
+                "finding_ids": [gdp.id] if gdp else [],
+            },
+            {
+                "id": "labor",
+                "vo": _voice(f"{labor}{_cite(payrolls)}{_cite(unemp)}", packet),
+                "eyes": (
+                    f"BLS labor print: {pay_print}"
+                    + (f" and {unemp_print}" if unemp_print else "")
+                    + ". Official series page. Not a fake layoff room."
+                ),
+                "finding_ids": [f.id for f in (payrolls, unemp) if f],
+            },
+            {
+                "id": "turn",
+                "vo": _voice(
+                    (
+                        f"Turn: Sahm {sahm_print} vs the 0.50 trigger. Hold. The spine chart stays.{_cite(sahm)}"
+                        if sahm
+                        else "Turn: Sahm hole named. No matching URL. Hold."
+                    ),
+                    packet,
+                ),
+                "eyes": (
+                    f"Sahm spine chart: {sahm_print} vs 0.50 trigger. Hold. Chart stays."
+                    if sahm
+                    else "Sahm hole named. No matching URL."
+                ),
+                "finding_ids": [sahm.id] if sahm else [],
+            },
+            {
+                "id": "complication",
+                "vo": _voice(
+                    "Those are not the same object. Near is the gap.",
+                    packet,
+                ),
+                "eyes": "Two objects, a gap labeled near. Official series only.",
+                "finding_ids": [f.id for f in (sahm, usrec) if f],
+            },
+            {
+                "id": "receipt",
+                "vo": _voice(
+                    f"Receipt board: named series NBER, FRED, BLS. Holes labeled.{_cite(nber) or _cite(sahm)}{_cite(usrec)}{_cite(payrolls)}",
+                    packet,
+                ),
+                "eyes": "Receipt board. Named series NBER / FRED / BLS. Holes labeled.",
+                "finding_ids": [f.id for f in (nber, sahm, usrec, payrolls) if f],
+            },
+            {
+                "id": "close",
+                "vo": _voice(
+                    "Near is not a switch. When the pack changes, the board changes.",
+                    packet,
+                ),
+                "eyes": "Close card: near is not a switch. Board follows the pack.",
+                "finding_ids": [f.id for f in (sahm, usrec) if f],
+            },
+        ]
     else:
-        line = "In 2018 the United States withdrew from the JCPOA, tightening the Iran file around the Gulf."
-        extra = " I'm staying on that withdrawal and that tighter file."
-    return line + (extra if long_form else "")
+        findings = _live_findings(packet)
+        named = _named_prints(packet)
+        first = named[0] if named else (findings[0] if findings else None)
+        second = named[1] if len(named) > 1 else None
+        if second is None and first is not None:
+            second = next((f for f in findings if f is not first), None)
+        third = named[2] if len(named) > 2 else first
+        leftover_costume = {((first.series or "").lower() if first else ""), ((second.series or "").lower() if second else "")}
+        smash_ok = (
+            first is not None
+            and second is not None
+            and first is not second
+            and {first.series, second.series} == {"USREC", "BLS payrolls"}
+        )
+        if smash_ok:
+            smash = f"{first.series}={first.print} smashed into {second.series} {second.print}."
+            eyes = f"{first.series}={first.print} and {second.series} {second.print} on screen. Official series cards only."
+        elif first and first.print not in {MISSING, "", None} and leftover_costume.isdisjoint({"hormuz", "jcpoa"}):
+            smash = f"{first.series}={first.print}."
+            eyes = f"{first.series}={first.print} on screen. Official series cards only."
+        elif first:
+            smash = (first.claim or packet.tell or packet.topic or "").strip()
+            eyes = "Cited print on screen. No leftover map."
+        else:
+            smash = (packet.tell or packet.topic or "").strip()
+            eyes = "Official series cards only."
+        units = [
+        {
+            "id": "cold-open",
+            "vo": _voice(f"{smash}{_cite(first)}{_cite(second)}", packet),
+            "eyes": eyes,
+            "finding_ids": [f.id for f in (first, second) if f],
+        },
+        {
+            "id": "promise",
+            "vo": _voice(
+                "Three objects from the pack. The title is a question we will not answer with a forecast.",
+                packet,
+            ),
+            "eyes": "Three pack objects on screen. No leftover map.",
+            "finding_ids": [first.id] if first else [],
+        },
+        {
+            "id": "gdp",
+            "vo": _voice(f"{(third or first).claim}{_cite(third)}" if (third or first) else smash, packet),
+            "eyes": "New art from the cited print. Not a leftover map.",
+            "finding_ids": [third.id] if third else [],
+        },
+        {
+            "id": "labor",
+            "vo": _voice(f"{(second or first).claim}{_cite(second or first)}" if (second or first) else smash, packet),
+            "eyes": f"Named official series: {(second or first).claim}. Official page only.",
+            "finding_ids": [(second or first).id] if (second or first) else [],
+        },
+        {
+            "id": "turn",
+            "vo": _voice("Hold on the pack number. The spine chart stays.", packet),
+            "eyes": "Spine chart from the cited series. Hold.",
+            "finding_ids": [first.id] if first else [],
+        },
+        {
+            "id": "complication",
+            "vo": _voice("Those are not the same object. Near is the gap.", packet),
+            "eyes": "Two objects, a gap labeled near.",
+            "finding_ids": [f.id for f in (first, second) if f],
+        },
+        {
+            "id": "receipt",
+            "vo": _voice("Receipt board: named series from the pack. Holes labeled.", packet),
+            "eyes": "Receipt board. Named series. Holes labeled.",
+            "finding_ids": [f.id for f in findings[:4] if f.id not in _LEFTOVER_IDS],
+        },
+        {
+            "id": "close",
+            "vo": _voice("Near is not a switch. When the pack changes, the board changes.", packet),
+            "eyes": "Close card: near is not a switch. Board follows the pack.",
+            "finding_ids": [first.id] if first else [],
+        },
+        ]
+    if _invents(packet):
+        for unit in units:
+            if "(frame)" not in (unit.get("eyes") or ""):
+                unit["eyes"] = f"{unit['eyes']} (frame)"
+    return units
 
 
-def _vo_oil_lane(finding: Finding, lean: str, *, long_form: bool) -> str:
-    issuer = (finding.propaganda_issuer or "").strip()
-    named = issuer and issuer != "missing"
-    if lean == "right":
-        line = "Most seaborne oil still has to run the Strait of Hormuz. The lane is still open."
-        extra = " That's why this waterway sits on every energy desk."
-    elif lean in {"left", "far_left"}:
-        line = "A large share of seaborne oil still transits the Strait of Hormuz."
-        if named:
-            line += f" {issuer} is the one putting that share out."
-        extra = " Follow the lane, and follow who is publishing the number."
-    elif lean == "far_right":
-        line = "A large share of seaborne oil still transits Hormuz. The strait is still the choke."
-        extra = " Keep the map up."
-    elif lean == "unhinged_fringe":
-        line = "A huge share of seaborne oil still goes through Hormuz. That's the lane."
-        extra = " I'm not closing it from a rumor."
-    else:
-        line = "A large share of seaborne oil still transits the Strait of Hormuz."
-        extra = " Tankers still use that lane."
-        if named and long_form:
-            extra += f" {issuer} published that share."
-    return line + (extra if long_form else "")
-
-
-def _vo_panic(lean: str, *, long_form: bool) -> str:
-    if lean == "right":
-        line = "The scare take is that any Hormuz jolt crashes oil overnight. Treat it as a take."
-        extra = " A scare is not a measurement."
-    elif lean in {"left", "far_left"}:
-        line = "The line that any Hormuz scare crashes oil overnight gets repeated. Who drives it is not on our list."
-        extra = " Don't let a talking point stand in for a source."
-    elif lean == "far_right":
-        line = "You'll hear any Hormuz scare means oil crashes the world overnight. That's the panic line."
-        extra = " Leave it as a line."
-    elif lean == "unhinged_fringe":
-        line = "The panic version: any Hormuz scare and oil crashes overnight. I don't get to promote it."
-        extra = " Repeat is not proof."
-    else:
-        line = "You'll hear that any Hormuz scare means oil crashes the world overnight."
-        extra = " That's the scare. I'm not proving a crash from this beat."
-    return line + (extra if long_form else "")
-
-
-def _vo_producer(finding: Finding, lean: str, *, long_form: bool) -> str:
-    repeats = finding.who_repeats
-    names = ""
-    if isinstance(repeats, list) and repeats:
-        names = ", ".join(str(x) for x in repeats if str(x).strip() and str(x) != "missing")
-    if lean == "right":
-        line = "Producer states treat an open Hormuz as given for the oil market."
-        extra = " Open lane, open market — that's their frame."
-    elif lean in {"left", "far_left"}:
-        line = "Producer states treat an open Hormuz as an oil-market given."
-        if names:
-            line += f" {names} repeats that frame."
-        extra = " A given for them is still a frame."
-    elif lean == "unhinged_fringe":
-        line = "Producer states talk like an open Hormuz is just the weather."
-        extra = " That's their given. Not a secret."
-    else:
-        line = "Producer states treat an open Hormuz as an oil-market given."
-        extra = " That's the industry frame."
-    return line + (extra if long_form else "")
-
-
-def _vo_mine(lean: str, *, long_form: bool) -> str:
-    if lean == "right":
-        line = "Someone says Hormuz is already mined shut under a hidden navy treaty. I don't have it."
-        extra = " If I can't show it, I don't run it."
-    elif lean in {"left", "far_left"}:
-        line = "A claim is out there that Hormuz was mined shut under a hidden navy treaty. I'm not selling it."
-        extra = " It stays audible. It does not become the close."
-    elif lean == "unhinged_fringe":
-        line = "The wild one: Hormuz already mined shut under a hidden navy treaty. I still don't have it, so I'm not running it."
-        extra = " I can say the claim. I cannot dress it as fact."
-    else:
-        line = "There's a claim that Hormuz has already been mined shut under a hidden navy treaty. I can't run that as fact."
-        extra = " You still hear the claim. You don't get a minefield from me."
-    return line + (extra if long_form else "")
-
-
-def _invents_frame(packet: Packet) -> bool:
-    return (packet.genre or "nonfiction") != "nonfiction"
-
-
-def _frame_for(packet: Packet, finding: Finding, lean: str) -> str:
-    """Invented room/character only. Labeled (frame). Never a grounded fact."""
-    if not _invents_frame(packet):
-        return ""
-    vantage = packet.vantage or "global_overview"
-    theme = _theme(finding)
-    if vantage == "one_ship":
-        return _ship_frame(theme, lean)
-    if vantage == "one_family":
-        return _family_frame(theme, lean)
-    return _map_table_frame(theme, lean)
-
-
-def _family_frame(theme: str, lean: str) -> str:
-    if theme == "jcpoa":
-        if lean == "right":
-            return "Leila's brother slaps the table in their Bandar Abbas kitchen. (frame)"
-        if lean in {"left", "far_left"}:
-            return "Leila keeps the kitchen radio low so the kids stay asleep in Bandar Abbas. (frame)"
-        return "Leila shuts the kitchen radio in Bandar Abbas. (frame)"
-    if theme == "oil_lane":
-        return "From the kitchen window she can see the harbor road, not the lane itself. (frame)"
-    if theme == "panic":
-        return "A neighbor fills the doorway and talks overnight prices. (frame)"
-    if theme == "producer":
-        return "The state bulletin plays on the small TV above the sink. (frame)"
-    if theme == "mine_rumor":
-        return "Someone in the alley repeats a rumor through the open kitchen door. (frame)"
-    return "Leila stays at the Bandar Abbas sink with the radio on. (frame)"
-
-
-def _ship_frame(theme: str, lean: str) -> str:
-    if theme == "jcpoa":
-        if lean == "right":
-            return "Captain Reza pins a 2018 printout under the bridge lamp. (frame)"
-        if lean in {"left", "far_left"}:
-            return "On the bridge Reza reads the old date out loud to the watch. (frame)"
-        return "Captain Reza checks the chart table on a ship crossing the strait. (frame)"
-    if theme == "oil_lane":
-        return "The lookout calls an open lane from the wing. No blast. (frame)"
-    if theme == "panic":
-        return "In the mess the radio talks crash. The hull is still quiet. (frame)"
-    if theme == "producer":
-        return "Shore radio on the bridge speaker talks like the lane is a given. (frame)"
-    if theme == "mine_rumor":
-        return "A crewman repeats a mine-treaty rumor on the wing. Reza does not change heading for a rumor. (frame)"
-    return "Reza keeps the watch. A hit is a scene they fear, not a fact they have. (frame)"
-
-
-def _map_table_frame(theme: str, lean: str) -> str:
-    if theme == "mine_rumor":
-        return "At a map table someone repeats a rumor. The map does not grow mines. (frame)"
-    return "A narrator stands at a map table with a radio on. (frame)"
-
-
-def _vo_for(finding: Finding, lean: str, *, long_form: bool, packet: Packet) -> str:
-    fact = _vo_body(finding, lean, long_form=long_form).rstrip() + _cite(finding.id)
-    frame = _frame_for(packet, finding, lean)
-    if not frame:
-        return fact
-    return f"{frame} {fact}"
-
-
-def _close_vo(link_claim: str, lean: str, cite: list[str]) -> str:
-    claim = link_claim.rstrip(".")
-    lowered = claim[0].lower() + claim[1:] if claim else claim
-    if lean == "right":
-        line = "Don't hang a later Hormuz panic on the 2018 JCPOA exit. That connection is not sourced."
-    elif lean in {"left", "far_left"}:
-        line = f"I will not tell you that {lowered}. We do not have that connection."
-    elif lean == "unhinged_fringe":
-        line = f"I want a clean line that {lowered}. I don't have it, so I won't draw it."
-    else:
-        line = f"I cannot tell you that {lowered}. That connection is not sourced."
-    spoken = line + "".join(_cite(fid) for fid in cite)
-    return spoken
-
-
-def _close_frame(packet: Packet) -> str:
-    if not _invents_frame(packet):
-        return ""
-    if packet.vantage == "one_ship":
-        return "Reza does not log a sourced explosion. The watch just keeps the heading. (frame) "
-    if packet.vantage == "one_family":
-        return "Leila does not draw an arrow between two dates on the kitchen paper. (frame) "
-    return "No arrow gets drawn on the map table. (frame) "
+def _vo_has_uncited_off(vo: str, fids: list[str]) -> bool:
+    allowed = {x.lower() for x in fids}
+    if any(tok in allowed for tok in ("lei-off", "ism-off")):
+        return False
+    blob = vo or ""
+    return any(token in blob for token in _OFF_UNLESS_CITED)
 
 
 def _tc(total_s: int, *, hours: bool) -> str:
@@ -311,76 +526,198 @@ def _tc(total_s: int, *, hours: bool) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-def _act_name(index: int, total: int) -> str:
-    third = max(1, (total + 2) // 3)
-    return f"ACT {min(3, index // third + 1)}"
-
-
-def write_script(packet: Packet) -> Packet:
-    """Timed spoken VO from the receipt. Lean changes the argument, not the stamps."""
-    receipt = packet.receipt
-    if receipt is None or receipt.disposition != "READY" or not receipt.findings:
-        packet.script = ""
-        packet.beats = []
-        return packet
-    lean = packet.script_lean or "centered_independent"
+def _assemble(packet: Packet, units: list[dict]) -> Packet:
+    if len(units) != 8:
+        return _fail_closed(packet, ["writer must emit 8 beats"])
+    known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
     cut = require_cut(packet.cut) if packet.cut else None
-    if cut:
-        require_tell_pairing(cut, packet.genre or "nonfiction")
-    rows = list(receipt.findings)
-    if cut:
-        rows = rows[: event_cap(cut, packet.platform)]
-    long_form = bool(cut and is_long_cut(cut))
-    duration = scene_seconds(cut) if cut else 12
-    close_s = 180 if long_form else 0
-    hours = long_form
+    short = cut in _SHORT
+    hours = bool(cut and is_long_cut(cut) and not short)
+    durs = list(_SHORT_DURS if short else _EPISODE_DURS)
+    prior = {beat.id: beat for beat in packet.beats}
+    lean = packet.script_lean or "centered_independent"
     beats: list[ScriptBeat] = []
     cursor = 0
-    scene_total = len(rows) + (1 if long_form and receipt.causal_links else 0)
-    for index, finding in enumerate(rows):
+    for i, unit in enumerate(units):
+        bid = unit.get("id") or _EIGHT_IDS[i]
+        fids = [fid for fid in (unit.get("finding_ids") or []) if fid in known]
+        vo = (unit.get("vo") or "").strip()
+        eyes = (unit.get("eyes") or "").strip()
+        hole = "sahm hole" in f"{vo} {eyes}".lower() or "no matching url" in f"{vo} {eyes}".lower()
+        if not fids and known and not hole:
+            return _fail_closed(packet, [f"{bid} cites nothing in the pack"])
+        for fid in fids:
+            if f"[{fid}]" not in vo:
+                vo = f"{vo} [{fid}]"
+        if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
+            return _fail_closed(packet, ["VO is leftover grounded-event template"])
+        if _vo_has_uncited_off(vo, fids):
+            return _fail_closed(packet, ["LEI/ISM spoken without a cited beat"])
+        if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in _pack_text(packet).lower():
+            return _fail_closed(packet, ["invented leftover cast"])
+        pack_blob = " ".join(
+            [
+                packet.research_pack or "",
+                packet.task_spine or "",
+                packet.topic or "",
+                packet.hook or "",
+                *(f.claim for f in _live_findings(packet)),
+            ]
+        ).lower()
+        if "hormuz" not in pack_blob and "jcpoa" not in pack_blob:
+            if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
+                return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
+        dur = durs[i]
         beats.append(
             ScriptBeat(
-                id=finding.id,
+                id=bid,
                 start=_tc(cursor, hours=hours),
-                duration_s=duration,
-                act=_act_name(index, scene_total) if long_form else "",
-                vo=_vo_for(finding, lean, long_form=long_form, packet=packet),
-                finding_ids=[finding.id],
-                frame=_frame_for(packet, finding, lean),
+                duration_s=dur,
+                act="ACT 1" if hours else "",
+                scene=f"BEAT {i+1} — {bid}",
+                kind="vo",
+                vo=f"NARRATOR\n{vo}",
+                camera="MCU" if i else "WIDE",
+                finding_ids=fids,
+                frame=eyes,
             )
         )
-        cursor += duration
-    if long_form and receipt.causal_links:
-        link = receipt.causal_links[0]
-        known = {f.id for f in receipt.findings}
-        cite = [fid for fid in (link.from_id, link.to_id) if fid in known]
-        if cite:
-            beats.append(
-                ScriptBeat(
-                    id=link.id,
-                    start=_tc(cursor, hours=hours),
-                    duration_s=close_s,
-                    act=_act_name(len(rows), scene_total),
-                    vo=_close_frame(packet) + _close_vo(link.claim, lean, cite),
-                    finding_ids=cite,
-                    frame=_close_frame(packet).strip(),
-                )
-            )
-            cursor += close_s
+        cursor += dur
+        old = prior.get(bid)
+        if old is not None:
+            beats[-1].collision = old.collision
+            beats[-1].collision_url = old.collision_url
+            beats[-1].collision_title = old.collision_title
+            beats[-1].collision_kind = old.collision_kind
     lines = [
-        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.genre or 'nonfiction'} · {packet.vantage or 'global_overview'}",
+        f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean} · {packet.tell or 'missing'}"
+        + (f" · {packet.tone}" if packet.tone else ""),
         "",
     ]
-    last_act = None
     elapsed = 0
+    last_act = None
     for beat in beats:
         if beat.act and beat.act != last_act:
             lines.append(beat.act)
             last_act = beat.act
+        lines.append(beat.scene)
         elapsed += beat.duration_s
         lines.append(f"{beat.start}–{_tc(elapsed, hours=hours)}")
+        if beat.camera:
+            lines.append(beat.camera)
+        if beat.frame:
+            lines.append(f"ACTION: {beat.frame}")
         lines.append(beat.vo)
         lines.append("")
+    packet.exclusions = [row for row in packet.exclusions if row.what != _VERTEX_HOLE]
     packet.beats = beats
     packet.script = "\n".join(lines).strip() + "\n"
+    spoken = packet.script + "\n" + "\n".join(b.vo for b in beats)
+    if _leftover_vo(spoken):
+        return _fail_closed(packet, ["VO is leftover template"])
+    holes = _missing_pack_marks(packet, spoken)
+    if holes:
+        return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
+    packet.status = "ready" if packet.receipt is None or packet.receipt.disposition != "HOLD" else "hold"
     return packet
+
+
+def _prompt(packet: Packet, units: list[dict]) -> str:
+    payload = {
+        "id": packet.id,
+        "topic": packet.topic,
+        "tell": packet.tell,
+        "tone": packet.tone,
+        "cut": packet.cut,
+        "script_lean": packet.script_lean,
+        "pack": packet.research_pack or "",
+        "beats": units,
+    }
+    return (
+        f"Read this research pack. Voice the 8-beat spine. {config.GEMINI_MODEL}.\n"
+        "Pack numbers only. Do not invent stats. LEI and ISM stay off unless a beat cites them.\n"
+        "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
+        "Return the same 8-beat JSON.\n"
+        f"{_PACKET_MARK}\n{json.dumps(payload, ensure_ascii=True)}\n{_PACKET_END}\n"
+        f"PACK:\n{packet.research_pack or ''}\n"
+    )
+
+
+def _parse_units(raw: str) -> list[dict] | None:
+    text = (raw or "").strip()
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    beats = data.get("beats") if isinstance(data, dict) else data
+    if not isinstance(beats, list) or len(beats) != 8:
+        return None
+    return beats
+
+
+def write_script(packet: Packet) -> Packet:
+    """8-beat timed VO from the pack. Fail-closed if the pack is empty or has no numbers."""
+    receipt = packet.receipt
+    if receipt is None or receipt.disposition != "READY" or not receipt.findings:
+        holes = ["empty pack"]
+        if receipt is not None and receipt.disposition == "HOLD":
+            holes = [receipt.hold_reason or "HOLD pack"]
+        return _fail_closed(packet, holes)
+    text = _pack_text(packet)
+    if not (packet.research_pack or "").strip() and not receipt.findings:
+        return _fail_closed(packet, ["empty pack"])
+    if _GROUNDED_EVENT.search(text) and not _recession_pack(text):
+        return _fail_closed(packet, ["leftover grounded-event template"])
+    fiction = _invents(packet)
+    if not fiction and not _numbers_in(text):
+        return _fail_closed(packet, ["pack has no numbers"])
+    usrec = _by_series(packet, "USREC")
+    payrolls = _by_series(packet, "BLS payrolls", "payrolls")
+    if (
+        not fiction
+        and _notes_have_named_prints(text)
+        and not (
+            usrec
+            and (usrec.print or "") in {"0", "1"}
+            and payrolls
+            and _payroll_print_ok(payrolls.print or "")
+        )
+    ):
+        return _fail_closed(packet, ["foundry dropped named series"])
+    if (
+        payrolls
+        and re.search(r"\b(fell|dropped|declined|lost|decreased|down)\b", text, re.I)
+        and not _print_has_minus(payrolls.print or "")
+    ):
+        return _fail_closed(packet, ["foundry dropped named series"])
+    if usrec and payrolls:
+        if not (usrec.when or "").strip() or not (payrolls.when or "").strip():
+            return _fail_closed(packet, ["empty when"])
+        if not _same_month(usrec.when, payrolls.when):
+            return _fail_closed(packet, ["smash mixed months"])
+    if ("−0.03" in text or "-0.03" in text) and re.search(r"sahm", text, re.I) and not _by_series(
+        packet, "SAHMREALTIME"
+    ):
+        return _fail_closed(packet, ["Sahm no_url"])
+    gdp = _by_series(packet, "GDP")
+    if gdp and not (gdp.print or "").strip():
+        return _fail_closed(packet, ["gdp print empty"])
+    local = _eight_from_pack(packet)
+    if not _accept_units(packet, local):
+        return _fail_closed(packet, ["_eight_from_pack cannot place minted prints"])
+    units = local
+    # Seed / leftover Hormuz stamp locally. Cloud Run boot has ADC so has_vertex
+    # is true; Vertex Agent Platform 403 must not crash-loop first-open.
+    if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
+        try:
+            parsed = _parse_units(generate_script(_prompt(packet, local)))
+            if parsed and _accept_units(packet, parsed, spine=local):
+                units = parsed
+        except VertexDownError:
+            pass
+    if not _accept_units(packet, units, spine=local) and _accept_units(packet, local):
+        units = local
+    return _assemble(packet, units)

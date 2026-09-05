@@ -1,24 +1,25 @@
 {
-  "id": "oc-hormuz-decade",
-  "topic": "Explain what's going on with the Hormuz strait",
+  "id": "oc-recession-july-2026",
+  "topic": "Are we near recession?",
   "platform": "youtube",
-  "depth": "decade",
+  "depth": "1y",
   "cut": "one_time_short_episode",
   "script_lean": "centered_independent",
-  "genre": "nonfiction",
-  "vantage": "global_overview",
-  "hook": "Explain what's going on with the Hormuz strait",
-  "script": "Timed VO · youtube · one_time_short_episode · centered_independent · nonfiction · global_overview\n\nACT 1\n00:00:00–00:08:00\nIn 2018 the United States withdrew from the JCPOA, tightening the Iran file around the Gulf. I'm staying on that withdrawal and that tighter file. [jcpoa-2018]\n\n00:08:00–00:16:00\nA large share of seaborne oil still transits the Strait of Hormuz. Tankers still use that lane. OPEC published that share. [hormuz-share]\n\nACT 2\n00:16:00–00:24:00\nYou'll hear that any Hormuz scare means oil crashes the world overnight. That's the scare. I'm not proving a crash from this beat. [oil-panic]\n\n00:24:00–00:32:00\nProducer states treat an open Hormuz as an oil-market given. That's the industry frame. [producer-frame]\n\nACT 3\n00:32:00–00:40:00\nThere's a claim that Hormuz has already been mined shut under a hidden navy treaty. I can't run that as fact. You still hear the claim. You don't get a minefield from me. [secret-closure]\n\n00:40:00–00:43:00\nI cannot tell you that the 2018 JCPOA exit caused the 2023-2024 Hormuz panic. That connection is not sourced. [jcpoa-2018] [oil-panic]\n",
+  "tell": "Host-only desk read of the last year of US recession prints",
+  "tone": "On the cited print",
+  "hook": "Are we near recession?",
+  "script": "Timed VO · youtube · one_time_short_episode · centered_independent · Host-only desk read of the last year of US recession prints · On the cited print\n\nACT 1\nBEAT 1 — cold-open\n00:00:00–00:00:20\nWIDE\nACTION: USREC=0 and payrolls −23k on screen. Official series cards only.\nNARRATOR\nUSREC=0 (July 2026) smashed into payrolls −23k. [usrec-july-2026] [payrolls-july-2026]\n\nBEAT 2 — promise\n00:00:20–00:01:15\nMCU\nACTION: Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map.\nNARRATOR\nThree objects: the official call, the GDP prints, the Sahm alarm. The title is a question we will not answer with a forecast. [usrec-july-2026] [gdp-2026-q2] [sahm-july-2026]\n\nBEAT 3 — gdp\n00:01:15–00:02:30\nMCU\nACTION: New GDP bars: 0.5 then 2.1 then 1.5. New art, not a leftover map.\nNARRATOR\nGDP printed 0.5, then 2.1, then 1.5. One bar at a time. [gdp-2026-q2]\n\nBEAT 4 — labor\n00:02:30–00:03:40\nMCU\nACTION: BLS labor print: −23k and 4.1%. Official series page. Not a fake layoff room.\nNARRATOR\nLabor: payrolls −23k and unemployment 4.1%. Named BLS. [payrolls-july-2026] [unemployment-july-2026]\n\nBEAT 5 — turn\n00:03:40–00:04:50\nMCU\nACTION: Sahm spine chart: −0.03 vs 0.50 trigger. Hold. Chart stays.\nNARRATOR\nTurn: Sahm −0.03 vs the 0.50 trigger. Hold. The spine chart stays. [sahm-july-2026]\n\nBEAT 6 — complication\n00:04:50–00:05:45\nMCU\nACTION: Two objects, a gap labeled near. Official series only.\nNARRATOR\nThose are not the same object. Near is the gap. [sahm-july-2026] [usrec-july-2026]\n\nBEAT 7 — receipt\n00:05:45–00:06:55\nMCU\nACTION: Receipt board. Named series NBER / FRED / BLS. Holes labeled.\nNARRATOR\nReceipt board: named series NBER, FRED, BLS. Holes labeled. [sahm-july-2026] [usrec-july-2026] [payrolls-july-2026]\n\nBEAT 8 — close\n00:06:55–00:08:00\nMCU\nACTION: Close card: near is not a switch. Board follows the pack.\nNARRATOR\nNear is not a switch. When the pack changes, the board changes. [sahm-july-2026] [usrec-july-2026]\n",
   "status": "ready",
   "receipt": {
-    "packet_id": "oc-hormuz-decade",
+    "packet_id": "oc-recession-july-2026",
     "written": true,
     "findings": [
       {
-        "id": "jcpoa-2018",
-        "claim": "The United States withdrew from the JCPOA, tightening the Iran file around the Gulf.",
+        "id": "usrec-july-2026",
+        "claim": "USREC=0 (July 2026). Official recession flag is off.",
         "stamp": "grounded",
-        "parallel_url": "https://www.cfr.org/backgrounder/what-iran-nuclear-deal",
+        "title": "USREC",
+        "parallel_url": "https://fred.stlouisfed.org/series/USREC",
         "parallel_status": "hit",
         "note": "Parallel URL on this row.",
         "lean": "missing",
@@ -34,13 +35,14 @@
         "propaganda": "missing",
         "propaganda_url": null,
         "propaganda_issuer": "missing",
-        "when": "2018"
+        "when": "July 2026"
       },
       {
-        "id": "hormuz-share",
-        "claim": "A large share of seaborne oil still transits the Strait of Hormuz.",
+        "id": "payrolls-july-2026",
+        "claim": "Nonfarm payrolls fell −23k.",
         "stamp": "grounded",
-        "parallel_url": "https://www.opec.org/",
+        "title": "BLS payrolls",
+        "parallel_url": "https://www.bls.gov/news.release/empsit.nr0.htm",
         "parallel_status": "hit",
         "note": "Parallel URL on this row.",
         "lean": "missing",
@@ -49,19 +51,89 @@
         "interests_url": null,
         "who_repeats": "missing",
         "who_repeats_url": null,
-        "independent": "no",
-        "independent_url": "https://www.opec.org/",
+        "independent": "missing",
+        "independent_url": null,
         "vested_interest": "missing",
         "vested_interest_url": null,
-        "propaganda": "yes",
-        "propaganda_url": "https://www.opec.org/",
-        "propaganda_issuer": "OPEC",
-        "when": "2018-2024"
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "July 2026"
       },
       {
-        "id": "oil-panic",
-        "claim": "Any Hormuz scare means oil crashes the world overnight.",
+        "id": "unemployment-july-2026",
+        "claim": "U-3 unemployment is 4.1%.",
+        "stamp": "grounded",
+        "title": "BLS unemployment",
+        "parallel_url": "https://www.bls.gov/news.release/empsit.nr0.htm",
+        "parallel_status": "hit",
+        "note": "Parallel URL on this row.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "July 2026"
+      },
+      {
+        "id": "gdp-2026-q2",
+        "claim": "GDP printed 0.5, then 2.1, then 1.5.",
+        "stamp": "grounded",
+        "title": "BEA GDP",
+        "parallel_url": "https://www.bea.gov/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate",
+        "parallel_status": "hit",
+        "note": "Parallel URL on this row.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "2025-2026"
+      },
+      {
+        "id": "sahm-july-2026",
+        "claim": "Sahm is −0.03 vs the 0.50 trigger.",
+        "stamp": "grounded",
+        "title": "Sahm rule",
+        "parallel_url": "https://fred.stlouisfed.org/series/SAHMREALTIME",
+        "parallel_status": "hit",
+        "note": "Parallel URL on this row. NBER dates the cycle; FRED hosts the series.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "July 2026"
+      },
+      {
+        "id": "already-in",
+        "claim": "The US is already in a recession.",
         "stamp": "mainstream",
+        "title": "missing",
         "parallel_url": null,
         "parallel_status": "n/a",
         "note": "Widely repeated, may be bias, not a source.",
@@ -78,38 +150,13 @@
         "propaganda": "missing",
         "propaganda_url": null,
         "propaganda_issuer": "missing",
-        "when": "2023-2024"
+        "when": "2026"
       },
       {
-        "id": "producer-frame",
-        "claim": "Producer states treat an open Hormuz as an oil-market given.",
-        "stamp": "mainstream",
-        "parallel_url": null,
-        "parallel_status": "n/a",
-        "note": "Widely repeated, may be bias, not a source.",
-        "lean": "industry",
-        "lean_url": "https://www.opec.org/",
-        "interests": [
-          "OPEC"
-        ],
-        "interests_url": "https://www.opec.org/",
-        "who_repeats": [
-          "OPEC"
-        ],
-        "who_repeats_url": "https://www.opec.org/",
-        "independent": "missing",
-        "independent_url": null,
-        "vested_interest": "missing",
-        "vested_interest_url": null,
-        "propaganda": "missing",
-        "propaganda_url": null,
-        "propaganda_issuer": "missing",
-        "when": "2018-2024"
-      },
-      {
-        "id": "secret-closure",
-        "claim": "Hormuz has already been mined shut under a hidden navy treaty.",
+        "id": "lei-july-2026",
+        "claim": "LEI +0.2%.",
         "stamp": "fringe",
+        "title": "missing",
         "parallel_url": null,
         "parallel_status": "miss",
         "note": "Parallel miss. Included and tagged fringe. Never sold as fact.",
@@ -126,7 +173,30 @@
         "propaganda": "missing",
         "propaganda_url": null,
         "propaganda_issuer": "missing",
-        "when": "decade"
+        "when": "July 2026"
+      },
+      {
+        "id": "ism-july-2026",
+        "claim": "ISM 55.6.",
+        "stamp": "fringe",
+        "title": "missing",
+        "parallel_url": null,
+        "parallel_status": "miss",
+        "note": "Parallel miss. Included and tagged fringe. Never sold as fact.",
+        "lean": "missing",
+        "lean_url": null,
+        "interests": "missing",
+        "interests_url": null,
+        "who_repeats": "missing",
+        "who_repeats_url": null,
+        "independent": "missing",
+        "independent_url": null,
+        "vested_interest": "missing",
+        "vested_interest_url": null,
+        "propaganda": "missing",
+        "propaganda_url": null,
+        "propaganda_issuer": "missing",
+        "when": "July 2026"
       }
     ],
     "disposition": "READY",
@@ -135,159 +205,336 @@
     "collage": false,
     "invented_stamp": false,
     "invented_lean": false,
-    "causal_links": [
-      {
-        "id": "jcpoa-to-houthi",
-        "from_id": "jcpoa-2018",
-        "to_id": "oil-panic",
-        "claim": "The 2018 JCPOA exit caused the 2023-2024 Hormuz panic.",
-        "stamp": "missing",
-        "parallel_url": null
-      }
-    ]
+    "causal_links": []
   },
   "beats": [
     {
-      "id": "jcpoa-2018",
+      "id": "cold-open",
       "start": "00:00:00",
-      "duration_s": 480,
+      "duration_s": 20,
       "act": "ACT 1",
-      "vo": "In 2018 the United States withdrew from the JCPOA, tightening the Iran file around the Gulf. I'm staying on that withdrawal and that tighter file. [jcpoa-2018]",
+      "scene": "BEAT 1 — cold-open",
+      "kind": "vo",
+      "vo": "NARRATOR\nUSREC=0 (July 2026) smashed into payrolls −23k. [usrec-july-2026] [payrolls-july-2026]",
+      "camera": "WIDE",
       "finding_ids": [
-        "jcpoa-2018"
+        "usrec-july-2026",
+        "payrolls-july-2026"
       ],
-      "frame": ""
+      "frame": "USREC=0 and payrolls −23k on screen. Official series cards only.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
     },
     {
-      "id": "hormuz-share",
-      "start": "00:08:00",
-      "duration_s": 480,
+      "id": "promise",
+      "start": "00:00:20",
+      "duration_s": 55,
       "act": "ACT 1",
-      "vo": "A large share of seaborne oil still transits the Strait of Hormuz. Tankers still use that lane. OPEC published that share. [hormuz-share]",
+      "scene": "BEAT 2 — promise",
+      "kind": "vo",
+      "vo": "NARRATOR\nThree objects: the official call, the GDP prints, the Sahm alarm. The title is a question we will not answer with a forecast. [usrec-july-2026] [gdp-2026-q2] [sahm-july-2026]",
+      "camera": "MCU",
       "finding_ids": [
-        "hormuz-share"
+        "usrec-july-2026",
+        "gdp-2026-q2",
+        "sahm-july-2026"
       ],
-      "frame": ""
+      "frame": "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
     },
     {
-      "id": "oil-panic",
-      "start": "00:16:00",
-      "duration_s": 480,
-      "act": "ACT 2",
-      "vo": "You'll hear that any Hormuz scare means oil crashes the world overnight. That's the scare. I'm not proving a crash from this beat. [oil-panic]",
+      "id": "gdp",
+      "start": "00:01:15",
+      "duration_s": 75,
+      "act": "ACT 1",
+      "scene": "BEAT 3 — gdp",
+      "kind": "vo",
+      "vo": "NARRATOR\nGDP printed 0.5, then 2.1, then 1.5. One bar at a time. [gdp-2026-q2]",
+      "camera": "MCU",
       "finding_ids": [
-        "oil-panic"
+        "gdp-2026-q2"
       ],
-      "frame": ""
+      "frame": "New GDP bars: 0.5 then 2.1 then 1.5. New art, not a leftover map.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
     },
     {
-      "id": "producer-frame",
-      "start": "00:24:00",
-      "duration_s": 480,
-      "act": "ACT 2",
-      "vo": "Producer states treat an open Hormuz as an oil-market given. That's the industry frame. [producer-frame]",
+      "id": "labor",
+      "start": "00:02:30",
+      "duration_s": 70,
+      "act": "ACT 1",
+      "scene": "BEAT 4 — labor",
+      "kind": "vo",
+      "vo": "NARRATOR\nLabor: payrolls −23k and unemployment 4.1%. Named BLS. [payrolls-july-2026] [unemployment-july-2026]",
+      "camera": "MCU",
       "finding_ids": [
-        "producer-frame"
+        "payrolls-july-2026",
+        "unemployment-july-2026"
       ],
-      "frame": ""
+      "frame": "BLS labor print: −23k and 4.1%. Official series page. Not a fake layoff room.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
     },
     {
-      "id": "secret-closure",
-      "start": "00:32:00",
-      "duration_s": 480,
-      "act": "ACT 3",
-      "vo": "There's a claim that Hormuz has already been mined shut under a hidden navy treaty. I can't run that as fact. You still hear the claim. You don't get a minefield from me. [secret-closure]",
+      "id": "turn",
+      "start": "00:03:40",
+      "duration_s": 70,
+      "act": "ACT 1",
+      "scene": "BEAT 5 — turn",
+      "kind": "vo",
+      "vo": "NARRATOR\nTurn: Sahm −0.03 vs the 0.50 trigger. Hold. The spine chart stays. [sahm-july-2026]",
+      "camera": "MCU",
       "finding_ids": [
-        "secret-closure"
+        "sahm-july-2026"
       ],
-      "frame": ""
+      "frame": "Sahm spine chart: −0.03 vs 0.50 trigger. Hold. Chart stays.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
     },
     {
-      "id": "jcpoa-to-houthi",
-      "start": "00:40:00",
-      "duration_s": 180,
-      "act": "ACT 3",
-      "vo": "I cannot tell you that the 2018 JCPOA exit caused the 2023-2024 Hormuz panic. That connection is not sourced. [jcpoa-2018] [oil-panic]",
+      "id": "complication",
+      "start": "00:04:50",
+      "duration_s": 55,
+      "act": "ACT 1",
+      "scene": "BEAT 6 — complication",
+      "kind": "vo",
+      "vo": "NARRATOR\nThose are not the same object. Near is the gap. [sahm-july-2026] [usrec-july-2026]",
+      "camera": "MCU",
       "finding_ids": [
-        "jcpoa-2018",
-        "oil-panic"
+        "sahm-july-2026",
+        "usrec-july-2026"
       ],
-      "frame": ""
+      "frame": "Two objects, a gap labeled near. Official series only.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
+    },
+    {
+      "id": "receipt",
+      "start": "00:05:45",
+      "duration_s": 70,
+      "act": "ACT 1",
+      "scene": "BEAT 7 — receipt",
+      "kind": "vo",
+      "vo": "NARRATOR\nReceipt board: named series NBER, FRED, BLS. Holes labeled. [sahm-july-2026] [usrec-july-2026] [payrolls-july-2026]",
+      "camera": "MCU",
+      "finding_ids": [
+        "sahm-july-2026",
+        "usrec-july-2026",
+        "payrolls-july-2026"
+      ],
+      "frame": "Receipt board. Named series NBER / FRED / BLS. Holes labeled.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
+    },
+    {
+      "id": "close",
+      "start": "00:06:55",
+      "duration_s": 65,
+      "act": "ACT 1",
+      "scene": "BEAT 8 — close",
+      "kind": "vo",
+      "vo": "NARRATOR\nNear is not a switch. When the pack changes, the board changes. [sahm-july-2026] [usrec-july-2026]",
+      "camera": "MCU",
+      "finding_ids": [
+        "sahm-july-2026",
+        "usrec-july-2026"
+      ],
+      "frame": "Close card: near is not a switch. Board follows the pack.",
+      "collision": "missing",
+      "collision_url": null,
+      "collision_title": "missing",
+      "collision_kind": "missing"
     }
   ],
   "frames": [
     {
-      "id": "shot-jcpoa-2018",
-      "shot": "2018 announcement: a dated chyron on the JCPOA withdrawal, Gulf map on the wall behind the podium.",
+      "id": "shot-001-cold-open",
+      "shot": "USREC=0 and payrolls −23k on screen. Official series cards only.",
       "source_refs": [
-        "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
+        "https://fred.stlouisfed.org/series/USREC",
+        "https://www.bls.gov/news.release/empsit.nr0.htm"
       ],
-      "image_href": "/api/frames/shot-jcpoa-2018",
+      "image_href": "/api/frames/shot-001-cold-open",
       "imagen": false,
-      "beat_id": "jcpoa-2018",
-      "duration_s": 480,
-      "key_frame": true
+      "beat_id": "cold-open",
+      "duration_s": 20,
+      "key_frame": true,
+      "shot_no": 1,
+      "camera": "WIDE",
+      "line": "USREC=0 (July 2026) smashed into payrolls −23k. [usrec-july-2026] [payrolls-july-2026]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "infographic"
     },
     {
-      "id": "shot-hormuz-share",
-      "shot": "Tanker in the Strait of Hormuz lane, land close on both sides, open water ahead.",
+      "id": "shot-002-promise",
+      "shot": "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map.",
       "source_refs": [
-        "https://www.opec.org/"
+        "https://fred.stlouisfed.org/series/USREC",
+        "https://www.bea.gov/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate",
+        "https://fred.stlouisfed.org/series/SAHMREALTIME"
       ],
-      "image_href": "/api/frames/shot-hormuz-share",
+      "image_href": "/api/frames/shot-002-promise",
       "imagen": false,
-      "beat_id": "hormuz-share",
-      "duration_s": 480,
-      "key_frame": true
+      "beat_id": "promise",
+      "duration_s": 55,
+      "key_frame": true,
+      "shot_no": 2,
+      "camera": "MCU",
+      "line": "Three objects: the official call, the GDP prints, the Sahm alarm. The title is a question we will not answer with a forecast. [usrec-july-2026] [gdp-2026-q2] [sahm-july-2026]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "infographic"
     },
     {
-      "id": "shot-oil-panic",
-      "shot": "Overnight newsroom, oil ticker running, Hormuz marked on a wall map. No crash proven on screen.",
+      "id": "shot-003-gdp",
+      "shot": "New GDP bars: 0.5 then 2.1 then 1.5. New art, not a leftover map.",
       "source_refs": [
-        "oil-panic"
+        "https://www.bea.gov/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate"
       ],
-      "image_href": "/api/frames/shot-oil-panic",
+      "image_href": "/api/frames/shot-003-gdp",
       "imagen": false,
-      "beat_id": "oil-panic",
-      "duration_s": 480,
-      "key_frame": true
+      "beat_id": "gdp",
+      "duration_s": 75,
+      "key_frame": true,
+      "shot_no": 3,
+      "camera": "MCU",
+      "line": "GDP printed 0.5, then 2.1, then 1.5. One bar at a time. [gdp-2026-q2]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "infographic"
     },
     {
-      "id": "shot-producer-frame",
-      "shot": "Tanker in the Strait of Hormuz lane, land close on both sides, open water ahead.",
+      "id": "shot-004-labor",
+      "shot": "BLS labor print: −23k and 4.1%. Official series page. Not a fake layoff room.",
       "source_refs": [
-        "producer-frame"
+        "https://www.bls.gov/news.release/empsit.nr0.htm",
+        "https://www.bls.gov/news.release/empsit.nr0.htm"
       ],
-      "image_href": "/api/frames/shot-producer-frame",
+      "image_href": "/api/frames/shot-004-labor",
       "imagen": false,
-      "beat_id": "producer-frame",
-      "duration_s": 480,
-      "key_frame": true
+      "beat_id": "labor",
+      "duration_s": 70,
+      "key_frame": true,
+      "shot_no": 4,
+      "camera": "MCU",
+      "line": "Labor: payrolls −23k and unemployment 4.1%. Named BLS. [payrolls-july-2026] [unemployment-july-2026]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "infographic"
     },
     {
-      "id": "shot-secret-closure",
-      "shot": "Night water in the Strait of Hormuz, empty lane, no mines on camera.",
+      "id": "shot-005-turn",
+      "shot": "Sahm spine chart: −0.03 vs 0.50 trigger. Hold. Chart stays.",
       "source_refs": [
-        "secret-closure"
+        "https://fred.stlouisfed.org/series/SAHMREALTIME"
       ],
-      "image_href": "/api/frames/shot-secret-closure",
+      "image_href": "/api/frames/shot-005-turn",
       "imagen": false,
-      "beat_id": "secret-closure",
-      "duration_s": 480,
-      "key_frame": true
+      "beat_id": "turn",
+      "duration_s": 70,
+      "key_frame": true,
+      "shot_no": 5,
+      "camera": "MCU",
+      "line": "Turn: Sahm −0.03 vs the 0.50 trigger. Hold. The spine chart stays. [sahm-july-2026]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "infographic"
     },
     {
-      "id": "shot-jcpoa-to-houthi",
-      "shot": "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them.",
+      "id": "shot-006-complication",
+      "shot": "Two objects, a gap labeled near. Official series only.",
       "source_refs": [
-        "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
+        "https://fred.stlouisfed.org/series/SAHMREALTIME",
+        "https://fred.stlouisfed.org/series/USREC"
       ],
-      "image_href": "/api/frames/shot-jcpoa-to-houthi",
+      "image_href": "/api/frames/shot-006-complication",
       "imagen": false,
-      "beat_id": "jcpoa-to-houthi",
-      "duration_s": 180,
-      "key_frame": true
+      "beat_id": "complication",
+      "duration_s": 55,
+      "key_frame": true,
+      "shot_no": 6,
+      "camera": "MCU",
+      "line": "Those are not the same object. Near is the gap. [sahm-july-2026] [usrec-july-2026]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "infographic"
+    },
+    {
+      "id": "shot-007-receipt",
+      "shot": "Receipt board. Named series NBER / FRED / BLS. Holes labeled.",
+      "source_refs": [
+        "https://fred.stlouisfed.org/series/SAHMREALTIME",
+        "https://fred.stlouisfed.org/series/USREC",
+        "https://www.bls.gov/news.release/empsit.nr0.htm"
+      ],
+      "image_href": "/api/frames/shot-007-receipt",
+      "imagen": false,
+      "beat_id": "receipt",
+      "duration_s": 70,
+      "key_frame": true,
+      "shot_no": 7,
+      "camera": "MCU",
+      "line": "Receipt board: named series NBER, FRED, BLS. Holes labeled. [sahm-july-2026] [usrec-july-2026] [payrolls-july-2026]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "infographic"
+    },
+    {
+      "id": "shot-008-close",
+      "shot": "Close card: near is not a switch. Board follows the pack.",
+      "source_refs": [
+        "https://fred.stlouisfed.org/series/SAHMREALTIME",
+        "https://fred.stlouisfed.org/series/USREC"
+      ],
+      "image_href": "/api/frames/shot-008-close",
+      "imagen": false,
+      "beat_id": "close",
+      "duration_s": 65,
+      "key_frame": true,
+      "shot_no": 8,
+      "camera": "MCU",
+      "line": "Near is not a switch. When the pack changes, the board changes. [sahm-july-2026] [usrec-july-2026]",
+      "footage": "missing",
+      "footage_url": null,
+      "footage_title": "missing",
+      "kind": "event"
     }
   ],
-  "shift_id": null
+  "shift_id": null,
+  "collisions": [],
+  "collision_disposition": "HOLD",
+  "collision_hold_reason": "Collision rail HOLD: Parallel missing — no search, no invented title, never collision=no without a search.",
+  "research_pack": "# Research pack · oc-recession-july-2026\n\n## Question\n\nThe topic under study is Are we near recession?. The working question is Are we near recession?. This document is the citable thesis for that question. It is not a stamp list and it is not a script. The script, if written, is a later telling of this record.\n\n## Picks\n\nThe ask is a one_time_short_episode for youtube, depth 1y.\n\n## Tell\n\nThe tell is Host-only desk read of the last year of US recession prints. Tell is how the later script is voiced. It does not restamp sources.\n\n## Tone\n\nThe tone is On the cited print. Tone is host stance, not a source stamp. Script lean is centered_independent (voice only; does not restamp).\n\n## Timeline of what led here\n\nThe timeline below uses only Parallel-sourced events. Mainstream scares and fringe rumors are kept in the bibliography, tagged. Missing links are named, not drawn. In July 2026, USREC=0 (July 2026). Official recession flag is off [usrec-july-2026]. In July 2026, Nonfarm payrolls fell −23k [payrolls-july-2026]. In July 2026, U-3 unemployment is 4.1% [unemployment-july-2026]. In 2025-2026, GDP printed 0.5, then 2.1, then 1.5 [gdp-2026-q2]. In July 2026, Sahm is −0.03 vs the 0.50 trigger [sahm-july-2026].\n\n## Argument\n\nThis argument uses only the citations Parallel returned and the honest holes. Lean, tell, and tone change the later script. They do not restamp these rows. The grounded record, Parallel-sourced where marked hit, is this: USREC=0 (July 2026). Official recession flag is off [usrec-july-2026]; Nonfarm payrolls fell −23k [payrolls-july-2026]; U-3 unemployment is 4.1% [unemployment-july-2026]; GDP printed 0.5, then 2.1, then 1.5 [gdp-2026-q2]; Sahm is −0.03 vs the 0.50 trigger [sahm-july-2026]. Mainstream frames stay in the thesis as widely repeated lines, not as sources: The US is already in a recession [already-in]. Fringe stays in the thesis, tagged, and is never sold as fact: LEI +0.2% [lei-july-2026]; ISM 55.6 [ism-july-2026].\n\n## Sources\n\nBibliography. Each finding keeps every stamp. Lean and tone do not rewrite these fields.\n\n[usrec-july-2026] USREC=0 (July 2026). Official recession flag is off. The full citation is USREC, https://fred.stlouisfed.org/series/USREC (July 2026). The stamp is grounded (grounded|mainstream|fringe). parallel = hit. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. Parallel URL on this row.\n\n[payrolls-july-2026] Nonfarm payrolls fell −23k. The full citation is BLS payrolls, https://www.bls.gov/news.release/empsit.nr0.htm (July 2026). The stamp is grounded (grounded|mainstream|fringe). parallel = hit. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. Parallel URL on this row.\n\n[unemployment-july-2026] U-3 unemployment is 4.1%. The full citation is BLS unemployment, https://www.bls.gov/news.release/empsit.nr0.htm (July 2026). The stamp is grounded (grounded|mainstream|fringe). parallel = hit. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. Parallel URL on this row.\n\n[gdp-2026-q2] GDP printed 0.5, then 2.1, then 1.5. The full citation is BEA GDP, https://www.bea.gov/news/2026/gross-domestic-product-second-quarter-2026-advance-estimate (2025-2026). The stamp is grounded (grounded|mainstream|fringe). parallel = hit. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. Parallel URL on this row.\n\n[sahm-july-2026] Sahm is −0.03 vs the 0.50 trigger. The full citation is Sahm rule, https://fred.stlouisfed.org/series/SAHMREALTIME (July 2026). The stamp is grounded (grounded|mainstream|fringe). parallel = hit. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. Parallel URL on this row. NBER dates the cycle; FRED hosts the series.\n\n[already-in] The US is already in a recession. The full citation is title missing, no URL (2026). The stamp is mainstream (grounded|mainstream|fringe). parallel = n/a. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. Widely repeated, may be bias, not a source.\n\n[lei-july-2026] LEI +0.2%. The full citation is title missing, no URL (July 2026). The stamp is fringe (grounded|mainstream|fringe). parallel = miss. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. This stays in the thesis, tagged fringe, and is never sold as fact. Parallel miss. Included and tagged fringe. Never sold as fact.\n\n[ism-july-2026] ISM 55.6. The full citation is title missing, no URL (July 2026). The stamp is fringe (grounded|mainstream|fringe). parallel = miss. lean = missing. interests = missing. who_repeats = missing. independent = missing. vested_interest = missing. propaganda = missing. collision = missing. This stays in the thesis, tagged fringe, and is never sold as fact. Parallel miss. Included and tagged fringe. Never sold as fact.\n\n## Causal links\n\nNo causal link on the receipt. Missing, not invented.\n\n## What we could not find\n\nParallel missed [lei-july-2026]: LEI +0.2%. Tagged fringe, never sold as fact.\nParallel missed [ism-july-2026]: ISM 55.6. Tagged fringe, never sold as fact.\n\n## Left out / not included\n\nLeft out: The 2018 JCPOA exit caused the 2023-2024 Hormuz panic.. URL: https://www.cfr.org/backgrounder/what-iran-nuclear-deal. reason=parallel_miss. Leftover Hormuz causal. Not first-open. Causal link is missing. Not drawn as fact.\n\n## How to read this\n\nThis pack is a citable thesis plus the holes. It is not a clearance. The floor does not post it.\n",
+  "exclusions": [
+    {
+      "what": "The 2018 JCPOA exit caused the 2023-2024 Hormuz panic.",
+      "reason": "parallel_miss",
+      "detail": "Leftover Hormuz causal. Not first-open. Causal link is missing. Not drawn as fact.",
+      "url": "https://www.cfr.org/backgrounder/what-iran-nuclear-deal"
+    }
+  ],
+  "task_spine": ""
 }

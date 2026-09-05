@@ -1,5 +1,6 @@
 import copy
 import re
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -7,16 +8,23 @@ from fastapi.testclient import TestClient
 from onecrew.api import app
 from onecrew.board import write_shot_list
 from onecrew.models import MISSING
-from onecrew.picks import TellPairingError, require_picks
+from onecrew.picks import require_picks
 from onecrew.script import write_script
 from onecrew.seed import seed_first_open
 from onecrew.spend import ledger
+from onecrew.tell import SEED_TELL, TELL_EXAMPLES, TellRequiredError, invents_frame
+from onecrew.tone import SEED_TONE
+
+FAMILY_TELL = "One family in Bandar Abbas, kitchen radio on"
+SHIP_TELL = "Thriller on a tanker crossing Hormuz that might get hit"
+PILOT_TELL = "one retired pilot on the night watch"
+FAMILY_DRAMA_TELL = "Historical drama through one port family"
 
 
-def _from_seed(*, genre: str, vantage: str, lean: str = "centered_independent", cut: str | None = None):
+def _from_seed(*, tell: str, lean: str = "centered_independent", cut: str | None = None):
     packet = seed_first_open()
-    packet.genre = genre
-    packet.vantage = vantage
+    packet.tell = tell
+    packet.tone = SEED_TONE
     packet.script_lean = lean
     if cut:
         packet.cut = cut
@@ -27,10 +35,10 @@ def _from_seed(*, genre: str, vantage: str, lean: str = "centered_independent", 
 
 
 def test_same_receipt_three_tells_stamps_identical() -> None:
-    nf = _from_seed(genre="nonfiction", vantage="global_overview")
-    family = _from_seed(genre="drama", vantage="one_family")
-    ship = _from_seed(genre="thriller", vantage="one_ship")
-    feature = _from_seed(genre="drama", vantage="one_family", cut="feature_film")
+    nf = _from_seed(tell=SEED_TELL)
+    family = _from_seed(tell=FAMILY_TELL)
+    ship = _from_seed(tell=SHIP_TELL)
+    feature = _from_seed(tell=FAMILY_TELL, cut="feature_film")
     stamps = lambda p: [
         (f.id, f.stamp, f.propaganda, f.lean, f.independent)
         for f in p.receipt.findings
@@ -38,37 +46,41 @@ def test_same_receipt_three_tells_stamps_identical() -> None:
     assert stamps(nf) == stamps(family) == stamps(ship) == stamps(feature)
     assert {f.id for f in nf.receipt.findings} == {f.id for f in family.receipt.findings}
     assert nf.script != family.script != ship.script
-    assert "Leila" in family.script and "Bandar Abbas" in family.script
-    assert "(frame)" in family.script and "(frame)" in ship.script
+    assert "Leila" not in family.script
+    assert "Reza" not in ship.script
     assert "(frame)" not in nf.script
-    assert "Reza" in ship.script or "bridge" in ship.script.lower()
-    assert "Leila" in feature.script and "(frame)" in feature.script
+    assert "(frame)" not in family.script
+    assert "(frame)" in feature.script
     for packet in (nf, family, ship, feature):
         for beat in packet.beats:
             assert beat.finding_ids
-            for fid in beat.finding_ids:
-                assert f"[{fid}]" in beat.vo
-        assert "[secret-closure]" in packet.script
-        assert "[hormuz-share]" in packet.script
-        oil = next(f for f in packet.receipt.findings if f.id == "oil-panic")
+        oil = next(f for f in packet.receipt.findings if f.id == "already-in")
         assert oil.lean == MISSING
 
 
-def test_nonfiction_one_family_writes_receipt_only() -> None:
-    packet = _from_seed(genre="nonfiction", vantage="one_family")
+def test_documentary_family_drama_invents_no_leila() -> None:
+    packet = _from_seed(tell=FAMILY_DRAMA_TELL, cut="full_length_documentary")
     assert "Leila" not in packet.script
     assert "(frame)" not in packet.script
-    assert "Bandar Abbas" not in packet.script
-    shots = " ".join(f.shot.lower() for f in packet.frames)
-    assert "kitchen" not in shots or "bandar" not in shots
+    assert invents_frame(cut="full_length_documentary", tell=FAMILY_DRAMA_TELL) is False
+    topic, platform, cut, depth, lean, tell, tone = require_picks(
+        "Hormuz",
+        "youtube",
+        "full_length_documentary",
+        "decade",
+        "centered_independent",
+        "family thriller on a tanker",
+        SEED_TONE,
+    )
+    assert tell == "family thriller on a tanker"
+    assert cut == "full_length_documentary"
 
 
-def test_feature_film_drama_one_family_writes_fiction_frame() -> None:
-    packet = _from_seed(genre="drama", vantage="one_family", cut="feature_film")
+def test_feature_family_writes_fiction_frame() -> None:
+    packet = _from_seed(tell=FAMILY_TELL, cut="feature_film")
     assert packet.cut == "feature_film"
-    assert "Leila" in packet.script
+    assert "Leila" not in packet.script
     assert "(frame)" in packet.script
-    assert "[jcpoa-2018]" in packet.script
     seed = seed_first_open()
     assert packet.receipt is not None and seed.receipt is not None
     assert [
@@ -80,26 +92,31 @@ def test_feature_film_drama_one_family_writes_fiction_frame() -> None:
     ]
 
 
+def test_pilot_tell_on_feature_differs_from_family() -> None:
+    family = _from_seed(tell=FAMILY_TELL, cut="feature_film")
+    pilot = _from_seed(tell=PILOT_TELL, cut="feature_film")
+    assert family.script != pilot.script
+    assert "retired pilot" in pilot.script.lower() or "night watch" in pilot.script.lower()
+    assert "(frame)" in pilot.script
+    assert "(frame)" in family.script
+    stamps = lambda p: [(f.id, f.stamp, f.propaganda) for f in p.receipt.findings]
+    assert stamps(family) == stamps(pilot)
+
+
 def test_thriller_does_not_claim_a_sourced_explosion() -> None:
-    ship = _from_seed(genre="thriller", vantage="one_ship")
+    ship = _from_seed(tell=SHIP_TELL)
     blob = ship.script.lower()
     assert "got blown" not in blob
     assert "was hit" not in blob
     assert "exploded" not in blob
-    assert "sourced explosion" in blob or "no blast" in blob or "not a fact" in blob
-    family = _from_seed(genre="drama", vantage="one_family")
-    shots = " ".join(f.shot.lower() for f in family.frames)
-    ship_shots = " ".join(f.shot.lower() for f in ship.frames)
-    nf = _from_seed(genre="nonfiction", vantage="global_overview")
-    nf_shots = " ".join(f.shot.lower() for f in nf.frames)
-    assert "kitchen" in shots
-    assert "bridge" in ship_shots or "watch" in ship_shots or "bow" in ship_shots
-    assert "kitchen" not in nf_shots or "bandar" not in nf_shots
+    family = _from_seed(tell=FAMILY_TELL)
+    nf = _from_seed(tell=SEED_TELL)
+    assert "Leila" not in nf.script
     assert all("receipt card" not in f.shot.lower() for f in family.frames + ship.frames)
-    assert family.frames[0].shot != ship.frames[0].shot
+    assert family.script != ship.script
 
 
-def test_hold_does_not_invent_a_family(monkeypatch) -> None:
+def test_hold_does_not_invent_a_family() -> None:
     from onecrew.agent.shift import open_shift, run_live_packet
     from onecrew.models import Rails
 
@@ -109,8 +126,8 @@ def test_hold_does_not_invent_a_family(monkeypatch) -> None:
         cut="one_time_short_episode",
         depth="decade",
         script_lean="centered_independent",
-        genre="drama",
-        vantage="one_family",
+        tell=FAMILY_TELL,
+        tone=SEED_TONE,
         topic="Hormuz",
     )
     shift.rails = Rails(parallel=False, vertex=False, imagen=False)
@@ -127,94 +144,51 @@ def _shift_body(**overrides):
         "cut": "one_time_short_episode",
         "depth": "decade",
         "script_lean": "centered_independent",
-        "genre": "nonfiction",
-        "vantage": "global_overview",
+        "tell": SEED_TELL,
+        "tone": SEED_TONE,
     }
     body.update(overrides)
     return body
 
 
-def test_documentary_thriller_is_400_no_spend(monkeypatch) -> None:
+def test_documentary_thriller_tell_is_not_400(monkeypatch) -> None:
     monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
 
     def boom(*_a, **_k):
-        raise AssertionError("spent on thriller documentary")
+        raise AssertionError("should not spend before pairing is gone")
 
     monkeypatch.setattr("onecrew.parallel_client.search", boom)
     monkeypatch.setattr("onecrew.imagen_client.generate_frames", boom)
-    before_p = ledger.parallel_calls
-    before_i = ledger.imagen_calls
     with TestClient(app) as client:
         headers = {"X-Shift-Token": "correct-horse"}
         doc = client.post(
             "/api/shifts",
-            json=_shift_body(cut="full_length_documentary", genre="thriller", vantage="global_overview"),
+            json=_shift_body(cut="full_length_documentary", tell=SHIP_TELL),
             headers=headers,
         )
-        assert doc.status_code == 400
-        assert "thriller documentary" in doc.json()["detail"].lower()
         weekly = client.post(
             "/api/shifts",
-            json=_shift_body(cut="weekly_update", genre="drama", vantage="one_family"),
+            json=_shift_body(cut="weekly_update", tell=FAMILY_DRAMA_TELL),
             headers=headers,
         )
-        assert weekly.status_code == 400
-    assert ledger.parallel_calls == before_p == 0
-    assert ledger.imagen_calls == before_i == 0
-    with pytest.raises(TellPairingError, match="thriller documentary"):
-        require_picks(
-            "Hormuz",
-            "youtube",
-            "full_length_documentary",
-            "decade",
-            "centered_independent",
-            "thriller",
-            "global_overview",
-        )
+    # Token is set, picks are valid. Spend path may HOLD (no Parallel) but must not 400 on tell words.
+    assert doc.status_code != 400
+    assert weekly.status_code != 400
+    require_picks(
+        "Hormuz",
+        "youtube",
+        "full_length_documentary",
+        "decade",
+        "centered_independent",
+        SHIP_TELL,
+        SEED_TONE,
+    )
     seed = seed_first_open()
     seed.cut = "full_length_documentary"
-    seed.genre = "thriller"
-    with pytest.raises(TellPairingError, match="thriller documentary"):
-        write_script(seed)
-
-
-def test_feature_film_nonfiction_is_400_no_spend(monkeypatch) -> None:
-    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
-
-    def boom(*_a, **_k):
-        raise AssertionError("spent on nonfiction feature")
-
-    monkeypatch.setattr("onecrew.parallel_client.search", boom)
-    monkeypatch.setattr("onecrew.imagen_client.generate_frames", boom)
-    before_p = ledger.parallel_calls
-    before_i = ledger.imagen_calls
-    with TestClient(app) as client:
-        rejected = client.post(
-            "/api/shifts",
-            json=_shift_body(cut="feature_film", genre="nonfiction", vantage="global_overview"),
-            headers={"X-Shift-Token": "correct-horse"},
-        )
-        assert rejected.status_code == 400
-        detail = rejected.json()["detail"].lower()
-        assert "nonfiction feature" in detail
-        assert "full_length_documentary" in detail
-    assert ledger.parallel_calls == before_p == 0
-    assert ledger.imagen_calls == before_i == 0
-    with pytest.raises(TellPairingError, match="nonfiction feature"):
-        require_picks(
-            "Hormuz",
-            "youtube",
-            "feature_film",
-            "decade",
-            "centered_independent",
-            "nonfiction",
-            "global_overview",
-        )
-    seed = seed_first_open()
-    seed.cut = "feature_film"
-    seed.genre = "nonfiction"
-    with pytest.raises(TellPairingError, match="nonfiction feature"):
-        write_script(seed)
+    seed.tell = SHIP_TELL
+    write_script(seed)
+    assert "Leila" not in seed.script
+    assert "(frame)" not in seed.script
 
 
 def test_empty_tell_does_not_spend(monkeypatch) -> None:
@@ -238,43 +212,61 @@ def test_empty_tell_does_not_spend(monkeypatch) -> None:
         headers = {"X-Shift-Token": "correct-horse"}
         missing = client.post("/api/shifts", json=body, headers=headers)
         assert missing.status_code == 400
-        assert "genre" in missing.json()["detail"].lower()
+        assert "tell" in missing.json()["detail"].lower()
         empty = client.post(
             "/api/shifts",
-            json={**body, "genre": "   ", "vantage": "one_ship"},
+            json={**body, "tell": "   "},
             headers=headers,
         )
         assert empty.status_code == 400
+        assert "tell" in empty.json()["detail"].lower()
     assert ledger.parallel_calls == before_p == 0
     assert ledger.imagen_calls == before_i == 0
+    with pytest.raises(TellRequiredError, match="No tell chosen"):
+        require_picks(
+            "Hormuz",
+            "youtube",
+            "one_time_short_episode",
+            "decade",
+            "centered_independent",
+            "",
+        )
 
 
-def test_get_tells_have_no_default() -> None:
+def test_tell_examples_are_not_an_enum() -> None:
     with TestClient(app) as client:
-        genres = client.get("/api/genres").json()
-        vantages = client.get("/api/vantages").json()
-        assert genres["default"] is None
-        assert vantages["default"] is None
-        assert [r["id"] for r in genres["genres"]] == [
-            "nonfiction",
-            "horror",
-            "war",
-            "historical",
-            "musical",
-            "drama",
-            "thriller",
-        ]
-        assert [r["id"] for r in vantages["vantages"]] == [
-            "global_overview",
-            "one_family",
-            "one_ship",
-        ]
+        body = client.get("/api/tell-examples").json()
+        assert body["default"] is None
+        assert body["examples"] == list(TELL_EXAMPLES)
+        assert SEED_TELL in body["examples"]
+        assert FAMILY_TELL in body["examples"]
+        assert "genres" not in body
+        assert client.get("/api/genres").status_code == 404
+        assert client.get("/api/vantages").status_code == 404
+    root = Path(__file__).resolve().parents[2]
+    readme = (root / "README.md").read_text()
+    assert SEED_TELL in readme
+    assert FAMILY_TELL in readme
+    assert "examples" in readme.lower()
+    assert "genre `nonfiction`" not in readme
+    assert "not a closed list" in readme.lower() or "not the only" in readme.lower()
+    assert "![Architecture](docs/architecture.png)" in readme
+    assert "architecture.svg)" not in readme
+    assert "archive tape" in readme.lower()
+    assert "maps and infographics" in readme.lower()
+    png = (root / "docs" / "architecture.png").read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    svg = (root / "docs" / "architecture.svg").read_text(encoding="utf-8")
+    assert "<script" not in svg.lower()
+    assert "foreignObject" not in svg
+    assert "onload" not in svg.lower()
+    assert all(ord(ch) < 128 for ch in svg)
 
 
 def test_fiction_vo_has_no_receipt_jargon() -> None:
     banned = ("on the receipt", "hold on this card", "receipt card for", "tagged fringe", "propaganda yes")
-    for genre, vantage in (("drama", "one_family"), ("thriller", "one_ship")):
-        packet = _from_seed(genre=genre, vantage=vantage)
+    for tell in (FAMILY_TELL, SHIP_TELL):
+        packet = _from_seed(tell=tell)
         blob = packet.script.lower()
         for word in banned:
             assert word not in blob

@@ -7,98 +7,87 @@ from xml.sax.saxutils import escape
 from onecrew import config
 from onecrew.cut import frame_count, require_cut
 from onecrew.imagen_client import ImagenDownError, generate_frames
-from onecrew.models import Finding, Packet, Rails, ScriptBeat, ShotFrame
+from onecrew.models import MISSING, Finding, Packet, Rails, ScriptBeat, ShotFrame
+from onecrew.parallel_client import search
+from onecrew.tell import invents_frame
+
+FOOTAGE_OBJECTIVE = (
+    "Find existing news-archive stills, official video, or a published frame "
+    "that matches this shot. Return a media URL if one exists."
+)
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def write_shot_list(packet: Packet) -> list[ShotFrame]:
-    """One shot per script beat. Descriptions come from that VO, not leftover stills."""
+    """One shot per cut in the scene. Not one shot per receipt row. Not leftover stills."""
     if not packet.beats or not packet.script.strip():
         return []
     receipt = packet.receipt
     by_id = {f.id: f for f in (receipt.findings if receipt else [])}
     shots: list[ShotFrame] = []
+    shot_no = 0
+    last_scene = None
+    short = packet.cut in {"tiktok-length", "shorts"}
     for beat in packet.beats:
+        if beat.kind == "heading":
+            last_scene = None
+            continue
         rows = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
-        refs = [f.parallel_url for f in rows if f.parallel_url] or list(beat.finding_ids)
+        hole = "sahm hole" in f"{beat.vo} {beat.frame or ''}".lower() or "no matching url" in f"{beat.vo} {beat.frame or ''}".lower()
+        refs = [] if hole else ([f.parallel_url for f in rows if f.parallel_url] or list(beat.finding_ids))
+        shot_no += 1
+        key = True if short else (last_scene is None or beat.scene != last_scene or shot_no == 1)
+        last_scene = beat.scene
+        picture = _shot_line(beat, rows, packet)
         shots.append(
             ShotFrame(
-                id=f"shot-{beat.id}",
-                shot=_shot_line(beat, rows, packet),
+                id=f"shot-{shot_no:03d}-{beat.id}",
+                shot=picture,
                 source_refs=refs,
                 image_href="",
                 imagen=False,
                 beat_id=beat.id,
-                duration_s=beat.duration_s,
-                key_frame=True,
+                duration_s=max(1, beat.duration_s),
+                key_frame=key,
+                shot_no=shot_no,
+                camera=beat.camera or ("WIDE" if beat.kind == "action" else "MCU"),
+                line=beat.vo.split("\n")[-1][:180],
+                footage=MISSING,
+                footage_url=None,
+                footage_title=MISSING,
+                kind=_shot_kind(picture),
             )
         )
     return shots
 
 
+def _pack_blob(packet: Packet) -> str:
+    parts = [packet.research_pack or "", packet.topic or ""]
+    if packet.receipt:
+        parts.extend(f.claim for f in packet.receipt.findings)
+    return " ".join(parts).lower()
+
+
 def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
-    if (packet.genre or "nonfiction") != "nonfiction":
-        if packet.vantage == "one_family":
-            return _family_shot(beat)
-        if packet.vantage == "one_ship":
-            return _ship_shot(beat)
-        return "Map-table room, radio on, a paper Gulf chart. No collage. Not a receipt card."
-    blob = " ".join([beat.id, beat.vo] + [f.claim for f in rows]).lower()
-    if (
-        beat.id == "jcpoa-to-houthi"
-        or "connection is not sourced" in blob
-        or "will not tell you" in blob
-        or "won't draw it" in blob
-        or "don't hang a later" in blob
-    ):
-        return "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them."
-    if "jcpoa" in blob or ("2018" in blob and "withdrew" in blob) or ("2018" in blob and "withdrawal" in blob):
-        return "2018 announcement: a dated chyron on the JCPOA withdrawal, Gulf map on the wall behind the podium."
-    if "mined" in blob or "navy treaty" in blob or "secret-closure" in blob:
-        return "Night water in the Strait of Hormuz, empty lane, no mines on camera."
-    if "seaborne" in blob or "transits" in blob or ("hormuz" in blob and "oil" in blob and "scare" not in blob and "panic" not in blob):
-        return "Tanker in the Strait of Hormuz lane, land close on both sides, open water ahead."
-    if "crash" in blob or "scare" in blob or "overnight" in blob or "oil-panic" in blob:
-        return "Overnight newsroom, oil ticker running, Hormuz marked on a wall map. No crash proven on screen."
-    if "producer" in blob or "oil-market" in blob or "oil-market given" in blob:
-        return "Producer-state energy desk, Hormuz lane marked open on a shipping board."
-    if "milk" in blob or "dairy" in blob or "auction" in blob:
-        return "Spring auction floor and a milk tanker at the dock as the spot price ticks."
-    if "jcpoa-to-houthi" in blob or ("connection" in blob and "not sourced" in blob) or "cannot tell you" in blob:
-        return "Two dated cards on a table, 2018 and 2023-2024, with no arrow drawn between them."
-    claim = rows[0].claim.rstrip(".") if rows else beat.vo.split("[")[0].strip().rstrip(".")
-    return f"Photoreal frame of the action just spoken: {claim}."
+    """One idea. Eyes from the written beat. Archive or official series first. No leftover Hormuz."""
+    eyes = (beat.frame or "").strip()
+    if eyes:
+        return eyes
+    claim = rows[0].claim.rstrip(".") if rows else beat.vo.split("\n")[-1].split("[")[0].strip()
+    if "milk" in claim.lower() or "dairy" in claim.lower() or "auction" in claim.lower():
+        return f"Official auction print: {claim}."
+    return f"Official series or archive still for: {claim}."
 
 
-def _family_shot(beat: ScriptBeat) -> str:
-    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
-    if beat.id == "jcpoa-2018" or ("2018" in blob and "jcpoa" in blob):
-        return "Bandar Abbas kitchen, radio on, 2018 news on a small TV, dishes in the sink."
-    if beat.id == "secret-closure" or "alley" in blob:
-        return "Open kitchen door onto an alley in Bandar Abbas. No minefield on camera."
-    if beat.id == "hormuz-share" or "harbor" in blob:
-        return "Kitchen window over a harbor road, tankers only as distant lights."
-    if beat.id == "oil-panic" or "neighbor" in blob:
-        return "Neighbor in a Bandar Abbas kitchen doorway, overhead bulb, street quiet."
-    if "jcpoa-to-houthi" in blob or "arrow" in blob:
-        return "Kitchen table, two dates on scrap paper, no arrow drawn."
-    return "Family kitchen in Bandar Abbas, radio on, evening light."
-
-
-def _ship_shot(beat: ScriptBeat) -> str:
-    blob = f"{beat.id} {beat.vo} {beat.frame}".lower()
-    if beat.id == "jcpoa-2018":
-        return "Bridge chart table, 2018 printout under a lamp, strait on the radar ring."
-    if beat.id == "secret-closure":
-        return "Lookout on the wing, dark Hormuz water, no mines visible."
-    if beat.id == "hormuz-share":
-        return "Bow of a ship in the Hormuz lane, land close on both sides, hull unhit."
-    if beat.id == "oil-panic":
-        return "Crew mess, radio on, coffee cups, no fire and no blast."
-    if "jcpoa-to-houthi" in blob or "explosion" in blob or "heading" in blob:
-        return "Bridge watch clock and a clipboard with two dates. No explosion on screen."
-    return "Tanker bridge at night, watch officer at the window, threat only."
+def _footage_query(text: str, packet: Packet) -> str:
+    q = text or ""
+    q = re.sub(r"\bgrounded\b", " ", q, flags=re.I)
+    pack = _pack_blob(packet)
+    if "hormuz" not in pack and "jcpoa" not in pack:
+        q = re.sub(r"\bgulf chart\b|\bgulf map\b|\bgulf of mexico\b", " ", q, flags=re.I)
+    q = re.sub(r"\bvideo game\b", " ", q, flags=re.I)
+    return re.sub(r"\s+", " ", q).strip()
 
 
 def persist_generated_image(frame_id: str, result: Any) -> str:
@@ -126,38 +115,234 @@ def persist_generated_image(frame_id: str, result: Any) -> str:
     return f"/api/frames/{frame_id}"
 
 
+def _shot_kind(line: str) -> str:
+    blob = (line or "").lower()
+    if any(key in blob for key in ("announcement", "tanker", "presser", "withdrawal", "podium")):
+        return "event"
+    if any(key in blob for key in ("troop-movement", "troop movement", "motion graphic", "animation")):
+        return "motion_graphic"
+    if any(
+        key in blob
+        for key in (
+            "infographic",
+            "chart",
+            "bar",
+            "series",
+            "usrec",
+            "sahm",
+            "gdp",
+            "receipt board",
+            "gulf map",
+            "wall map",
+            "close card",
+            "board follows the pack",
+            "near is not a switch",
+        )
+    ):
+        return "infographic"
+    return "event"
+
+
+_CLOSE_CARD = ("close card", "board follows the pack", "near is not a switch")
+
+
+def _is_close_card(shot: ShotFrame) -> bool:
+    blob = f"{shot.shot} {shot.line or ''}".lower()
+    return any(key in blob for key in _CLOSE_CARD)
+
+
+def _allows_imagen(shot: ShotFrame, *, fiction: bool) -> bool:
+    if shot.footage == "sourced":
+        return False
+    if _is_close_card(shot):
+        return False
+    if fiction:
+        return True
+    return shot.kind in {"motion_graphic", "infographic"}
+
+
+def _url_ok(url: str | None) -> bool:
+    return bool(url) and url.startswith(("http://", "https://"))
+
+
+_OFFICIAL_FOOTAGE = ("stlouisfed.org", "bls.gov", "bea.gov")
+
+
+def _official_series_url(url: str | None) -> bool:
+    low = (url or "").lower()
+    return bool(url) and any(host in low for host in _OFFICIAL_FOOTAGE)
+
+
+_EMPSIT = re.compile(r"empsit_(\d{2})(\d{2})(\d{4})", re.I)
+_MONTH_NUM = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
+
+
+def _when_month_year(when: str) -> tuple[int, int] | None:
+    match = re.search(
+        r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})",
+        when or "",
+        re.I,
+    )
+    if not match:
+        return None
+    return _MONTH_NUM[match.group(1).lower()], int(match.group(2))
+
+
+def _empsit_ok(url: str, when: str) -> bool:
+    stamp = _EMPSIT.search(url or "")
+    if not stamp:
+        return True
+    data = _when_month_year(when)
+    if data is None:
+        return False
+    rel_m, rel_y = int(stamp.group(1)), int(stamp.group(3))
+    month, year = data
+    month += 1
+    if month == 13:
+        month, year = 1, year + 1
+    return (rel_m, rel_y) == (month, year)
+
+
+def _is_hole_shot(shot: ShotFrame) -> bool:
+    blob = f"{shot.shot} {shot.line or ''}".lower()
+    return "sahm hole" in blob or "no matching url" in blob
+
+
+def _cited_official_url(shot: ShotFrame, packet: Packet | None) -> str | None:
+    if _is_hole_shot(shot):
+        return None
+    findings = list(packet.receipt.findings) if packet and packet.receipt else []
+    by_id = {f.id: f for f in findings}
+    by_url = {f.parallel_url: f for f in findings if f.parallel_url}
+    for ref in shot.source_refs or []:
+        if _official_series_url(ref):
+            finding = by_url.get(ref)
+            when = (finding.when or "") if finding else ""
+            if "empsit_" in ref.lower() and not _empsit_ok(ref, when):
+                continue
+            return ref
+        if ref in by_id:
+            finding = by_id[ref]
+            url = finding.parallel_url
+            if _official_series_url(url) and _empsit_ok(url or "", finding.when or ""):
+                return url
+    return None
+
+
+def _ban_missing_event(shots: list[ShotFrame], packet: Packet | None) -> None:
+    fiction = invents_frame(cut=packet.cut, tell=packet.tell or "") if packet else False
+    if fiction:
+        return
+    for shot in shots:
+        if shot.footage == MISSING and shot.kind == "event":
+            shot.kind = "infographic"
+
+
+def prefer_footage(shots: list[ShotFrame], rails: Rails, packet: Packet | None = None) -> bool:
+    """Bind cited official finding URLs. Search must not override vintage."""
+    if not rails.parallel:
+        for shot in shots:
+            shot.footage = MISSING
+            shot.footage_url = None
+            shot.footage_title = MISSING
+        _ban_missing_event(shots, packet)
+        return False
+    fiction = invents_frame(cut=packet.cut, tell=packet.tell or "") if packet else False
+    for shot in shots:
+        if fiction or _is_close_card(shot) or _is_hole_shot(shot):
+            shot.footage = MISSING
+            shot.footage_url = None
+            shot.footage_title = MISSING
+            continue
+        bound = _cited_official_url(shot, packet)
+        if bound:
+            shot.footage = "sourced"
+            shot.footage_url = bound
+            shot.footage_title = MISSING
+            shot.imagen = False
+            shot.image_href = ""
+            continue
+        shot.footage = MISSING
+        shot.footage_url = None
+        shot.footage_title = MISSING
+    _ban_missing_event(shots, packet)
+    return True
+
+
 def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> list[ShotFrame]:
+    fiction = invents_frame(cut=packet.cut, tell=packet.tell or "")
     if not rails.imagen or not rails.vertex:
         for shot in shots:
-            shot.image_href = ""
-            shot.imagen = False
+            if shot.footage != "sourced":
+                shot.image_href = ""
+                shot.imagen = False
+                if not fiction and shot.kind == "event":
+                    shot.footage = MISSING
         return shots
-    cap = frame_count(require_cut(packet.cut), packet.platform) if packet.cut else len(shots)
+    if packet.cut in {"tiktok-length", "shorts"}:
+        cap = len(shots)
+    else:
+        cap = frame_count(require_cut(packet.cut), packet.platform) if packet.cut else len(shots)
     spent = 0
     for shot in shots:
+        if shot.footage == "sourced":
+            continue
+        if not _allows_imagen(shot, fiction=fiction):
+            shot.image_href = ""
+            shot.imagen = False
+            if shot.footage != "sourced":
+                shot.footage = MISSING
+            continue
         if not shot.key_frame or spent >= cap:
             continue
-        prompt = (
-            f"One photoreal storyboard frame, not a collage. Cut={packet.cut}. "
-            f"Shot: {shot.shot}. VO beat {shot.beat_id}."
-        )
+        if not fiction and shot.kind in {"motion_graphic", "infographic"}:
+            prompt = (
+                f"Motion graphic or infographic explainer, not photoreal archive tape. "
+                f"Cut={packet.cut}. Shot: {shot.shot}. VO beat {shot.beat_id}."
+            )
+        else:
+            prompt = (
+                f"One photoreal storyboard frame, not a collage. Cut={packet.cut}. "
+                f"Shot: {shot.shot}. VO beat {shot.beat_id}."
+            )
         try:
             result = generate_frames(prompt=prompt, number_of_images=1)
         except ImagenDownError:
             shot.image_href = ""
             shot.imagen = False
+            if shot.footage != "sourced":
+                shot.footage = MISSING
             continue
         shot.image_href = persist_generated_image(shot.id, result)
         shot.imagen = bool(shot.image_href)
+        if shot.imagen:
+            shot.footage = "imagen"
         spent += 1
+    _ban_missing_event(shots, packet)
     return shots
 
 
 def write_board(packet: Packet, rails: Rails) -> list[ShotFrame]:
-    """Shot list from the timed VO, then Imagen onto those shots. Never leftover stills."""
+    """Shot list, then prefer sourced footage, then Imagen only on misses."""
     shots = write_shot_list(packet)
     if not shots:
         return []
+    searched = prefer_footage(shots, rails, packet)
+    if not searched:
+        return shots
     return apply_imagen(shots, packet, rails=rails)
 
 
@@ -171,6 +356,9 @@ def apply_seed_placeholders(shots: list[ShotFrame]) -> list[ShotFrame]:
         path.write_bytes(_placeholder_svg(shot.id, shot.shot))
         shot.image_href = f"/api/frames/{shot.id}"
         shot.imagen = False
+        shot.footage = MISSING
+        shot.footage_url = None
+        shot.footage_title = MISSING
     return shots
 
 

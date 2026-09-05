@@ -26,8 +26,14 @@ def generate_frames(*, prompt: str, number_of_images: int = 4) -> Any:
         project=project,
         location=config.GOOGLE_CLOUD_LOCATION,
     )
-    return client.models.generate_images(
-        model=config.IMAGEN_MODEL,
-        prompt=prompt,
-        config=types.GenerateImagesConfig(number_of_images=number_of_images),
-    )
+    try:
+        return client.models.generate_images(
+            model=config.IMAGEN_MODEL,
+            prompt=prompt,
+            config=types.GenerateImagesConfig(number_of_images=number_of_images),
+        )
+    except Exception as exc:
+        name = type(exc).__name__
+        if "ClientError" in name or "NotFound" in name or "404" in str(exc):
+            raise ImagenDownError(f"Imagen generate_images down: {exc}") from exc
+        raise

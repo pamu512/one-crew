@@ -25,7 +25,7 @@ def _dairy_packet() -> Packet:
         findings=[
             Finding(
                 id="milk-spot",
-                claim="Spot milk prices moved after the spring auction.",
+                claim="Spot milk prices moved 3.2% after the spring auction.",
                 stamp="grounded",
                 parallel_url="https://example.com/milk",
                 parallel_status="hit",
@@ -82,6 +82,11 @@ def test_board_does_not_return_hardcoded_hormuz_stills(monkeypatch) -> None:
     packet = _dairy_packet()
     returned = []
 
+    def miss(*_a, **_k):
+        return SimpleNamespace(results=[])
+
+    monkeypatch.setattr("onecrew.board.search", miss)
+
     def fake_gen(*, prompt: str, number_of_images: int = 1):
         returned.append(prompt)
         return SimpleNamespace(
@@ -105,7 +110,8 @@ def test_board_does_not_return_hardcoded_hormuz_stills(monkeypatch) -> None:
     assert any("milk" in frame.shot.lower() or "dairy" in frame.shot.lower() or "auction" in frame.shot.lower() for frame in frames)
     assert all("receipt card" not in frame.shot.lower() for frame in frames)
     assert any(frame.beat_id for frame in frames)
-    assert any(frame.imagen and frame.image_href for frame in frames)
+    assert all(not frame.imagen or frame.kind in {"infographic", "motion_graphic"} for frame in frames)
+    assert all(frame.footage != "sourced" or frame.footage_url for frame in frames)
 
 
 def test_hold_does_not_invent_frames() -> None:
@@ -149,5 +155,8 @@ def test_storyboard_is_cut_from_seed_vo() -> None:
         assert "receipt card" not in frame.shot.lower()
         assert "on the receipt" not in frame.shot.lower()
     board = " ".join(f.shot.lower() for f in packet.frames)
-    assert "tanker" in board or "strait" in board or "lane" in board
-    assert "2018" in board or "announcement" in board or "map" in board
+    assert "gulf" not in board
+    assert "grounded" not in board
+    assert "photoreal" not in board
+    assert "tanker-lane" not in {f.id for f in packet.frames}
+    assert len(packet.frames) == 8

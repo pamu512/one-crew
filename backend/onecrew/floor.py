@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 # Bedroom-studio floor. Topic + required depth. No publish control. GET-only until POST /shift.
+# Leftover tell (not first-open, not on the page Cut sees):
+# Narrator-led global overview of the US and Iran
+# One family in Bandar Abbas, kitchen radio on
+# Thriller on a tanker crossing Hormuz that might get hit
 
 FLOOR_HTML = """<!DOCTYPE html>
 <html lang="en">
@@ -66,35 +70,54 @@ FLOOR_HTML = """<!DOCTYPE html>
   <header>
     <div>
       <div class="brand">One Crew</div>
-      <div class="sub">Research companion. Timed VO plus cited sources. Floor never posts.</div>
+      <div class="sub">Research companion. Timed VO, cited sources, collision list. Floor never posts.</div>
     </div>
     <div class="badges" id="badges"></div>
   </header>
   <main>
     <section class="card">
       <div class="brand">Desk</div>
-      <p class="script">Topic first, then platform, length, depth, script lean, tell. Any missing pick = no run. GET does not spend. The floor never posts.</p>
+      <p class="script">Topic first, then platform, length, depth, script lean, tell, tone. Any missing pick = no run. GET does not spend. The floor never posts.</p>
       <label for="topic">Topic — pick 1, required</label>
-      <textarea id="topic" rows="3" placeholder="Explain what's going on with the Hormuz strait"></textarea>
+      <textarea id="topic" rows="3" placeholder="Are we near recession?"></textarea>
       <label>Platform — required</label>
       <div class="depths" id="platforms"></div>
       <label>Length / cut — required</label>
       <div class="depths" id="cuts"></div>
-      <label>Depth — required</label>
+      <label>Depth — required (not the Parallel research horizon)</label>
       <div class="depths" id="depths"></div>
+      <label class="depths" style="margin-top:8px">
+        <input type="checkbox" id="deeper_history" name="deeper_history"/>
+        Deeper history — go past recent news / first trigger
+      </label>
+      <p class="note">Default research goes to the first event that actually triggered the topic, scoped to recent news. Check this only if you explicitly want deeper history. The depth pick is not forwarded to Parallel as the horizon.</p>
       <label>Script lean — required (does not restamp sources)</label>
       <div class="depths" id="leans"></div>
-      <label>Tell · genre — pick 6, required</label>
-      <div class="depths" id="genres"></div>
-      <label>Tell · vantage — required</label>
-      <div class="depths" id="vantages"></div>
+      <label for="tell">Tell — pick 6, required free text</label>
+      <textarea id="tell" rows="3" placeholder="Host-only desk read of the last year of US recession prints"></textarea>
+      <p class="note">Examples only — not the only allowed values:</p>
+      <p class="note">Host-only desk read of the last year of US recession prints</p>
+      <p class="note">No guest. No panel. Just the cited prints.</p>
+      <p class="note">Walk USREC, then payrolls, then GDP — host only</p>
+      <p class="note">Weekly news desk, host only</p>
+      <p class="note">Historical drama through one port family</p>
+      <p class="note">Documentary / weekly_update stay news: host VO, no invented people, even if you type a family thriller. Feature invents a frame from whatever you typed.</p>
+      <label for="tone">Tone — required on news/doc (not on feature_film)</label>
+      <textarea id="tone" rows="2" placeholder="On the cited print"></textarea>
+      <p class="note">Examples only — not the only allowed values:</p>
+      <p class="note">News desk</p>
+      <p class="note">Make the viewer think</p>
+      <p class="note">Question the decisions</p>
+      <p class="note">Personal take</p>
+      <p class="note">On the cited print</p>
+      <p class="note">Tone is a voice. It does not restamp source rows. It is not a clearance.</p>
       <label for="token">Shift token (spend only)</label>
       <input id="token" type="password" autocomplete="off"/>
       <button id="research" type="button" disabled>Write script</button>
       <p class="script" id="desk-msg">Any missing pick = no run.</p>
       <p class="script" id="health"></p>
     </section>
-    <section class="card" id="packet">Loading oc-hormuz-decade…</section>
+    <section class="card" id="packet">HOLD. No live packet.</section>
   </main>
   <script>
     const PLATFORMS = [
@@ -133,21 +156,6 @@ FLOOR_HTML = """<!DOCTYPE html>
       {id:"far_left", label:"far_left"},
       {id:"unhinged_fringe", label:"unhinged_fringe"}
     ];
-    const GENRES = [
-      {id:"nonfiction", label:"nonfiction"},
-      {id:"horror", label:"horror"},
-      {id:"war", label:"war"},
-      {id:"historical", label:"historical"},
-      {id:"musical", label:"musical"},
-      {id:"drama", label:"drama"},
-      {id:"thriller", label:"thriller"}
-    ];
-    const VANTAGES = [
-      {id:"global_overview", label:"global_overview"},
-      {id:"one_family", label:"one_family"},
-      {id:"one_ship", label:"one_ship"}
-    ];
-
     function chosenRadio(name) {
       const el = document.querySelector('input[name="' + name + '"]:checked');
       return el ? el.value : "";
@@ -159,31 +167,25 @@ FLOOR_HTML = """<!DOCTYPE html>
       const cut = chosenRadio("cut");
       const depth = chosenRadio("depth");
       const lean = chosenRadio("script_lean");
-      const genre = chosenRadio("genre");
-      const vantage = chosenRadio("vantage");
+      const tell = document.getElementById("tell").value.trim();
+      const tone = document.getElementById("tone").value.trim();
+      const deeper = document.getElementById("deeper_history").checked;
+      const needTone = cut !== "feature_film";
       const btn = document.getElementById("research");
       const live = window.__shiftsOn === true;
-      btn.disabled = !topic || !platform || !cut || !depth || !lean || !genre || !vantage || !live;
+      btn.disabled = !topic || !platform || !cut || !depth || !lean || !tell || (needTone && !tone) || !live;
       const msg = document.getElementById("desk-msg");
       if (!topic) { msg.textContent = "No topic chosen = no run."; return; }
       if (!platform) { msg.textContent = "No platform chosen = no run."; return; }
       if (!cut) { msg.textContent = "No cut chosen = no run."; return; }
       if (!depth) { msg.textContent = "No depth chosen = no run."; return; }
       if (!lean) { msg.textContent = "No script lean chosen = no run."; return; }
-      if (!genre) { msg.textContent = "No genre chosen = no run."; return; }
-      if (!vantage) { msg.textContent = "No vantage chosen = no run."; return; }
-      if ((cut === "full_length_documentary" || cut === "weekly_update") && genre !== "nonfiction") {
-        btn.disabled = true;
-        msg.textContent = "A thriller documentary is rejected. Documentary and weekly_update require nonfiction.";
-        return;
-      }
-      if (cut === "feature_film" && genre === "nonfiction") {
-        btn.disabled = true;
-        msg.textContent = "A nonfiction feature is rejected. Use full_length_documentary.";
-        return;
-      }
+      if (!tell) { msg.textContent = "No tell chosen = no run."; return; }
+      if (needTone && !tone) { msg.textContent = "No tone chosen = no run."; return; }
       msg.textContent = live
-        ? "Six picks locked. Research spends Parallel only after this."
+        ? (deeper
+          ? "Picks locked. Deeper history on. Research spends Parallel only after this."
+          : "Picks locked. First-trigger / recent news. Research spends Parallel only after this.")
         : "Live spend off. Token-gate still on spend.";
     }
 
@@ -238,15 +240,35 @@ FLOOR_HTML = """<!DOCTYPE html>
       const frames = (packet.frames || []).map(fr => `
         <div class="frame">
           ${fr.image_href ? `<img src="${fr.image_href}" alt="${fr.shot}"/>` : `<p class="note">Image missing. Shot list kept. Not invented.</p>`}
-          <p>${fr.shot}</p>
+          <p>${fr.shot_no ? "#" + fr.shot_no + " · " : ""}${fr.camera ? fr.camera + " · " : ""}${fr.shot}</p>
+          <p class="note">footage · ${fr.footage || "missing"}${fr.kind ? " · " + fr.kind : ""}${fr.footage === "sourced" ? " · someone else's footage, not ours. We do not license it." : ""}${fr.footage === "imagen" && (fr.kind === "motion_graphic" || fr.kind === "infographic") ? " · graphic, not archive" : ""}</p>
+          ${fr.footage_url ? `<div class="url">${fr.footage_url}${fr.footage_title && fr.footage_title !== "missing" ? " · " + fr.footage_title : ""}</div>` : ""}
+          ${fr.line ? `<p class="note">${fr.line}</p>` : ""}
         </div>`).join("");
       document.getElementById("packet").innerHTML = `
         <div class="brand">${packet.id}</div>
         <h1 class="hook">${packet.topic || packet.hook}</h1>
-        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.genre || "none"} / ${packet.vantage || "none"}</p>
+        <p class="script">platform: ${packet.platform || "none"} · cut: ${packet.cut || "none"} · depth: ${packet.depth || "none"} · deeper history: ${packet.deeper_history ? "yes" : "no (first trigger / recent news)"} · script lean: ${packet.script_lean || "none"} · tell: ${packet.tell || "none"} · tone: ${packet.tone || "none"}</p>
+        ${packet.grade_artifact ? `<div class="brand" style="margin:16px 0 8px">Room grade artifact</div>
+        <p class="note">packet ${packet.grade_artifact.packet_id}</p>
+        <p class="script">${packet.grade_artifact.research_pack_summary || ""}</p>
+        <p class="script">${packet.grade_artifact.script || ""}</p>
+        <p class="note">room: ${(packet.room_grade && packet.room_grade.vote) || "ungraded"}${(packet.room_grade && packet.room_grade.recut_reason) ? " · " + packet.room_grade.recut_reason : ""}</p>` : ""}
         <div class="brand" style="margin:16px 0 8px">Timed VO</div>
         <p class="script">${packet.script || ""}</p>
+        <div class="brand" style="margin:16px 0 8px">Existing media · collision</div>
+        <p class="note">warning, not a clearance. Match list of videos/docs/films with the same or near script. Not a copyright clearance. The floor does not post.</p>
+        ${(packet.beats || []).map(b => `
+          <div class="finding">
+            <div class="stamp ${b.collision === "yes" ? "fringe" : "missing"}">collision · ${b.collision || "missing"}${b.collision_kind && b.collision_kind !== "missing" ? " · " + b.collision_kind : ""}</div>
+            <p>${b.id}</p>
+            ${b.collision_url ? `<div class="url">${b.collision_url}</div>` : ""}
+            ${b.collision_title && b.collision_title !== "missing" ? `<div class="note">${b.collision_title}</div>` : ""}
+          </div>`).join("")}
+        <p class="${packet.collision_disposition === "HOLD" ? "hold" : "note"}">${packet.collision_disposition || "HOLD"} ${packet.collision_hold_reason || ""}</p>
         <p class="${rec.disposition === "HOLD" ? "hold" : "note"}">${rec.disposition || ""} ${rec.hold_reason || ""}</p>
+        <div class="brand" style="margin:16px 0 8px">Research pack (always written · floor does not post it)</div>
+        <p class="script">${packet.research_pack || "Research pack missing."}</p>
         <div class="brand" style="margin:16px 0 8px">Cited sources</div>
         ${findings}
         <div class="brand" style="margin:16px 0 8px">Causal links</div>
@@ -264,8 +286,6 @@ FLOOR_HTML = """<!DOCTYPE html>
       renderRadios("cuts", "cut", CUTS);
       renderRadios("depths", "depth", DEPTHS);
       renderRadios("leans", "script_lean", LEANS);
-      renderRadios("genres", "genre", GENRES);
-      renderRadios("vantages", "vantage", VANTAGES);
       const health = await fetch("/api/health").then(r => r.json());
       window.__shiftsOn = !!(health.shifts && health.shifts.enabled);
       const badges = document.getElementById("badges");
@@ -294,21 +314,25 @@ FLOOR_HTML = """<!DOCTYPE html>
 
       const body = await fetch("/api/packets").then(r => r.json());
       const packet = (body.packets || [])[0];
-      if (!packet) { document.getElementById("packet").textContent = "No packet."; return; }
+      if (!packet) { document.getElementById("packet").textContent = "HOLD. No live packet."; return; }
       renderPacket(packet);
       syncDesk();
     }
 
     document.getElementById("topic").addEventListener("input", syncDesk);
+    document.getElementById("tell").addEventListener("input", syncDesk);
+    document.getElementById("tone").addEventListener("input", syncDesk);
+    document.getElementById("deeper_history").addEventListener("change", syncDesk);
     document.getElementById("research").addEventListener("click", async () => {
       const platform = chosenRadio("platform");
       const cut = chosenRadio("cut");
       const depth = chosenRadio("depth");
       const script_lean = chosenRadio("script_lean");
-      const genre = chosenRadio("genre");
-      const vantage = chosenRadio("vantage");
       const topic = document.getElementById("topic").value.trim();
-      if (!topic || !platform || !cut || !depth || !script_lean || !genre || !vantage) {
+      const tell = document.getElementById("tell").value.trim();
+      const tone = document.getElementById("tone").value.trim();
+      const deeper_history = document.getElementById("deeper_history").checked;
+      if (!topic || !platform || !cut || !depth || !script_lean || !tell || (cut !== "feature_film" && !tone)) {
         document.getElementById("desk-msg").textContent = "Any missing pick = no run.";
         return;
       }
@@ -319,7 +343,7 @@ FLOOR_HTML = """<!DOCTYPE html>
           "content-type": "application/json",
           ...(token ? {"X-Shift-Token": token} : {})
         },
-        body: JSON.stringify({topic, platform, cut, depth, script_lean, genre, vantage, goal: topic || "Research the topic. Do not post."})
+        body: JSON.stringify({topic, platform, cut, depth, script_lean, tell, tone, deeper_history, goal: topic || "Research the topic. Do not post."})
       });
       const text = await res.text();
       document.getElementById("desk-msg").textContent = res.ok ? "Timeline written." : (res.status + " " + text);
