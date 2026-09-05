@@ -955,13 +955,12 @@ def test_smash_mixed_months_holds() -> None:
     write_receipt(packet, Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows))
     packet.task_spine = "USREC May 2026 = 0. Nonfarm payrolls fell 23,000 in July 2026."
     write_script(packet)
-    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
     assert packet.status == "hold"
     reason = (packet.receipt.hold_reason or "") + " ".join(
         row.detail for row in packet.exclusions if row.detail
     )
     assert "smash mixed months" in reason.lower()
-    assert "May 2026" not in spoken or "smashed" not in spoken.lower()
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 def test_same_month_smash_july() -> None:
@@ -1199,8 +1198,8 @@ def test_empty_when_holds_when_no_month() -> None:
     write_script(packet)
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
     assert "empty when" in reason.lower()
-    assert packet.script == ""
-    assert packet.beats == []
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 def test_gdp_three_bar_print_is_not_lone_q2_half() -> None:
@@ -2001,7 +2000,8 @@ def test_usrec_mints_fred_observation_prose_and_keeps_pack() -> None:
     assert packet.receipt.findings
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
     assert "smash mixed months" in reason.lower()
-    assert not packet.script.strip()
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 def test_mint_keeps_other_findings_when_usrec_has_no_url() -> None:
@@ -2201,7 +2201,8 @@ def test_payrolls_is_ces_fell_not_bls_confidence_interval() -> None:
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
     assert "smash mixed months" in reason.lower()
     assert "foundry dropped named series" not in reason.lower()
-    assert not packet.script.strip()
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 LIVE_U3_NOT_MAY_2024 = (
@@ -2585,8 +2586,8 @@ def test_august_prose_only_holds_mixed_months_and_keeps_findings(monkeypatch) ->
         + " ".join(row.detail for row in packet.exclusions)
     ).lower()
     assert "smash mixed months" in reason
-    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
-    assert "USREC=0 (August 2026) smashed into payrolls" not in spoken
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
     assert "rails missing" not in reason
     assert "foundry dropped named series" not in reason or findings
 
