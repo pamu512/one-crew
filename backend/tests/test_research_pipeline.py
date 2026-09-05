@@ -493,6 +493,233 @@ def _vertex_stub(bucket: list[str]):
     return fake_vertex
 
 
+def _dropped_series_findings() -> list[Finding]:
+    """Seven live-style findings with USREC but no minted payrolls object."""
+    note = "Parallel URL on this row."
+    return [
+        Finding(
+            id="usrec-march-2025",
+            claim="USREC=0 (March 2025).",
+            stamp="grounded",
+            title="USREC",
+            series="USREC",
+            print="0",
+            when="March 2025",
+            parallel_url=FRED,
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="gdp-2025-q1",
+            claim="GDP printed in the pack window.",
+            stamp="grounded",
+            title="GDP",
+            series="GDP",
+            print="",
+            when="Q1 2025",
+            parallel_url="https://www.bea.gov/data/gdp/gross-domestic-product",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="u3-march-2025",
+            claim="Unemployment named in the pack.",
+            stamp="grounded",
+            title="U-3",
+            series="U-3",
+            print="",
+            when="March 2025",
+            parallel_url=BLS_OLD,
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="sahm-march-2025",
+            claim="Sahm named in the pack.",
+            stamp="grounded",
+            title="Sahm",
+            series="SAHMREALTIME",
+            print="",
+            when="March 2025",
+            parallel_url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="lei-march-2025",
+            claim="LEI named in the pack.",
+            stamp="grounded",
+            title="LEI",
+            series="LEI",
+            print="",
+            when="March 2025",
+            parallel_url="https://www.conference-board.org/topics/us-leading-indicators",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="nber-march-2025",
+            claim="NBER cycle dating named in the pack.",
+            stamp="grounded",
+            title="NBER",
+            series="NBER",
+            print="",
+            when="March 2025",
+            parallel_url="https://www.nber.org/research/business-cycle-dating",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="fringe-unsourced",
+            claim="Fringe miss tagged, not sold as fact.",
+            stamp="fringe",
+            parallel_status="miss",
+            note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+        ),
+    ]
+
+
+def _mint_hold_packet(*, hold_reason: str) -> Packet:
+    packet = Packet(
+        id="oc-are-we-near-recession-hold-vo",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        tone="On the cited print",
+        research_pack=_HOLD_PACK,
+        task_spine=_HOLD_PACK,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="HOLD",
+        hold_reason=hold_reason,
+        findings=_dropped_series_findings(),
+    )
+    return packet
+
+
+def _dropped_vertex_beats() -> str:
+    return (
+        '[{"id":"cold-open","vo":"USREC=0 smashed into payrolls fell 41,000. [usrec-march-2025]",'
+        '"eyes":"March CES","finding_ids":["usrec-march-2025"]},'
+        '{"id":"promise","vo":"Three objects from the pack. [usrec-march-2025]","eyes":"pack","finding_ids":["usrec-march-2025"]},'
+        '{"id":"gdp","vo":"USREC=0 (March 2025). [usrec-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]},'
+        '{"id":"labor","vo":"Nonfarm payrolls fell 41,000. [usrec-march-2025]","eyes":"ces","finding_ids":["usrec-march-2025"]},'
+        '{"id":"turn","vo":"Hold on the pack number. [usrec-march-2025]","eyes":"hold","finding_ids":["usrec-march-2025"]},'
+        '{"id":"complication","vo":"Those are not the same object. [usrec-march-2025]","eyes":"gap","finding_ids":["usrec-march-2025"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-march-2025]","eyes":"board","finding_ids":["usrec-march-2025"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-march-2025]","eyes":"close","finding_ids":["usrec-march-2025"]}]'
+    )
+
+
+def test_hold_foundry_dropped_still_writes_vertex_vo(monkeypatch) -> None:
+    packet = _mint_hold_packet(hold_reason="verify: print not in cite")
+    writer_prompts: list[str] = []
+
+    def fake_vertex(prompt: str) -> str:
+        writer_prompts.append(prompt)
+        return _dropped_vertex_beats()
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert writer_prompts, "mint HOLD must still call Vertex"
+    assert written.script, "foundry dropped named series must not blank script before Vertex"
+    assert len(written.beats) == 8
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "41,000" in spoken or "41k" in spoken.lower()
+    assert "−23k" not in spoken and "-23k" not in spoken
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "HOLD"
+    assert "foundry dropped named series" in (packet.receipt.hold_reason or "")
+    assert packet.status == "hold"
+
+
+def test_hold_print_not_in_cite_still_writes_vertex_vo(monkeypatch) -> None:
+    packet = _mint_hold_packet(hold_reason="verify: print not in cite")
+    writer_prompts: list[str] = []
+
+    def fake_vertex(prompt: str) -> str:
+        writer_prompts.append(prompt)
+        return _dropped_vertex_beats()
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert writer_prompts
+    assert written.script
+    assert len(written.beats) == 8
+    assert packet.receipt is not None
+    assert "print not in cite" in (packet.receipt.hold_reason or "")
+    assert packet.status == "hold"
+
+
+def test_empty_pack_still_fail_closed() -> None:
+    packet = Packet(
+        id="oc-empty-pack-vo",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="should clear",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read",
+        tone="On the cited print",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="HOLD",
+        hold_reason="verify: print not in cite",
+        findings=[],
+    )
+    from onecrew.script import write_script
+
+    write_script(packet)
+    assert packet.script == ""
+    assert packet.beats == []
+    assert packet.status == "hold"
+
+
+def test_leftover_hormuz_on_non_hormuz_topic_fail_closed(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    hormuz = (
+        '[{"id":"cold-open","vo":"Hormuz=13 smashed into JCPOA. [usrec-march-2025] [payrolls-march-2025]",'
+        '"eyes":"strait","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"promise","vo":"Strait of Hormuz leftover. [usrec-march-2025]","eyes":"pack","finding_ids":["usrec-march-2025"]},'
+        '{"id":"gdp","vo":"USREC=0 (March 2025). [usrec-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]},'
+        '{"id":"labor","vo":"Nonfarm payrolls fell −41,000. [payrolls-march-2025]","eyes":"ces","finding_ids":["payrolls-march-2025"]},'
+        '{"id":"turn","vo":"Hold on the pack number. [usrec-march-2025]","eyes":"hold","finding_ids":["usrec-march-2025"]},'
+        '{"id":"complication","vo":"Those are not the same object. [usrec-march-2025]","eyes":"gap","finding_ids":["usrec-march-2025"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-march-2025] [payrolls-march-2025]","eyes":"board","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-march-2025]","eyes":"close","finding_ids":["usrec-march-2025"]}]'
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return hormuz
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", fake_vertex)
+    written = write_vo_from_pack(packet)
+    spoken = (written.script or "") + "".join(b.vo for b in written.beats)
+    assert written.script == ""
+    assert written.beats == []
+    assert "hormuz" not in spoken.lower()
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "leftover Hormuz" in reason
+
+
 def test_write_vo_from_pack_uses_vertex_when_receipt_is_hold(monkeypatch) -> None:
     packet = _hold_packet(disposition="HOLD")
     writer_prompts: list[str] = []
