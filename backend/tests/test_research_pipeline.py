@@ -909,6 +909,108 @@ def test_leftover_hormuz_on_non_hormuz_topic_fail_closed(monkeypatch) -> None:
     assert "leftover Hormuz" in reason
 
 
+def _lei_uncited_beats() -> str:
+    """8 leftover-free beats that speak LEI/ISM without a lei/ism finding_id."""
+    return (
+        '[{"id":"cold-open","vo":"USREC=0 smashed into payrolls −41,000. [usrec-march-2025] [payrolls-march-2025]",'
+        '"eyes":"March CES","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"promise","vo":"Three objects from the pack. [usrec-march-2025]","eyes":"pack","finding_ids":["usrec-march-2025"]},'
+        '{"id":"gdp","vo":"USREC=0 (March 2025). LEI named without a lei finding_id. [usrec-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]},'
+        '{"id":"labor","vo":"Nonfarm payrolls fell −41,000. [payrolls-march-2025]","eyes":"ces","finding_ids":["payrolls-march-2025"]},'
+        '{"id":"turn","vo":"ISM spoken without an ism finding_id. [usrec-march-2025]","eyes":"hold","finding_ids":["usrec-march-2025"]},'
+        '{"id":"complication","vo":"Those are not the same object. [usrec-march-2025]","eyes":"gap","finding_ids":["usrec-march-2025"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-march-2025] [payrolls-march-2025]","eyes":"board","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-march-2025]","eyes":"close","finding_ids":["usrec-march-2025"]}]'
+    )
+
+
+def test_uncited_lei_ism_keeps_nonempty_script(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    assert not any((f.series or "").upper() in {"LEI", "ISM"} or "lei" in f.id or "ism" in f.id for f in packet.receipt.findings)
+
+    def fake_vertex(_prompt: str) -> str:
+        return _lei_uncited_beats()
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    monkeypatch.setattr("onecrew.script_writer.generate_script", fake_vertex)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script, "uncited LEI/ISM must not blank a leftover-free 8-beat draft"
+    assert written.script.strip()
+    assert len(written.beats) == 8
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "USREC=0" in spoken
+    assert "41,000" in spoken or "41k" in spoken.lower()
+    assert "−23k" not in spoken and "-23k" not in spoken
+    assert "LEI" not in spoken and "ISM" not in spoken
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "LEI/ISM spoken without a cited beat" in reason
+
+
+def test_cited_lei_finding_keeps_lei_in_script(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    packet.receipt.findings.append(
+        Finding(
+            id="lei-march-2025",
+            claim="LEI named in the pack.",
+            stamp="grounded",
+            title="LEI",
+            series="LEI",
+            print="",
+            when="March 2025",
+            parallel_url="https://www.conference-board.org/topics/us-leading-indicators",
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        )
+    )
+    cited = (
+        _lei_uncited_beats()
+        .replace(
+            "LEI named without a lei finding_id. [usrec-march-2025]",
+            "LEI named with a lei finding_id. [usrec-march-2025] [lei-march-2025]",
+        )
+        .replace(
+            '"id":"gdp","vo":"USREC=0 (March 2025). LEI named with a lei finding_id. [usrec-march-2025] [lei-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]',
+            '"id":"gdp","vo":"USREC=0 (March 2025). LEI named with a lei finding_id. [usrec-march-2025] [lei-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025","lei-march-2025"]',
+        )
+        .replace("ISM spoken without an ism finding_id.", "Hold on the pack number.")
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return cited
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "LEI" in spoken
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "LEI/ISM spoken without a cited beat" not in reason
+
+
+def test_off_print_substring_does_not_rewrite_vo(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    beats = (
+        _lei_uncited_beats()
+        .replace("LEI named without a lei finding_id.", "Pack print 155.6 named.")
+        .replace("ISM spoken without an ism finding_id.", "Hold on the pack number.")
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return beats
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "155.6" in spoken
+
+
 def test_write_vo_from_pack_uses_vertex_when_receipt_is_hold(monkeypatch) -> None:
     packet = _hold_packet(disposition="HOLD")
     writer_prompts: list[str] = []
@@ -1306,11 +1408,15 @@ def test_adk_writer_prompt_sends_pack_and_picks(monkeypatch) -> None:
 
 
 def test_critic_instruction_does_not_skip_writer() -> None:
-    from onecrew.agent.adk_agents import CRITIC_INSTRUCTION
+    from onecrew.agent.adk_agents import CRITIC_INSTRUCTION, SCRIPT_WRITER_INSTRUCTION
 
     assert "skip the writer" not in CRITIC_INSTRUCTION.lower()
     assert "writer" in CRITIC_INSTRUCTION.lower()
     assert "HOLD" in CRITIC_INSTRUCTION
+    assert "blank the script" in CRITIC_INSTRUCTION.lower()
+    joined = f"{CRITIC_INSTRUCTION}\n{SCRIPT_WRITER_INSTRUCTION}".lower()
+    assert "skip-writer" not in joined
+    assert "blank" in joined and "lei" in joined
 
 
 def test_floor_and_api_signal_deeper_history_vs_default() -> None:

@@ -105,6 +105,7 @@ verify_print_in_cite, verify_payrolls_realized_ces, verify_usrec_smash,
 verify_gdp_bars, verify_u3_ces, verify_claim_set are the authority.
 READY only if verify_claim_set is ok. Else HOLD, keep findings, and still run the writer.
 HOLD annotates the receipt. It must not blank the script.
+LEI/ISM spoken without a cited beat is a warning. It must not blank the script.
 Do not invent prints. Do not rename leftover slots to pass the gate.
 """
 
@@ -163,6 +164,7 @@ You receive the Parallel research pack plus user picks (topic, platform, cut, te
 Write the timed VO from that pack text. Pack text is the authority, not foundry mint stamps.
 Parallel does not write the timed VO.
 Return 8-beat JSON. Pack numbers only. Do not invent stats. Do not hardcode leftover July −23k or Hormuz 3-slot lines.
+LEI and ISM stay off unless a beat cites them. Uncited LEI/ISM is a warning — do not blank the script.
 Host/reporter only on news cuts. You do not post.
 """
 
