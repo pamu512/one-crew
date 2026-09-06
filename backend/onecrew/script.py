@@ -529,12 +529,30 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     return units
 
 
-def _vo_has_uncited_off(vo: str, fids: list[str]) -> bool:
+def _off_cited(fids: list[str]) -> bool:
     allowed = {x.lower() for x in fids}
-    if any(tok in allowed for tok in ("lei-off", "ism-off")):
+    return any(tok.startswith("lei") or tok.startswith("ism") for tok in allowed)
+
+
+def _vo_has_uncited_off(vo: str, fids: list[str]) -> bool:
+    if _off_cited(fids):
         return False
     blob = vo or ""
     return any(token in blob for token in _OFF_UNLESS_CITED)
+
+
+def _soften_uncited_off(text: str, fids: list[str]) -> tuple[str, bool]:
+    """Strip uncited LEI/ISM tokens. Keep the line if strip would empty it."""
+    if not _vo_has_uncited_off(text, fids):
+        return text, False
+    cleaned = text
+    for token in _OFF_UNLESS_CITED:
+        cleaned = cleaned.replace(token, "")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = cleaned.strip(" ,.;:-")
+    return (cleaned or text), True
 
 
 def _tc(total_s: int, *, hours: bool) -> str:
@@ -605,6 +623,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     lean = packet.script_lean or "centered_independent"
     beats: list[ScriptBeat] = []
     cursor = 0
+    lei_nits: list[str] = []
     for i, unit in enumerate(units):
         bid = unit.get("id") or _EIGHT_IDS[i]
         fids = [fid for fid in (unit.get("finding_ids") or []) if fid in known]
@@ -619,8 +638,6 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 vo = f"{vo} [{fid}]"
         if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
             return _fail_closed(packet, ["VO is leftover grounded-event template"])
-        if _vo_has_uncited_off(vo, fids):
-            return _fail_closed(packet, ["LEI/ISM spoken without a cited beat"])
         if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in _pack_text(packet).lower():
             return _fail_closed(packet, ["invented leftover cast"])
         pack_blob = " ".join(
@@ -635,6 +652,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         if "hormuz" not in pack_blob and "jcpoa" not in pack_blob:
             if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
                 return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
+        vo, stripped_vo = _soften_uncited_off(vo, fids)
+        eyes, stripped_eyes = _soften_uncited_off(eyes, fids)
+        if stripped_vo or stripped_eyes:
+            lei_nits.append("LEI/ISM spoken without a cited beat")
         dur = durs[i]
         beats.append(
             ScriptBeat(
@@ -686,6 +707,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     holes = _missing_pack_marks(packet, spoken)
     if holes and not held:
         return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
+    if lei_nits:
+        note = "LEI/ISM spoken without a cited beat"
+        _warn_mint(packet, [note])
+        packet.exclusions.append(Exclusion(what=_VERTEX_HOLE, reason="other", detail=note))
     packet.status = "ready" if packet.receipt is None or packet.receipt.disposition != "HOLD" else "hold"
     return packet
 
@@ -705,7 +730,8 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
     return (
         f"Read this research pack. Voice the 8-beat spine. {config.GEMINI_MODEL}.\n"
         "Pack text is the authority. Do not treat foundry mint stamps as the VO source.\n"
-        "Pack numbers only. Do not invent stats. LEI and ISM stay off unless a beat cites them.\n"
+        "Pack numbers only. Do not invent stats. LEI and ISM stay off unless a beat cites them. "
+        "Uncited LEI/ISM is a warning, not a blank draft.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
         "Return 8-beat JSON from the pack.\n"
         f"{_PACKET_MARK}\n{json.dumps(payload, ensure_ascii=True)}\n{_PACKET_END}\n"
