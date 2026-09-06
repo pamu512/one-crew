@@ -21,7 +21,6 @@ _LEFTOVER_VO = re.compile(
     r"grounded event inside\s+\S+:|fringe claim about\s+|widely repeated frame about\s+",
     re.I,
 )
-_OFF_UNLESS_CITED = ("LEI", "+0.2%", "ISM", "55.6")
 _PACKET_MARK = "<<<PACKET>>>"
 _PACKET_END = "<<<END>>>"
 _SHORT = frozenset({"tiktok-length", "shorts"})
@@ -529,30 +528,39 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     return units
 
 
+_OFF_NAME = re.compile(r"\bLEI\b|\bISM\b")
+_OFF_PRINT = re.compile(r"\+0\.2%|\b55\.6\b")
+_OFF_TOKEN = re.compile(r"\bLEI\b|\bISM\b|\+0\.2%|\b55\.6\b")
+
+
 def _off_cited(fids: list[str]) -> bool:
     allowed = {x.lower() for x in fids}
-    return any(tok.startswith("lei") or tok.startswith("ism") for tok in allowed)
+    return any(
+        tok == "lei" or tok.startswith("lei-") or tok == "ism" or tok.startswith("ism-")
+        for tok in allowed
+    )
 
 
 def _vo_has_uncited_off(vo: str, fids: list[str]) -> bool:
     if _off_cited(fids):
         return False
-    blob = vo or ""
-    return any(token in blob for token in _OFF_UNLESS_CITED)
+    return bool(_OFF_TOKEN.search(vo or ""))
 
 
 def _soften_uncited_off(text: str, fids: list[str]) -> tuple[str, bool]:
-    """Strip uncited LEI/ISM tokens. Keep the line if strip would empty it."""
+    """Strip uncited LEI/ISM names. Digit leftovers stay unless next to a name."""
     if not _vo_has_uncited_off(text, fids):
         return text, False
-    cleaned = text
-    for token in _OFF_UNLESS_CITED:
-        cleaned = cleaned.replace(token, "")
+    if not _OFF_NAME.search(text or ""):
+        return text, True
+    cleaned = _OFF_PRINT.sub("", _OFF_NAME.sub("", text))
     cleaned = re.sub(r"\s+", " ", cleaned)
     cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
     cleaned = re.sub(r"\(\s*\)", "", cleaned)
     cleaned = cleaned.strip(" ,.;:-")
-    return (cleaned or text), True
+    if not cleaned:
+        return "Hold on the pack number.", True
+    return cleaned, True
 
 
 def _tc(total_s: int, *, hours: bool) -> str:

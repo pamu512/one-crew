@@ -943,9 +943,72 @@ def test_uncited_lei_ism_keeps_nonempty_script(monkeypatch) -> None:
     assert "USREC=0" in spoken
     assert "41,000" in spoken or "41k" in spoken.lower()
     assert "−23k" not in spoken and "-23k" not in spoken
+    assert "LEI" not in spoken and "ISM" not in spoken
     reason = (written.receipt.hold_reason or "") if written.receipt else ""
     reason += " ".join(row.detail for row in written.exclusions)
     assert "LEI/ISM spoken without a cited beat" in reason
+
+
+def test_cited_lei_finding_keeps_lei_in_script(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    packet.receipt.findings.append(
+        Finding(
+            id="lei-march-2025",
+            claim="LEI named in the pack.",
+            stamp="grounded",
+            title="LEI",
+            series="LEI",
+            print="",
+            when="March 2025",
+            parallel_url="https://www.conference-board.org/topics/us-leading-indicators",
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        )
+    )
+    cited = (
+        _lei_uncited_beats()
+        .replace(
+            "LEI named without a lei finding_id. [usrec-march-2025]",
+            "LEI named with a lei finding_id. [usrec-march-2025] [lei-march-2025]",
+        )
+        .replace(
+            '"id":"gdp","vo":"USREC=0 (March 2025). LEI named with a lei finding_id. [usrec-march-2025] [lei-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]',
+            '"id":"gdp","vo":"USREC=0 (March 2025). LEI named with a lei finding_id. [usrec-march-2025] [lei-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025","lei-march-2025"]',
+        )
+        .replace("ISM spoken without an ism finding_id.", "Hold on the pack number.")
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return cited
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "LEI" in spoken
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "LEI/ISM spoken without a cited beat" not in reason
+
+
+def test_off_print_substring_does_not_rewrite_vo(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    beats = (
+        _lei_uncited_beats()
+        .replace("LEI named without a lei finding_id.", "Pack print 155.6 named.")
+        .replace("ISM spoken without an ism finding_id.", "Hold on the pack number.")
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return beats
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "155.6" in spoken
 
 
 def test_write_vo_from_pack_uses_vertex_when_receipt_is_hold(monkeypatch) -> None:
