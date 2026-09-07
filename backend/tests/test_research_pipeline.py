@@ -1091,6 +1091,46 @@ def test_real_payrolls_finding_cite_kept_after_slot_sanitize(monkeypatch) -> Non
     assert "[payrolls-march-2025]" in labor.vo
 
 
+def test_bracketed_pack_print_is_not_stripped_as_slot(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    beats = _slot_token_beats().replace(
+        "Nonfarm payrolls fell −41,000. [payrolls-march-2025]",
+        "Nonfarm payrolls fell [−41,000]. [payrolls-march-2025]",
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return beats
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "41,000" in spoken or "41k" in spoken.lower()
+    assert "[payrolls-march-2025]" in spoken
+
+
+def test_pack_tariff_stem_keeps_tariffs_in_vo(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    packet.research_pack = (packet.research_pack or "") + " Parallel named a tariff print."
+    dirty = _slot_token_beats().replace(
+        "Read [chronological_events[7]] then [missing_causal_links_and_reading_of_the_chain[1]]. [executive_summary[n]] [payrolls-march-2025]",
+        "Tariffs named in the pack. [payrolls-march-2025]",
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return dirty
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "tariff" in spoken.lower()
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "invented topic absent from pack: tariffs" not in reason.lower()
+
+
 def test_write_vo_from_pack_uses_vertex_when_receipt_is_hold(monkeypatch) -> None:
     packet = _hold_packet(disposition="HOLD")
     writer_prompts: list[str] = []

@@ -673,6 +673,13 @@ def _map_brackets(text: str, fn) -> str:
 # Ceiling: a sourced claim that literally uses snake_case. Upgrade: allowlist from pack prose.
 _SNAKE_KEY = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+){1,}\b")
 _RISK_TOPIC = re.compile(r"\b(tariffs?)\b", re.I)
+_FINDING_LIKE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$", re.I)
+_SCHEMA_MARK = re.compile(r"_|\[|\.")
+
+
+def _is_schema_slot(token: str) -> bool:
+    """Spine/pack field path, not a finding id or a bracketed print."""
+    return bool(_SCHEMA_MARK.search(token or ""))
 
 
 def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
@@ -683,8 +690,10 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
         token = (inner or "").strip()
         if token in known:
             return f"[{token}]"
-        nits.append("pack slot token stripped from VO")
-        return ""
+        if _is_schema_slot(token) or _FINDING_LIKE.match(token):
+            nits.append("pack slot token stripped from VO")
+            return ""
+        return f"[{token}]"
 
     cleaned = _map_brackets(text or "", keep_or_drop)
 
@@ -700,7 +709,7 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
 
     def drop_topic(match: re.Match[str]) -> str:
         word = match.group(0)
-        if word.lower() in pack_l:
+        if "tariff" in pack_l:
             return word
         nits.append(f"invented topic absent from pack: {word.lower()}")
         return ""
