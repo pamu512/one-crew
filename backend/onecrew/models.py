@@ -269,9 +269,13 @@ class StampedFinding(BaseModel):
     series: str = ""
     print: str = ""
     when: str = ""
+    claim: str = ""
+    url: str = ""
 
     def line(self) -> str:
-        return f"{self.id}: series={self.series} print={self.print} when={self.when}"
+        cite = f" url={self.url}" if self.url else ""
+        summary = f" {self.claim}" if self.claim else ""
+        return f"{self.id}: series={self.series} print={self.print} when={self.when}{cite}{summary}"
 
 
 class GradeArtifact(BaseModel):
@@ -282,6 +286,7 @@ class GradeArtifact(BaseModel):
     script: str
     research_pack: str = ""
     stamped_findings: list[StampedFinding] = Field(default_factory=list)
+    parallel_cites: str = ""
 
     def findings_block(self) -> str:
         return "\n".join(row.line() for row in self.stamped_findings)

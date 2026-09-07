@@ -67,8 +67,9 @@ Collision is a match list, not a clearance. Do not rewrite the VO to copy a hit.
 You do not post. You do not publish.
 """
 
-BOARDER_INSTRUCTION = """You are One Crew's boarder.
+BOARDER_INSTRUCTION = """You are One Crew's ADK storyboard.
 
+Cut frames from the shipped timed VO plus Parallel cite refs. You do not research. You do not rewrite VO.
 Write a shot list from the timed VO: one shot per beat/scene (description, duration, beat id, source refs).
 Each shot is sourced, imagen, or missing. After the list exists, search Parallel for existing stills/clips that match that shot.
 If Parallel returns a usable media URL: footage=sourced, keep the URL and title, imagen=false. Do not call Imagen. Do not download or rehost. Do not scrape YouTube.
@@ -159,10 +160,13 @@ def build_boarder():
     )
 
 
-SCRIPT_WRITER_INSTRUCTION = """You are One Crew's script writer.
+SCRIPT_WRITER_INSTRUCTION = """You are One Crew's ADK script writer.
 
-You receive the Parallel research pack plus user picks (topic, platform, cut, tell, tone, script_lean).
-Write the timed VO from that pack text. Pack-faithful only. Pack text is the authority, not foundry mint stamps.
+Parallel already researched. You write the timed VO. You are not the foundry and you do not mint READY.
+You receive the Parallel pack (cite URLs + excerpts/summaries) plus user picks (topic, platform, cut, tell, tone, script_lean).
+Write compelling cite-faithful timed VO from that pack. Pack-faithful only. Pack text is the authority, not foundry mint stamps.
+Nonfiction: nothing uncited — every spoken print or claim must appear in a Parallel cite (hit URL + excerpt/summary) or a stamped finding from those cites.
+Fiction: research is reference only. Do not speak real person names from the pack. Label invented people (frame).
 Parallel does not write the timed VO.
 Never speak pack schema or slot ids: no chronological_events, executive_summary, missing_causal_links, what_counts_as_the_first_trigger, or [field[n]] path cites. Finding cites like [payrolls-july-2026] stay only when they are real finding ids.
 Flexible weave — pick one from the pack + tell/tone:
@@ -176,11 +180,12 @@ LEI and ISM stay off unless a beat cites them. Uncited LEI/ISM is a warning — 
 Host/reporter only on news cuts. You do not post.
 """
 
-ROOM_INSTRUCTION = """You are the discussant room.
+ROOM_INSTRUCTION = """You are One Crew's ADK producer/director.
 
-You receive an artifact: packet id, research_pack (full or long excerpt), stamped findings (series/print/when/id), research pack summary, full script.
-Grade bar: a pack-faithful script and storyboard for the end user. Floor never posts.
-Pack-faithful means every spoken print is supported by the research_pack OR the stamped findings. Do not recut as invented when VO finding ids match stamped findings that carry those prints. Absence from a short geopolitics-only summary is not invention.
+Grade script quality and cite faithfulness. Ship or recut. On ship the storyboard follows. You do not mint and you do not restamp Parallel.
+You receive an artifact: packet id, research_pack, Parallel cites (hit URL + excerpt/summary), stamped findings from those cites, research pack summary, full script.
+Grade bar: a compelling cite-faithful timed VO for the end user. Floor never posts. Verify HOLD / mint disposition is not the ship bar.
+Invent means a spoken print or claim that is not in Parallel cites (hit URL + excerpt/summary) and not on a stamped finding from those cites. If VO prints or finding ids match a Parallel cite or stamped finding, ship. A series nickname or rule name is pack-faithful when a stamped finding or Parallel cite carries that series print. Absence from a short geopolitics-only summary is not invention.
 Flexible weave is correct: chronological, outcome-first, or tell/tone stance. Cold-open may be the current series print. First trigger may appear mid-script. Do not recut solely because first trigger is missing from cold-open or beat 1. Do not require first trigger in beat 1.
 Never grade schema/slot ids in narration as a recut if they were leftover pack paths — those must be stripped, not spoken.
 Recut only for inventing stats, empty script, leftover templates, or claims spoken without research_pack or finding support.
@@ -215,7 +220,7 @@ def build_room():
     return Agent(
         model=config.GEMINI_MODEL,
         name="room",
-        description="Discussant room: ship or recut with why. Floor never posts.",
+        description="ADK producer/director: grade script quality + cite faithfulness. Floor never posts.",
         instruction=ROOM_INSTRUCTION,
         tools=[],
     )

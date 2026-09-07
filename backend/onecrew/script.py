@@ -713,11 +713,83 @@ _SNAKE_KEY = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+){1,}\b")
 _RISK_TOPIC = re.compile(r"\b(tariffs?)\b", re.I)
 _FINDING_LIKE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$", re.I)
 _SCHEMA_MARK = re.compile(r"_|\[|\.")
+_YEAR_TOK = re.compile(r"^20\d{2}$")
+_PERSON_NAME = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b")
 
 
 def _is_schema_slot(token: str) -> bool:
     """Spine/pack field path, not a finding id or a bracketed print."""
     return bool(_SCHEMA_MARK.search(token or ""))
+
+
+def _vo_lines(text: str) -> str:
+    """Drop timecode / shot-list chrome so duration digits are not spoken prints."""
+    keep: list[str] = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if re.match(r"^\d{1,2}:\d{2}", stripped):
+            continue
+        if stripped.startswith(("ACTION:", "Timed VO", "BEAT ", "ACT ")):
+            continue
+        if stripped in {"WIDE", "MCU", "NARRATOR"}:
+            continue
+        keep.append(line)
+    return "\n".join(keep)
+
+
+def _trigger_chrome(tok: str, vo: str) -> bool:
+    if not tok or not vo:
+        return False
+    return bool(re.search(rf"{re.escape(tok)}\s+trigger\b", vo, re.I))
+
+
+def uncited_claim_tokens(packet: Packet, vo: str) -> list[str]:
+    """Spoken prints with no Parallel cite / finding support. Fiction skips this bar."""
+    from onecrew.verify import _bar_in, _bars
+
+    if _invents(packet):
+        return []
+    evidence = _pack_text(packet)
+    prints = [
+        finding.print
+        for finding in (packet.receipt.findings if packet.receipt else [])
+        if finding.print not in {MISSING, "", None}
+    ]
+    body = _vo_lines(vo)
+    bad: list[str] = []
+    for tok in pack_numbers(body):
+        cleaned = tok.replace("−", "-").strip()
+        if _YEAR_TOK.fullmatch(cleaned) or _trigger_chrome(tok, body):
+            continue
+        if any(_bar_in(tok, bar) or _bar_in(bar, tok) for printed in prints for bar in _bars(printed)):
+            continue
+        if evidence and _bar_in(tok, evidence):
+            continue
+        bad.append(tok)
+    return bad
+
+
+def _strip_uncited_tokens(text: str, tokens: list[str]) -> str:
+    out = text or ""
+    for tok in sorted(set(tokens), key=len, reverse=True):
+        out = re.sub(rf"(?<![\d.]){re.escape(tok)}(?![\d.])", "", out)
+    return _tidy_vo(out) or "Hold on the cite."
+
+
+def _strip_pack_names(text: str, pack: str) -> tuple[str, bool]:
+    """Fiction: drop real person-name spans that the pack already named."""
+    names = sorted(set(_PERSON_NAME.findall(pack or "")), key=len, reverse=True)
+    out = text or ""
+    hit = False
+    for name in names:
+        nxt = re.sub(rf"\b{re.escape(name)}\b", "", out)
+        if nxt != out:
+            hit = True
+            out = nxt
+    if not hit:
+        return text or "", False
+    cleaned = _tidy_vo(out)
+    return cleaned or "Hold the frame.", True
 
 
 def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
@@ -852,6 +924,20 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         eyes, eye_nits = _sanitize_vo(eyes, known, pack_blob)
         slot_nits.extend(vo_nits)
         slot_nits.extend(eye_nits)
+        if _invents(packet):
+            vo, named_vo = _strip_pack_names(vo, pack_blob)
+            eyes, named_eyes = _strip_pack_names(eyes, pack_blob)
+            if named_vo or named_eyes:
+                slot_nits.append("pack person name stripped from fiction VO")
+        else:
+            uncited_vo = uncited_claim_tokens(packet, vo)
+            uncited_eyes = uncited_claim_tokens(packet, eyes)
+            if uncited_vo:
+                vo = _strip_uncited_tokens(vo, uncited_vo)
+                slot_nits.append("uncited claim")
+            if uncited_eyes:
+                eyes = _strip_uncited_tokens(eyes, uncited_eyes)
+                slot_nits.append("uncited claim")
         for fid in known:
             if f"[{fid}]" in vo and fid not in fids:
                 fids.append(fid)
@@ -914,7 +1000,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if _leftover_vo(spoken):
         return _fail_closed(packet, ["VO is leftover template"])
     holes = _missing_pack_marks(packet, spoken)
-    if holes and not held:
+    if holes and not held and not _invents(packet):
         return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
     warn = list(dict.fromkeys([*lei_nits, *slot_nits]))
     if warn:
