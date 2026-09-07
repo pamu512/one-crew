@@ -133,7 +133,7 @@ def test_usrec_august_plus_july_payrolls_no_jul_pipe_smash_mixed_months() -> Non
             (FRED, "USREC", "The August 2026 release discusses the recession indicator."),
             (BLS, "CES", "Nonfarm payrolls fell by 23,000 in July 2026."),
         ],
-        spine="August prose only. No July USREC pipe.",
+        spine="USREC=0 (August 2026) smashed into payrolls. August prose only. No July USREC pipe.",
     )
     usrec = Claim(series="USREC", print="0", when="August 2026", id="usrec-aug", cite_url=FRED)
     payrolls = Claim(
@@ -141,6 +141,50 @@ def test_usrec_august_plus_july_payrolls_no_jul_pipe_smash_mixed_months() -> Non
         print="−23k",
         when="July 2026",
         id="payrolls-23k",
+        cite_url=BLS,
+    )
+    got = verify_usrec_smash(usrec, payrolls, bag)
+    assert got.ok is False
+    assert got.reason == "smash mixed months"
+
+
+def test_independent_usrec_and_payrolls_months_no_smash_no_pipe_ok() -> None:
+    """Different observation months without a smash claim or payrolls-month pipe are normal."""
+    bag = _bag(
+        excerpts=[
+            (FRED, "USREC", "The NBER-based FRED recession indicator remains 0 for June 2026."),
+            (BLS, "CES", "Total nonfarm payroll employment increased in August 2026."),
+        ],
+        spine="Independent series. No smash stamp. No August USREC pipe cell.",
+    )
+    usrec = Claim(series="USREC", print="0", when="June 2026", id="usrec-june-2026", cite_url=FRED)
+    payrolls = Claim(
+        series="BLS payrolls",
+        print="+10,000",
+        when="August 2026",
+        id="payrolls-august-2026",
+        cite_url=BLS,
+    )
+    got = verify_usrec_smash(usrec, payrolls, bag)
+    assert got.ok is True
+    assert got.reason != "smash mixed months"
+
+
+def test_pipe_payrolls_month_zero_usrec_other_month_smash_mixed() -> None:
+    """Pipe flags the payrolls month 0/1 while USREC.when differs → foundry missed remap."""
+    bag = _bag(
+        excerpts=[
+            (FRED, "USREC", "2026-05-01,0\n2026-06-01,0\n2026-08-01,0\n"),
+            (BLS, "CES", "Nonfarm payrolls increased in August 2026."),
+        ],
+        spine="June prose. August payrolls. Pipe has the payrolls month.",
+    )
+    usrec = Claim(series="USREC", print="0", when="June 2026", id="usrec-june-2026", cite_url=FRED)
+    payrolls = Claim(
+        series="BLS payrolls",
+        print="+10,000",
+        when="August 2026",
+        id="payrolls-august-2026",
         cite_url=BLS,
     )
     got = verify_usrec_smash(usrec, payrolls, bag)
@@ -659,5 +703,26 @@ def test_csv_usrec_pipe_zero_is_print_in_cite_and_same_month_smash() -> None:
     mixed = verify_usrec_smash(june, payrolls, bag)
     assert mixed.ok is False
     assert mixed.reason == "smash mixed months"
+
+
+def test_glued_csv_date_still_counts_as_usrec_print() -> None:
+    """Comma-stripped FRED cells (2026-06-010) must still count as print 0 for that when."""
+    usrec = Claim(
+        series="USREC",
+        print="0",
+        when="June 2026",
+        id="usrec-june-2026",
+        cite_url=FRED,
+        claim_span="USREC=0 (June 2026)",
+    )
+    glued = _bag(
+        excerpts=[(FRED, "USREC", "observation_dateUSREC\n2026-05-010\n2026-06-010\n")],
+        spine="Series page. Observation month named June 2026.",
+        hit_urls=[FRED],
+    )
+    printed = verify_print_in_cite(usrec, glued)
+    assert printed.ok is True, printed.reason
+    smash = verify_usrec_smash(usrec, None, glued)
+    assert smash.ok is True, smash.reason
 
 
