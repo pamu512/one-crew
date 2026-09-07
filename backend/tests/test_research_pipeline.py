@@ -1011,6 +1011,126 @@ def test_off_print_substring_does_not_rewrite_vo(monkeypatch) -> None:
     assert "155.6" in spoken
 
 
+def _slot_token_beats() -> str:
+    """ADK leftover: pack-slot / spine field-path cites spoken into VO."""
+    return (
+        '[{"id":"cold-open","vo":"USREC=0 smashed into payrolls −41,000. [usrec-march-2025] [payrolls-march-2025]",'
+        '"eyes":"March CES","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"promise","vo":"Read [chronological_events[7]] then [missing_causal_links_and_reading_of_the_chain[1]]. [executive_summary[n]] [payrolls-march-2025]",'
+        '"eyes":"pack [chronological_events[7]]","finding_ids":[]},'
+        '{"id":"gdp","vo":"USREC=0 (March 2025). [usrec-march-2025]","eyes":"usrec","finding_ids":["usrec-march-2025"]},'
+        '{"id":"labor","vo":"Nonfarm payrolls fell −41,000. [payrolls-march-2025]","eyes":"ces","finding_ids":["payrolls-march-2025"]},'
+        '{"id":"turn","vo":"Hold on the pack number. [usrec-march-2025]","eyes":"hold","finding_ids":["usrec-march-2025"]},'
+        '{"id":"complication","vo":"Those are not the same object. [usrec-march-2025]","eyes":"gap","finding_ids":["usrec-march-2025"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-march-2025] [payrolls-march-2025]","eyes":"board","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-march-2025]","eyes":"close","finding_ids":["usrec-march-2025"]}]'
+    )
+
+
+def test_schema_slot_tokens_stripped_script_stays_nonempty(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    assert "tariff" not in (packet.research_pack or "").lower()
+
+    def fake_vertex(_prompt: str) -> str:
+        return _slot_token_beats()
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script, "slot-token strip must not blank a leftover-free 8-beat draft"
+    assert written.script.strip()
+    assert len(written.beats) == 8
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "[chronological_events[7]]" not in spoken
+    assert "chronological_events" not in spoken
+    assert "missing_causal_links" not in spoken
+    assert "executive_summary" not in spoken
+    assert "[payrolls-march-2025]" in spoken
+    assert "USREC=0" in spoken
+
+
+def test_invented_tariffs_cleaned_without_wiping_script(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    pack = (packet.research_pack or "") + (packet.task_spine or "")
+    assert "tariff" not in pack.lower()
+    dirty = _slot_token_beats().replace(
+        "Read [chronological_events[7]] then [missing_causal_links_and_reading_of_the_chain[1]]. [executive_summary[n]] [payrolls-march-2025]",
+        "Tariffs slammed the labor print. [payrolls-march-2025]",
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return dirty
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script, "invented tariffs must not wipe the entire script"
+    assert written.script.strip()
+    assert len(written.beats) == 8
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "tariff" not in spoken.lower()
+    assert "[payrolls-march-2025]" in spoken
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "tariff" in reason.lower() or "invented" in reason.lower() or written.status == "hold"
+
+
+def test_real_payrolls_finding_cite_kept_after_slot_sanitize(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+
+    def fake_vertex(_prompt: str) -> str:
+        return _slot_token_beats()
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "[payrolls-march-2025]" in spoken
+    labor = next(b for b in written.beats if b.id == "labor")
+    assert "payrolls-march-2025" in labor.finding_ids
+    assert "[payrolls-march-2025]" in labor.vo
+
+
+def test_bracketed_pack_print_is_not_stripped_as_slot(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    beats = _slot_token_beats().replace(
+        "Nonfarm payrolls fell −41,000. [payrolls-march-2025]",
+        "Nonfarm payrolls fell [−41,000]. [payrolls-march-2025]",
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return beats
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "41,000" in spoken or "41k" in spoken.lower()
+    assert "[payrolls-march-2025]" in spoken
+
+
+def test_pack_tariff_stem_keeps_tariffs_in_vo(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+    packet.research_pack = (packet.research_pack or "") + " Parallel named a tariff print."
+    dirty = _slot_token_beats().replace(
+        "Read [chronological_events[7]] then [missing_causal_links_and_reading_of_the_chain[1]]. [executive_summary[n]] [payrolls-march-2025]",
+        "Tariffs named in the pack. [payrolls-march-2025]",
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return dirty
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    spoken = written.script + "".join(b.vo for b in written.beats)
+    assert "tariff" in spoken.lower()
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "invented topic absent from pack: tariffs" not in reason.lower()
+
+
 def test_write_vo_from_pack_uses_vertex_when_receipt_is_hold(monkeypatch) -> None:
     packet = _hold_packet(disposition="HOLD")
     writer_prompts: list[str] = []
@@ -1425,12 +1545,18 @@ def test_writer_and_room_use_outcome_first_weave() -> None:
     from onecrew.script import _eight_from_pack, _prompt
 
     writer = SCRIPT_WRITER_INSTRUCTION.lower()
+    assert "pack-faithful" in writer or "pack faithful" in writer
+    assert "schema" in writer or "slot" in writer
+    assert "chronological" in writer
     assert "outcome" in writer or "current" in writer
     assert "first trigger" in writer
     assert "later" in writer or "mid" in writer
+    assert "humor" in writer or "disprove" in writer or "facts-only" in writer
     room = ROOM_INSTRUCTION.lower()
     assert "cold-open" in room or "beat 1" in room
     assert "recut" in room
+    assert "beat 1" in room
+    assert "schema" in room or "slot" in room or "pack-faithful" in room
     spine = (
         "what_counts_as_the_first_trigger: Geopolitical episode and energy-price surge "
         "in February/March 2026.\n"
@@ -1453,10 +1579,13 @@ def test_writer_and_room_use_outcome_first_weave() -> None:
     prompt = _prompt(packet, _eight_from_pack(packet)).lower()
     assert "first trigger" in prompt
     assert "outcome" in prompt or "current" in prompt
+    assert "schema" in prompt or "slot" in prompt
+    assert "pack-faithful" in prompt or "pack faithful" in prompt or "pack text is the authority" in prompt
     art = make_grade_artifact(packet)
     bar = artifact_prompt(art).lower()
     assert "invent" in bar or "leftover" in bar or "empty" in bar
     assert "beat 1" in bar or "cold-open" in bar
+    assert "schema" in bar or "slot" in bar or "pack-faithful" in bar or "flexible" in bar
 
 
 def test_room_does_not_recut_for_first_trigger_missing_from_beat_1() -> None:

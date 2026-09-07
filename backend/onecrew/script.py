@@ -624,13 +624,103 @@ def _soften_uncited_off(text: str, fids: list[str]) -> tuple[str, bool]:
     if not _OFF_NAME.search(text or ""):
         return text, True
     cleaned = _OFF_PRINT.sub("", _OFF_NAME.sub("", text))
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
-    cleaned = re.sub(r"\(\s*\)", "", cleaned)
-    cleaned = cleaned.strip(" ,.;:-")
+    cleaned = _tidy_vo(cleaned)
     if not cleaned:
         return "Hold on the pack number.", True
     return cleaned, True
+
+
+def _tidy_vo(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text or "")
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\[\s*\]", "", cleaned)
+    return cleaned.strip(" ,.;:-")
+
+
+def _map_brackets(text: str, fn) -> str:
+    """Replace top-level [...] spans, including one nested index like field[7]."""
+    src = text or ""
+    out: list[str] = []
+    i = 0
+    n = len(src)
+    while i < n:
+        if src[i] != "[":
+            out.append(src[i])
+            i += 1
+            continue
+        depth = 0
+        j = i
+        closed = False
+        while j < n:
+            if src[j] == "[":
+                depth += 1
+            elif src[j] == "]":
+                depth -= 1
+                if depth == 0:
+                    out.append(fn(src[i + 1 : j]))
+                    i = j + 1
+                    closed = True
+                    break
+            j += 1
+        if not closed:
+            out.append(src[i])
+            i += 1
+    return "".join(out)
+
+
+# ponytail: snake_case in VO is a pack/spine field path, not a finding id.
+# Ceiling: a sourced claim that literally uses snake_case. Upgrade: allowlist from pack prose.
+_SNAKE_KEY = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+){1,}\b")
+_RISK_TOPIC = re.compile(r"\b(tariffs?)\b", re.I)
+_FINDING_LIKE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$", re.I)
+_SCHEMA_MARK = re.compile(r"_|\[|\.")
+
+
+def _is_schema_slot(token: str) -> bool:
+    """Spine/pack field path, not a finding id or a bracketed print."""
+    return bool(_SCHEMA_MARK.search(token or ""))
+
+
+def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
+    """Strip pack schema/slot cites. Keep real finding ids. Drop topics absent from pack."""
+    nits: list[str] = []
+
+    def keep_or_drop(inner: str) -> str:
+        token = (inner or "").strip()
+        if token in known:
+            return f"[{token}]"
+        if _is_schema_slot(token) or _FINDING_LIKE.match(token):
+            nits.append("pack slot token stripped from VO")
+            return ""
+        return f"[{token}]"
+
+    cleaned = _map_brackets(text or "", keep_or_drop)
+
+    def drop_snake(match: re.Match[str]) -> str:
+        word = match.group(0)
+        if word in known:
+            return word
+        nits.append("pack slot token stripped from VO")
+        return ""
+
+    cleaned = _SNAKE_KEY.sub(drop_snake, cleaned)
+    pack_l = (pack_blob or "").lower()
+
+    def drop_topic(match: re.Match[str]) -> str:
+        word = match.group(0)
+        if "tariff" in pack_l:
+            return word
+        nits.append(f"invented topic absent from pack: {word.lower()}")
+        return ""
+
+    cleaned = _RISK_TOPIC.sub(drop_topic, cleaned)
+    if not nits:
+        return text or "", []
+    cleaned = _tidy_vo(cleaned)
+    if not cleaned:
+        cleaned = "Hold on the pack number."
+    return cleaned, list(dict.fromkeys(nits))
 
 
 def _tc(total_s: int, *, hours: bool) -> str:
@@ -702,34 +792,35 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     beats: list[ScriptBeat] = []
     cursor = 0
     lei_nits: list[str] = []
+    slot_nits: list[str] = []
+    pack_blob = _pack_text(packet)
+    pack_l = pack_blob.lower()
     for i, unit in enumerate(units):
         bid = unit.get("id") or _EIGHT_IDS[i]
         fids = [fid for fid in (unit.get("finding_ids") or []) if fid in known]
         vo = (unit.get("vo") or "").strip()
         eyes = (unit.get("eyes") or "").strip()
         hole = "sahm hole" in f"{vo} {eyes}".lower() or "no matching url" in f"{vo} {eyes}".lower()
+        if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
+            return _fail_closed(packet, ["VO is leftover grounded-event template"])
+        if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in pack_l:
+            return _fail_closed(packet, ["invented leftover cast"])
+        if "hormuz" not in pack_l and "jcpoa" not in pack_l:
+            if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
+                return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
+        vo, vo_nits = _sanitize_vo(vo, known, pack_blob)
+        eyes, eye_nits = _sanitize_vo(eyes, known, pack_blob)
+        slot_nits.extend(vo_nits)
+        slot_nits.extend(eye_nits)
+        for fid in known:
+            if f"[{fid}]" in vo and fid not in fids:
+                fids.append(fid)
         if not fids and known and not hole:
             if not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
-                return _fail_closed(packet, [f"{bid} cites nothing in the pack"])
+                slot_nits.append(f"{bid} cites nothing in the pack")
         for fid in fids:
             if f"[{fid}]" not in vo:
                 vo = f"{vo} [{fid}]"
-        if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
-            return _fail_closed(packet, ["VO is leftover grounded-event template"])
-        if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in _pack_text(packet).lower():
-            return _fail_closed(packet, ["invented leftover cast"])
-        pack_blob = " ".join(
-            [
-                packet.research_pack or "",
-                packet.task_spine or "",
-                packet.topic or "",
-                packet.hook or "",
-                *(f.claim for f in _live_findings(packet)),
-            ]
-        ).lower()
-        if "hormuz" not in pack_blob and "jcpoa" not in pack_blob:
-            if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
-                return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
         vo, stripped_vo = _soften_uncited_off(vo, fids)
         eyes, stripped_eyes = _soften_uncited_off(eyes, fids)
         if stripped_vo or stripped_eyes:
@@ -785,10 +876,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     holes = _missing_pack_marks(packet, spoken)
     if holes and not held:
         return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
-    if lei_nits:
-        note = "LEI/ISM spoken without a cited beat"
-        _warn_mint(packet, [note])
-        packet.exclusions.append(Exclusion(what=_VERTEX_HOLE, reason="other", detail=note))
+    warn = list(dict.fromkeys([*lei_nits, *slot_nits]))
+    if warn:
+        _warn_mint(packet, warn)
+        packet.exclusions.append(Exclusion(what=_VERTEX_HOLE, reason="other", detail="; ".join(warn)))
     packet.status = "ready" if packet.receipt is None or packet.receipt.disposition != "HOLD" else "hold"
     return packet
 
@@ -824,11 +915,17 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
     }
     return (
         f"Read this research pack. Voice the 8-beat spine. {config.GEMINI_MODEL}.\n"
-        "Pack text is the authority. Do not treat foundry mint stamps as the VO source.\n"
-        "Outcome-first weave: cold-open is the current named print (USREC×payrolls or other pack print). "
-        "Chronological order is not required. First trigger / first transmission may appear in a later beat, not beat 1.\n"
+        "Pack-faithful only. Pack text is the authority. Do not treat foundry mint stamps as the VO source.\n"
+        "Never speak pack schema or slot ids (chronological_events, executive_summary, "
+        "missing_causal_links, what_counts_as_the_first_trigger, [field[n]]). "
+        "Finding cites stay only when they are real finding ids.\n"
+        "Flexible weave: chronological OR outcome-first OR tell/tone stance "
+        "(humor / disprove / question / facts-only). "
+        "Outcome-first: cold-open is the current named print (USREC×payrolls or other pack print). "
+        "First trigger / first transmission may appear in a later beat, not beat 1.\n"
         f"Pack first trigger (voice later if present): {trigger or '(none — series cold-open is allowed)'}\n"
-        "Pack numbers only. Do not invent stats. LEI and ISM stay off unless a beat cites them. "
+        "Pack numbers only. Do not invent stats or topics absent from the pack. "
+        "LEI and ISM stay off unless a beat cites them. "
         "Uncited LEI/ISM is a warning, not a blank draft.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
         "Return 8-beat JSON from the pack.\n"
