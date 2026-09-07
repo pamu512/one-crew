@@ -36,7 +36,7 @@ _INVENT_FROM_SUMMARY = re.compile(
     re.I,
 )
 _INVENT_LANG = re.compile(
-    r"\binvent(?:s|ed|ing)?\b|absent from|missing from|not in the (?:pack|summary)|unsupported",
+    r"\binvent(?:s|ed|ing)?\b|absent from|missing from|not in the (?:pack|summary|cites?)",
     re.I,
 )
 _TARIFF_TOPIC = re.compile(r"\btariff", re.I)
@@ -64,6 +64,8 @@ def _stamped_findings(packet: Packet) -> list[StampedFinding]:
     rows: list[StampedFinding] = []
     for finding in (packet.receipt.findings if packet.receipt else []):
         if finding.id in leftover:
+            continue
+        if finding.parallel_status != "hit" or not (finding.parallel_url or "").strip():
             continue
         rows.append(
             StampedFinding(

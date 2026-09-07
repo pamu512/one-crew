@@ -1916,6 +1916,16 @@ def test_room_ships_when_parallel_cite_supports_vo() -> None:
         ),
     )
     assert grade.vote == "ship"
+    quality = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="other",
+            recut_detail="pacing is wooden; cold-open does not earn the turn",
+        ),
+    )
+    assert quality.vote == "recut"
+    assert quality.recut_reason == "other"
 
 
 def test_nonfiction_refuses_uncited_claim(monkeypatch) -> None:
@@ -1968,7 +1978,7 @@ def test_fiction_strips_real_names_from_pack(monkeypatch) -> None:
     )
     named = _HOLD_VERTEX_BEATS.replace(
         "Three objects from the pack.",
-        f"{person} walks the deck. (frame)",
+        f"{person} walks the deck. Jane stays. (frame)",
     )
 
     def fake_vertex(_prompt: str) -> str:
@@ -1980,6 +1990,7 @@ def test_fiction_strips_real_names_from_pack(monkeypatch) -> None:
     spoken = (written.script or "") + "".join(b.vo for b in written.beats)
     assert written.script
     assert person not in spoken
+    assert "Jane" not in spoken
     assert "(frame)" in spoken or "(frame)" in (written.script or "")
 
 

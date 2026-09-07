@@ -38,6 +38,27 @@ _EIGHT_IDS = (
 )
 
 
+def _hit_cite_blob(packet: Packet) -> str:
+    """Parallel hit URL + excerpt/summary + stamped print. Topic/hook are not cites."""
+    parts = [packet.research_pack or "", packet.task_spine or ""]
+    receipt = packet.receipt
+    if receipt:
+        for finding in receipt.findings:
+            if finding.parallel_status != "hit" or not (finding.parallel_url or "").strip():
+                continue
+            printed = "" if finding.print in {MISSING, "", None} else finding.print
+            parts.extend(
+                [
+                    finding.parallel_url or "",
+                    finding.claim or "",
+                    finding.note or "",
+                    printed,
+                    finding.when or "",
+                ]
+            )
+    return "\n".join(parts)
+
+
 def _pack_text(packet: Packet) -> str:
     parts = [
         packet.research_pack or "",
@@ -715,6 +736,26 @@ _FINDING_LIKE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$", re.I)
 _SCHEMA_MARK = re.compile(r"_|\[|\.")
 _YEAR_TOK = re.compile(r"^20\d{2}$")
 _PERSON_NAME = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b")
+_ORG_WORD = frozenset(
+    {
+        "united",
+        "states",
+        "federal",
+        "reserve",
+        "white",
+        "house",
+        "conference",
+        "board",
+        "leading",
+        "indicators",
+        "nuclear",
+        "deal",
+        "strait",
+        "real",
+        "gross",
+        "domestic",
+    }
+)
 
 
 def _is_schema_slot(token: str) -> bool:
@@ -749,11 +790,13 @@ def uncited_claim_tokens(packet: Packet, vo: str) -> list[str]:
 
     if _invents(packet):
         return []
-    evidence = _pack_text(packet)
+    evidence = _hit_cite_blob(packet)
     prints = [
         finding.print
         for finding in (packet.receipt.findings if packet.receipt else [])
-        if finding.print not in {MISSING, "", None}
+        if finding.parallel_status == "hit"
+        and (finding.parallel_url or "").strip()
+        and finding.print not in {MISSING, "", None}
     ]
     body = _vo_lines(vo)
     bad: list[str] = []
@@ -776,16 +819,25 @@ def _strip_uncited_tokens(text: str, tokens: list[str]) -> str:
     return _tidy_vo(out) or "Hold on the cite."
 
 
+def _org_span(name: str) -> bool:
+    return any(part.lower() in _ORG_WORD for part in name.split())
+
+
 def _strip_pack_names(text: str, pack: str) -> tuple[str, bool]:
     """Fiction: drop real person-name spans that the pack already named."""
     names = sorted(set(_PERSON_NAME.findall(pack or "")), key=len, reverse=True)
     out = text or ""
     hit = False
     for name in names:
+        if _org_span(name):
+            continue
         nxt = re.sub(rf"\b{re.escape(name)}\b", "", out)
-        if nxt != out:
-            hit = True
-            out = nxt
+        if nxt == out:
+            continue
+        hit = True
+        out = nxt
+        for part in name.split():
+            out = re.sub(rf"\b{re.escape(part)}\b", "", out)
     if not hit:
         return text or "", False
     cleaned = _tidy_vo(out)
@@ -906,6 +958,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     lei_nits: list[str] = []
     slot_nits: list[str] = []
     pack_blob = _pack_text(packet)
+    cite_blob = _hit_cite_blob(packet)
     pack_l = pack_blob.lower()
     for i, unit in enumerate(units):
         bid = unit.get("id") or _EIGHT_IDS[i]
@@ -925,8 +978,8 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         slot_nits.extend(vo_nits)
         slot_nits.extend(eye_nits)
         if _invents(packet):
-            vo, named_vo = _strip_pack_names(vo, pack_blob)
-            eyes, named_eyes = _strip_pack_names(eyes, pack_blob)
+            vo, named_vo = _strip_pack_names(vo, cite_blob)
+            eyes, named_eyes = _strip_pack_names(eyes, cite_blob)
             if named_vo or named_eyes:
                 slot_nits.append("pack person name stripped from fiction VO")
         else:
@@ -1055,10 +1108,13 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
         "Pack numbers only. Do not invent stats or topics absent from the pack. "
         "LEI and ISM stay off unless a beat cites them. "
         "Uncited LEI/ISM is a warning, not a blank draft.\n"
+        "Nonfiction: nothing uncited from Parallel cites. "
+        "Fiction: research is reference only; no real person names from the cites.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
         "Return 8-beat JSON from the pack.\n"
         f"{_PACKET_MARK}\n{json.dumps(payload, ensure_ascii=True)}\n{_PACKET_END}\n"
         f"PACK:\n{packet.research_pack or ''}\n"
+        f"CITES:\n{_hit_cite_blob(packet)}\n"
     )
 
 
