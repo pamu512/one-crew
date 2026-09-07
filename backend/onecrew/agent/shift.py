@@ -32,7 +32,7 @@ from onecrew.receipt import (
 )
 from onecrew.claimer import findings_from_claims, frame_findings, propose_claims
 from onecrew.foundry import FoundryHold, leftover_slot_ids, mint, require_minted, sanitize_stamps
-from onecrew.verify import apply_verify_gate, cite_bag_from_rows
+from onecrew.verify import apply_verify_gate, attach_cites_from_hits, cite_bag_from_rows
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.research import extract_objective, search_objective, search_queries, task_research_prompt
 from onecrew.room import make_grade_artifact, run_room_loop
@@ -672,6 +672,7 @@ def _research(
     else:
         findings = foundry_rows
     findings = [row for row in findings if row.id not in leftover_slot_ids()]
+    findings = attach_cites_from_hits(findings, bag)
     if not findings or not any(row.parallel_status == "hit" for row in findings):
         leftover.extend(
             leftover_hit_exclusions(

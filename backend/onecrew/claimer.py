@@ -26,6 +26,7 @@ from onecrew.verify import (
     _parse_when,
     _usrec_month_on_table,
     _year_adjacent_month,
+    resolve_missing_cite,
     verify_payrolls_realized_ces,
 )
 from onecrew.vertex_client import VertexDownError, generate_script
@@ -341,6 +342,9 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
             n += 1
         used.add(fid)
         span = (claim.claim_span or "").strip() or f"{claim.series}={claim.print} ({claim.when})".strip()
+        cite = (claim.cite_url or "").strip()
+        if not cite and bag is not None:
+            cite = (resolve_missing_cite(claim, bag).cite_url or "").strip()
         out.append(
             Finding(
                 id=fid,
@@ -350,7 +354,7 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
                 series=claim.series,
                 print=claim.print,
                 when=claim.when,
-                parallel_url=claim.cite_url or None,
+                parallel_url=cite or None,
                 parallel_status="hit",
                 note="Parallel URL on this row.",
                 independent=MISSING,
