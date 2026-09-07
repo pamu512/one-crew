@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
-from onecrew.foundry import leftover_slot_ids
+from onecrew.foundry import leftover_slot_ids, _url_fits_series
 from onecrew.models import MISSING, Finding, Receipt
 
 SeriesName = Literal["USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME"]
@@ -110,6 +110,52 @@ def _url_key(url: str) -> str:
 def _url_in(url: str, urls: list[str]) -> bool:
     want = _url_key(url)
     return bool(want) and any(_url_key(u) == want for u in urls)
+
+
+def _cite_candidates(claim: Claim, bag: CiteBag) -> list[str]:
+    """Parallel hit URLs only. Prefer the host that fits this series."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for url in (*(e.url for e in bag.excerpts), *(bag.hit_urls or [])):
+        raw = (url or "").strip()
+        if not raw or not _url_in(raw, bag.hit_urls):
+            continue
+        key = _url_key(raw)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(raw)
+    out.sort(key=lambda u: (0 if _url_fits_series(u, claim.series, ()) else 1))
+    return out
+
+
+def resolve_missing_cite(claim: Claim, bag: CiteBag) -> Claim:
+    """Foundry forgot the URL. Copy the Parallel hit that supports print/when."""
+    if (claim.cite_url or "").strip():
+        return claim
+    for url in _cite_candidates(claim, bag):
+        trial = claim.model_copy(update={"cite_url": url})
+        if verify_print_in_cite(trial, bag).ok:
+            return trial
+    return claim
+
+
+def attach_cites_from_hits(findings: list[Finding], bag: CiteBag) -> list[Finding]:
+    """Stamp parallel_url from a supporting Parallel hit. Do not invent a URL."""
+    claims = [resolve_missing_cite(c, bag) for c in claims_from_findings(findings)]
+    out: list[Finding] = []
+    for finding in findings:
+        cite = (finding.parallel_url or "").strip()
+        if cite:
+            out.append(finding)
+            continue
+        claim = next((c for c in claims if c.id == finding.id), None)
+        url = (claim.cite_url or "").strip() if claim else ""
+        if url:
+            out.append(finding.model_copy(update={"parallel_url": url, "parallel_status": "hit"}))
+            continue
+        out.append(finding)
+    return out
 
 
 def _cite_text(claim: Claim, bag: CiteBag) -> str:
@@ -350,6 +396,11 @@ def claims_from_findings(findings: list[Finding]) -> list[Claim]:
 
 
 def verify_print_in_cite(claim: Claim, bag: CiteBag) -> VerifyResult:
+    if not (claim.cite_url or "").strip():
+        resolved = resolve_missing_cite(claim, bag)
+        if (resolved.cite_url or "").strip() and resolved.cite_url != claim.cite_url:
+            return verify_print_in_cite(resolved, bag)
+        return VerifyResult(ok=False, reason="grounded claim missing cite_url")
     if not _url_in(claim.cite_url, bag.hit_urls):
         return VerifyResult(ok=False, reason="cite_url not in hits")
     excerpt = _cite_text(claim, bag)
@@ -541,6 +592,7 @@ def verify_claim_set(claims: list[Claim], bag: CiteBag) -> ClaimSetResult:
     hold: list[str] = []
     by_series: dict[str, Claim] = {}
     seen: set[str] = set()
+    claims = [resolve_missing_cite(c, bag) for c in claims]
     for claim in claims:
         if claim.id in _LEFTOVER:
             hold.append("leftover timeline ids")
@@ -583,19 +635,24 @@ def verify_claim_set(claims: list[Claim], bag: CiteBag) -> ClaimSetResult:
 
 def apply_verify_gate(receipt: Receipt, bag: CiteBag) -> Receipt:
     """READY only if verify_claim_set passes. HOLD keeps findings. Writer is the caller's job."""
-    claims = claims_from_findings(list(receipt.findings or []))
+    findings = attach_cites_from_hits(list(receipt.findings or []), bag)
+    claims = claims_from_findings(findings)
     named = [c for c in claims if c.series in CLOSED_SERIES]
     leftover = [c for c in claims if c.id in _LEFTOVER]
     if not named and not leftover:
-        return receipt
+        return receipt if findings == list(receipt.findings or []) else receipt.model_copy(
+            update={"findings": findings}
+        )
     checked = verify_claim_set(claims, bag)
     if checked.ok:
-        return receipt
+        if findings == list(receipt.findings or []):
+            return receipt
+        return receipt.model_copy(update={"findings": findings})
     reason = "; ".join(checked.hold_reasons) or "verify_claim_set failed"
     return receipt.model_copy(
         update={
             "disposition": "HOLD",
             "hold_reason": reason,
-            "findings": list(receipt.findings),
+            "findings": findings,
         }
     )
