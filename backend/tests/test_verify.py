@@ -613,3 +613,51 @@ def test_usrec_print_zero_must_appear_in_cite_or_spine() -> None:
     assert missed.reason == "print not in cite"
 
 
+def test_csv_usrec_pipe_zero_is_print_in_cite_and_same_month_smash() -> None:
+    """FRED CSV cells 2026-07-01,0 must count as print 0. Comma-strip must not glue the date."""
+    csv_pipe = (
+        "observation_date,USREC\n"
+        + "\n".join(f"2025-{m:02d}-01,0" for m in range(1, 13))
+        + "\n2026-05-01,0\n2026-06-01,0\n2026-07-01,0\n"
+    )
+    bag = _bag(
+        excerpts=[
+            (FRED, "USREC", csv_pipe),
+            (BLS, "Employment Situation", _JULY_CES),
+        ],
+        spine="June prose names the series. July payrolls named in the CES.",
+        hit_urls=[FRED, BLS],
+    )
+    usrec = Claim(
+        series="USREC",
+        print="0",
+        when="July 2026",
+        id="usrec-july-2026",
+        cite_url=FRED,
+        claim_span="USREC=0 (July 2026)",
+    )
+    payrolls = Claim(
+        series="BLS payrolls",
+        print="+21,000",
+        when="July 2026",
+        id="payrolls-july-2026",
+        cite_url=BLS,
+        claim_span="Total nonfarm payroll employment increased by 21,000 in July 2026.",
+    )
+    printed = verify_print_in_cite(usrec, bag)
+    assert printed.ok is True, printed.reason
+    smash = verify_usrec_smash(usrec, payrolls, bag)
+    assert smash.ok is True, smash.reason
+    june = Claim(
+        series="USREC",
+        print="0",
+        when="June 2026",
+        id="usrec-june-2026",
+        cite_url=FRED,
+        claim_span="USREC=0 (June 2026)",
+    )
+    mixed = verify_usrec_smash(june, payrolls, bag)
+    assert mixed.ok is False
+    assert mixed.reason == "smash mixed months"
+
+
