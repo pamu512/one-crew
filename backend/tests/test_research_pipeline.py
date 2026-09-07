@@ -1615,6 +1615,198 @@ def test_room_does_not_recut_for_first_trigger_missing_from_beat_1() -> None:
     assert still.recut_reason == "not_enough_information"
 
 
+def _geo_only_pack_head() -> str:
+    """Long geopolitics trigger so a 400-char summary never reaches series prints."""
+    head = (
+        "what_counts_as_the_first_trigger: Geopolitical episode and energy-price surge "
+        "in February/March 2026. Executive summary names the first transmission only. "
+    )
+    return head * 8
+
+
+def _stamped_series_findings() -> list[Finding]:
+    note = "Parallel URL on this row."
+    return [
+        Finding(
+            id="usrec-aug-live",
+            claim="USREC printed the official call.",
+            stamp="grounded",
+            title="USREC",
+            series="USREC",
+            print="0",
+            when="August 2026",
+            parallel_url=FRED,
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="payrolls-aug-live",
+            claim="Nonfarm payrolls printed on the CES.",
+            stamp="grounded",
+            title="BLS payrolls",
+            series="BLS payrolls",
+            print="−19,000",
+            when="August 2026",
+            parallel_url=BLS_OLD,
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="gdp-q2-live",
+            claim="GDP bar on the spine.",
+            stamp="grounded",
+            title="GDP",
+            series="GDP",
+            print="-0.4",
+            when="2026 Q2",
+            parallel_url="https://fred.stlouisfed.org/series/GDP",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="sahm-aug-live",
+            claim="Sahm on the spine.",
+            stamp="grounded",
+            title="Sahm",
+            series="SAHMREALTIME",
+            print="0.31",
+            when="August 2026",
+            parallel_url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="u3-aug-live",
+            claim="U-3 on the CES.",
+            stamp="grounded",
+            title="U-3",
+            series="U-3",
+            print="4.2%",
+            when="August 2026",
+            parallel_url=BLS_OLD,
+            parallel_status="hit",
+            note=note,
+        ),
+    ]
+
+
+def _thin_summary_rich_findings_packet() -> Packet:
+    findings = _stamped_series_findings()
+    vo_bits = []
+    for finding in findings:
+        spoken = f"{finding.series}={finding.print}" if finding.series == "USREC" else f"{finding.series} {finding.print}"
+        vo_bits.append(f"{spoken} ({finding.when}). [{finding.id}]")
+    script = "NARRATOR\n" + " ".join(vo_bits)
+    packet = Packet(
+        id="oc-are-we-near-recession-31542d1f",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script=script,
+        research_pack=_geo_only_pack_head(),
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=findings,
+    )
+    return packet
+
+
+def test_grade_artifact_passes_full_pack_and_stamped_findings() -> None:
+    from onecrew.agent.adk_run import artifact_prompt
+
+    packet = _thin_summary_rich_findings_packet()
+    geo = _geo_only_pack_head()
+    assert len(geo) > 400
+    art = make_grade_artifact(packet)
+    assert len(art.research_pack) > 400 or art.research_pack == geo
+    prompt = artifact_prompt(art)
+    blob = f"{art.research_pack_summary}\n{prompt}"
+    for finding in packet.receipt.findings:
+        assert finding.id in art.research_pack_summary
+        assert finding.id in prompt
+        assert finding.series in blob
+        assert finding.print in blob
+        assert finding.when in blob
+    assert "findings" in prompt.lower()
+    assert "research_pack" in prompt.lower()
+    assert "or" in prompt.lower() and "finding" in prompt.lower()
+
+
+def test_thin_summary_rich_findings_invent_recut_is_ship() -> None:
+    packet = _thin_summary_rich_findings_packet()
+    artifact = make_grade_artifact(packet)
+    assert "what_counts_as_the_first_trigger" in artifact.research_pack_summary
+    grade = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="not_enough_information",
+            recut_detail=(
+                "script invents official series prints that are absent from "
+                "the truncated research_pack_summary"
+            ),
+        ),
+    )
+    assert grade.vote == "ship"
+    loop = run_room_loop(
+        packet,
+        research=lambda _ask=None: None,
+        rewrite=lambda: None,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="not_enough_information",
+            recut_detail="prints missing from research_pack_summary; invented",
+        ),
+        parallel_already=1,
+    )
+    assert loop.grade.vote == "ship"
+    assert loop.disposition == "READY"
+
+
+def test_invented_tariff_without_finding_or_pack_still_recut() -> None:
+    packet = Packet(
+        id="oc-invented-tariff",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="Tariffs slammed the labor print at 25 percent. No receipt cite.",
+        research_pack=_geo_only_pack_head(),
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=_stamped_series_findings(),
+    )
+    artifact = make_grade_artifact(packet)
+    grade = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="other",
+            recut_detail="invented tariff with no finding or pack support",
+        ),
+    )
+    assert grade.vote == "recut"
+    assert grade.recut_reason == "other"
+
+
+def test_room_instruction_pack_or_findings_is_authority() -> None:
+    from onecrew.agent.adk_agents import ROOM_INSTRUCTION
+    from onecrew.agent.adk_run import artifact_prompt
+
+    room = ROOM_INSTRUCTION.lower()
+    assert "finding" in room
+    assert "research_pack" in room or "research pack" in room
+    assert "invent" in room
+    packet = _thin_summary_rich_findings_packet()
+    bar = artifact_prompt(make_grade_artifact(packet)).lower()
+    assert "finding" in bar
+    assert "research_pack" in bar or "research pack" in bar
+    assert "summary" in bar
+
+
 def test_floor_and_api_signal_deeper_history_vs_default() -> None:
     assert 'id="deeper_history"' in FLOOR_HTML
     assert "deeper history" in FLOOR_HTML.lower()

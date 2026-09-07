@@ -262,12 +262,29 @@ class Receipt(BaseModel):
         return any(f.parallel_status == "miss" for f in self.findings)
 
 
+class StampedFinding(BaseModel):
+    """Series print the room may treat as pack-faithful evidence."""
+
+    id: str
+    series: str = ""
+    print: str = ""
+    when: str = ""
+
+    def line(self) -> str:
+        return f"{self.id}: series={self.series} print={self.print} when={self.when}"
+
+
 class GradeArtifact(BaseModel):
     """What the discussant room votes on. Floor never posts."""
 
     packet_id: str
     research_pack_summary: str
     script: str
+    research_pack: str = ""
+    stamped_findings: list[StampedFinding] = Field(default_factory=list)
+
+    def findings_block(self) -> str:
+        return "\n".join(row.line() for row in self.stamped_findings)
 
 
 class RoomGrade(BaseModel):

@@ -73,19 +73,28 @@ def live_adk_text(name: str, prompt: str) -> str:
 
 
 def artifact_prompt(artifact: GradeArtifact) -> str:
+    pack = (artifact.research_pack or artifact.research_pack_summary or "").strip()
+    stamps = artifact.findings_block()
     return (
         "Grade this deliverable. Vote ship or recut.\n"
         "Recut requires why: not_enough_information | other.\n"
         "Bar: pack-faithful script + storyboard for the end user. Floor never posts.\n"
+        "Pack-faithful means supported by research_pack OR stamped findings. "
+        "Do not recut as invented when VO finding ids match stamped findings that carry those prints. "
+        "Absence from a short research_pack_summary is not invention.\n"
         "Flexible weave is correct (chronological, outcome-first, or tell/tone stance). "
         "Do not recut because first trigger is missing from cold-open or beat 1.\n"
         "Do not speak or require pack schema/slot ids in narration.\n"
-        "Recut only for inventing stats, empty script, leftover templates, or claims without pack support.\n"
+        "Recut only for inventing stats, empty script, leftover templates, or claims without "
+        "research_pack or finding support.\n"
+        "Prefer ship when the script is non-empty, leftover-free, and cites resolve to findings.\n"
         "Return JSON only, one of:\n"
         "{\"vote\":\"ship\"}\n"
         "{\"vote\":\"recut\",\"recut_reason\":\"not_enough_information\",\"recut_detail\":\"...\"}\n"
         "{\"vote\":\"recut\",\"recut_reason\":\"other\",\"recut_detail\":\"...\"}\n"
         f"packet_id={artifact.packet_id}\n"
+        f"research_pack:\n{pack}\n"
+        f"stamped_findings:\n{stamps}\n"
         f"research_pack_summary:\n{artifact.research_pack_summary}\n"
         f"script:\n{artifact.script}\n"
     )
