@@ -38,6 +38,27 @@ _EIGHT_IDS = (
 )
 
 
+def _hit_cite_blob(packet: Packet) -> str:
+    """Parallel hit URL + excerpt/summary + stamped print. Topic/hook are not cites."""
+    parts = [packet.research_pack or "", packet.task_spine or ""]
+    receipt = packet.receipt
+    if receipt:
+        for finding in receipt.findings:
+            if finding.parallel_status != "hit" or not (finding.parallel_url or "").strip():
+                continue
+            printed = "" if finding.print in {MISSING, "", None} else finding.print
+            parts.extend(
+                [
+                    finding.parallel_url or "",
+                    finding.claim or "",
+                    finding.note or "",
+                    printed,
+                    finding.when or "",
+                ]
+            )
+    return "\n".join(parts)
+
+
 def _pack_text(packet: Packet) -> str:
     parts = [
         packet.research_pack or "",
@@ -713,11 +734,114 @@ _SNAKE_KEY = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+){1,}\b")
 _RISK_TOPIC = re.compile(r"\b(tariffs?)\b", re.I)
 _FINDING_LIKE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$", re.I)
 _SCHEMA_MARK = re.compile(r"_|\[|\.")
+_YEAR_TOK = re.compile(r"^20\d{2}$")
+_PERSON_NAME = re.compile(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b")
+_ORG_WORD = frozenset(
+    {
+        "united",
+        "states",
+        "federal",
+        "reserve",
+        "white",
+        "house",
+        "conference",
+        "board",
+        "leading",
+        "indicators",
+        "nuclear",
+        "deal",
+        "strait",
+        "real",
+        "gross",
+        "domestic",
+    }
+)
 
 
 def _is_schema_slot(token: str) -> bool:
     """Spine/pack field path, not a finding id or a bracketed print."""
     return bool(_SCHEMA_MARK.search(token or ""))
+
+
+def _vo_lines(text: str) -> str:
+    """Drop timecode / shot-list chrome so duration digits are not spoken prints."""
+    keep: list[str] = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if re.match(r"^\d{1,2}:\d{2}", stripped):
+            continue
+        if stripped.startswith(("ACTION:", "Timed VO", "BEAT ", "ACT ")):
+            continue
+        if stripped in {"WIDE", "MCU", "NARRATOR"}:
+            continue
+        keep.append(line)
+    return "\n".join(keep)
+
+
+def _trigger_chrome(tok: str, vo: str) -> bool:
+    if not tok or not vo:
+        return False
+    return bool(re.search(rf"{re.escape(tok)}\s+trigger\b", vo, re.I))
+
+
+def uncited_claim_tokens(packet: Packet, vo: str) -> list[str]:
+    """Spoken prints with no Parallel cite / finding support. Fiction skips this bar."""
+    from onecrew.verify import _bar_in, _bars
+
+    if _invents(packet):
+        return []
+    evidence = _hit_cite_blob(packet)
+    prints = [
+        finding.print
+        for finding in (packet.receipt.findings if packet.receipt else [])
+        if finding.parallel_status == "hit"
+        and (finding.parallel_url or "").strip()
+        and finding.print not in {MISSING, "", None}
+    ]
+    body = _vo_lines(vo)
+    bad: list[str] = []
+    for tok in pack_numbers(body):
+        cleaned = tok.replace("−", "-").strip()
+        if _YEAR_TOK.fullmatch(cleaned) or _trigger_chrome(tok, body):
+            continue
+        if any(_bar_in(tok, bar) or _bar_in(bar, tok) for printed in prints for bar in _bars(printed)):
+            continue
+        if evidence and _bar_in(tok, evidence):
+            continue
+        bad.append(tok)
+    return bad
+
+
+def _strip_uncited_tokens(text: str, tokens: list[str]) -> str:
+    out = text or ""
+    for tok in sorted(set(tokens), key=len, reverse=True):
+        out = re.sub(rf"(?<![\d.]){re.escape(tok)}(?![\d.])", "", out)
+    return _tidy_vo(out) or "Hold on the cite."
+
+
+def _org_span(name: str) -> bool:
+    return any(part.lower() in _ORG_WORD for part in name.split())
+
+
+def _strip_pack_names(text: str, pack: str) -> tuple[str, bool]:
+    """Fiction: drop real person-name spans that the pack already named."""
+    names = sorted(set(_PERSON_NAME.findall(pack or "")), key=len, reverse=True)
+    out = text or ""
+    hit = False
+    for name in names:
+        if _org_span(name):
+            continue
+        nxt = re.sub(rf"\b{re.escape(name)}\b", "", out)
+        if nxt == out:
+            continue
+        hit = True
+        out = nxt
+        for part in name.split():
+            out = re.sub(rf"\b{re.escape(part)}\b", "", out)
+    if not hit:
+        return text or "", False
+    cleaned = _tidy_vo(out)
+    return cleaned or "Hold the frame.", True
 
 
 def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
@@ -834,6 +958,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     lei_nits: list[str] = []
     slot_nits: list[str] = []
     pack_blob = _pack_text(packet)
+    cite_blob = _hit_cite_blob(packet)
     pack_l = pack_blob.lower()
     for i, unit in enumerate(units):
         bid = unit.get("id") or _EIGHT_IDS[i]
@@ -852,6 +977,20 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         eyes, eye_nits = _sanitize_vo(eyes, known, pack_blob)
         slot_nits.extend(vo_nits)
         slot_nits.extend(eye_nits)
+        if _invents(packet):
+            vo, named_vo = _strip_pack_names(vo, cite_blob)
+            eyes, named_eyes = _strip_pack_names(eyes, cite_blob)
+            if named_vo or named_eyes:
+                slot_nits.append("pack person name stripped from fiction VO")
+        else:
+            uncited_vo = uncited_claim_tokens(packet, vo)
+            uncited_eyes = uncited_claim_tokens(packet, eyes)
+            if uncited_vo:
+                vo = _strip_uncited_tokens(vo, uncited_vo)
+                slot_nits.append("uncited claim")
+            if uncited_eyes:
+                eyes = _strip_uncited_tokens(eyes, uncited_eyes)
+                slot_nits.append("uncited claim")
         for fid in known:
             if f"[{fid}]" in vo and fid not in fids:
                 fids.append(fid)
@@ -914,7 +1053,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if _leftover_vo(spoken):
         return _fail_closed(packet, ["VO is leftover template"])
     holes = _missing_pack_marks(packet, spoken)
-    if holes and not held:
+    if holes and not held and not _invents(packet):
         return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
     warn = list(dict.fromkeys([*lei_nits, *slot_nits]))
     if warn:
@@ -969,10 +1108,13 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
         "Pack numbers only. Do not invent stats or topics absent from the pack. "
         "LEI and ISM stay off unless a beat cites them. "
         "Uncited LEI/ISM is a warning, not a blank draft.\n"
+        "Nonfiction: nothing uncited from Parallel cites. "
+        "Fiction: research is reference only; no real person names from the cites.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
         "Return 8-beat JSON from the pack.\n"
         f"{_PACKET_MARK}\n{json.dumps(payload, ensure_ascii=True)}\n{_PACKET_END}\n"
         f"PACK:\n{packet.research_pack or ''}\n"
+        f"CITES:\n{_hit_cite_blob(packet)}\n"
     )
 
 

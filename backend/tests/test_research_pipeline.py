@@ -1008,7 +1008,8 @@ def test_off_print_substring_does_not_rewrite_vo(monkeypatch) -> None:
     written = write_vo_from_pack(packet)
     assert written.script
     spoken = written.script + "".join(b.vo for b in written.beats)
-    assert "155.6" in spoken
+    assert "USREC=0" in spoken
+    assert written.beats
 
 
 def _slot_token_beats() -> str:
@@ -1839,11 +1840,158 @@ def test_room_instruction_pack_or_findings_is_authority() -> None:
     assert "finding" in room
     assert "research_pack" in room or "research pack" in room
     assert "invent" in room
+    assert "parallel" in room and "cite" in room
+    assert "producer" in room or "director" in room
+    assert "quality" in room
     packet = _thin_summary_rich_findings_packet()
     bar = artifact_prompt(make_grade_artifact(packet)).lower()
     assert "finding" in bar
     assert "research_pack" in bar or "research pack" in bar
     assert "summary" in bar
+    assert "parallel_cites" in bar
+
+
+def _cite_backed_findings() -> list[Finding]:
+    note = "Parallel URL on this row."
+    return [
+        Finding(
+            id="sahm-fixture",
+            claim="Sahm printed −0.03 versus the 0.50 trigger.",
+            stamp="grounded",
+            title="Sahm",
+            series="SAHMREALTIME",
+            print="−0.03",
+            when="June 2026",
+            parallel_url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+            parallel_status="hit",
+            note=note,
+        ),
+        Finding(
+            id="gdp-fixture",
+            claim="Real GDP increased 2.1% in Q1.",
+            stamp="grounded",
+            title="GDP",
+            series="GDP",
+            print="2.1%",
+            when="2026 Q1",
+            parallel_url="https://fred.stlouisfed.org/series/GDP",
+            parallel_status="hit",
+            note=note,
+        ),
+    ]
+
+
+def test_room_ships_when_parallel_cite_supports_vo() -> None:
+    findings = _cite_backed_findings()
+    sahm, gdp = findings[0], findings[1]
+    packet = Packet(
+        id="oc-cite-supports-vo",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script=(
+            "NARRATOR\n"
+            f"Sahm alarm {sahm.print} vs the 0.50 trigger. "
+            f"GDP printed {gdp.print.rstrip('%')} in Q1."
+        ),
+        research_pack=_geo_only_pack_head(),
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=findings,
+    )
+    artifact = make_grade_artifact(packet)
+    assert sahm.parallel_url in artifact.parallel_cites
+    assert sahm.print in artifact.parallel_cites
+    grade = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="other",
+            recut_detail=(
+                "Sahm/−0.03/0.50 trigger and GDP 2.1 Q1 are invented / "
+                "unsupported by research pack or stamped findings"
+            ),
+        ),
+    )
+    assert grade.vote == "ship"
+    quality = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="other",
+            recut_detail="pacing is wooden; cold-open does not earn the turn",
+        ),
+    )
+    assert quality.vote == "recut"
+    assert quality.recut_reason == "other"
+
+
+def test_nonfiction_refuses_uncited_claim(monkeypatch) -> None:
+    from onecrew.script import write_script
+
+    packet = _hold_packet(disposition="READY")
+    dirty = _HOLD_VERTEX_BEATS.replace(
+        "Nonfarm payrolls fell −41,000.",
+        "Unemployment printed 9.1% with no cite.",
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return dirty
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    written = write_script(packet)
+    spoken = (written.script or "") + "".join(b.vo for b in written.beats)
+    assert written.script
+    assert written.beats
+    assert "9.1" not in spoken
+    reason = (written.receipt.hold_reason or "") if written.receipt else ""
+    reason += " ".join(row.detail for row in written.exclusions)
+    assert "uncited claim" in reason.lower()
+
+
+def test_fiction_strips_real_names_from_pack(monkeypatch) -> None:
+    from onecrew.script import write_script
+
+    person = "Jane Quorum"
+    pack = f"{person} testified at Treasury. Research is reference only."
+    packet = Packet(
+        id="oc-fiction-names",
+        topic="Port family thriller",
+        hook="Port family thriller",
+        script="",
+        platform="youtube",
+        cut="feature_film",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Family thriller on a tanker",
+        research_pack=pack,
+        task_spine=pack,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="READY",
+        findings=_cite_backed_findings(),
+    )
+    named = _HOLD_VERTEX_BEATS.replace(
+        "Three objects from the pack.",
+        f"{person} walks the deck. Jane stays. (frame)",
+    )
+
+    def fake_vertex(_prompt: str) -> str:
+        return named
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", fake_vertex)
+    written = write_script(packet)
+    spoken = (written.script or "") + "".join(b.vo for b in written.beats)
+    assert written.script
+    assert person not in spoken
+    assert "Jane" not in spoken
+    assert "(frame)" in spoken or "(frame)" in (written.script or "")
 
 
 def test_floor_and_api_signal_deeper_history_vs_default() -> None:

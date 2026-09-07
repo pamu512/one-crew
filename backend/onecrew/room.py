@@ -36,11 +36,10 @@ _INVENT_FROM_SUMMARY = re.compile(
     re.I,
 )
 _INVENT_LANG = re.compile(
-    r"\binvent(?:s|ed|ing)?\b|absent from|missing from|not in the (?:pack|summary)",
+    r"\binvent(?:s|ed|ing)?\b|absent from|missing from|not in the (?:pack|summary|cites?)",
     re.I,
 )
 _TARIFF_TOPIC = re.compile(r"\btariff", re.I)
-_FINDING_CITE = re.compile(r"\[([a-z0-9][a-z0-9._-]{2,80})\]", re.I)
 _TIMECODE_LINE = re.compile(r"^\d{1,2}:\d{2}")
 _YEAR_TOK = re.compile(r"^20\d{2}$")
 
@@ -66,12 +65,16 @@ def _stamped_findings(packet: Packet) -> list[StampedFinding]:
     for finding in (packet.receipt.findings if packet.receipt else []):
         if finding.id in leftover:
             continue
+        if finding.parallel_status != "hit" or not (finding.parallel_url or "").strip():
+            continue
         rows.append(
             StampedFinding(
                 id=finding.id,
                 series=_blank_stamp(finding.series),
                 print=_blank_stamp(finding.print),
                 when=(finding.when or "").strip(),
+                claim=(finding.claim or "").strip(),
+                url=(finding.parallel_url or "").strip(),
             )
         )
     return rows
@@ -82,9 +85,14 @@ def make_grade_artifact(packet: Packet) -> GradeArtifact:
     excerpt = pack if len(pack) <= _PACK_EXCERPT else pack[:_PACK_EXCERPT].rstrip() + "…"
     stamps = _stamped_findings(packet)
     stamp_block = "\n".join(row.line() for row in stamps)
+    cite_block = "\n".join(
+        f"{row.url} {row.claim}".strip() for row in stamps if row.url or row.claim
+    )
     parts: list[str] = []
     if excerpt:
         parts.append(excerpt)
+    if cite_block:
+        parts.append("Parallel cites (hit URL + excerpt/summary):\n" + cite_block)
     if stamp_block:
         parts.append("Stamped findings (series/print/when/id):\n" + stamp_block)
     return GradeArtifact(
@@ -93,6 +101,7 @@ def make_grade_artifact(packet: Packet) -> GradeArtifact:
         script=packet.script or "",
         research_pack=excerpt,
         stamped_findings=stamps,
+        parallel_cites=cite_block,
     )
 
 
@@ -120,35 +129,6 @@ def _beat1_trigger_nit(grade: RoomGrade, artifact: GradeArtifact) -> bool:
     return bool(_BEAT1_TRIGGER_NIT.search(grade.recut_detail or ""))
 
 
-def _cited_finding_ids(script: str) -> list[str]:
-    return _FINDING_CITE.findall(script or "")
-
-
-def _cites_resolve_to_findings(artifact: GradeArtifact) -> bool:
-    known = {row.id: row for row in artifact.stamped_findings}
-    if not known:
-        return False
-    cites = _cited_finding_ids(artifact.script)
-    if not cites:
-        return False
-    return all(cid in known for cid in cites)
-
-
-def _cited_prints_in_script(artifact: GradeArtifact) -> bool:
-    known = {row.id: row for row in artifact.stamped_findings}
-    cites = [cid for cid in _cited_finding_ids(artifact.script) if cid in known]
-    if not cites:
-        return False
-    script = artifact.script or ""
-    for cid in cites:
-        printed = known[cid].print
-        if not printed:
-            continue
-        if not any(_bar_in(bar, script) for bar in _bars(printed)):
-            return False
-    return True
-
-
 def _vo_body(script: str) -> str:
     """Drop timecode / shot-list chrome so duration digits are not spoken prints."""
     keep: list[str] = []
@@ -172,22 +152,47 @@ def _tok_on_evidence(tok: str, prints: list[str], pack: str) -> bool:
     return bool(pack) and _bar_in(tok, pack)
 
 
+def _trigger_chrome(tok: str, vo: str) -> bool:
+    """Rule threshold next to 'trigger' is definition chrome, not a minted series print."""
+    if not tok or not vo:
+        return False
+    return bool(re.search(rf"{re.escape(tok)}\s+trigger\b", vo, re.I))
+
+
 def _spoken_prints_map_to_findings(artifact: GradeArtifact) -> bool:
-    """Every spoken print is on a cited finding or in the pack. Years/timecodes are not prints."""
+    """Every spoken print is on a stamped finding or in the pack. Years/timecodes are not prints."""
     from onecrew.script import pack_numbers
 
-    known = {row.id: row for row in artifact.stamped_findings}
-    cites = [cid for cid in _cited_finding_ids(artifact.script) if cid in known]
-    prints = [known[cid].print for cid in cites if known[cid].print]
-    pack = artifact.research_pack or ""
-    for tok in pack_numbers(_vo_body(artifact.script)):
+    prints = [row.print for row in artifact.stamped_findings if row.print]
+    pack = "\n".join(
+        part
+        for part in (
+            artifact.research_pack or "",
+            artifact.parallel_cites or "",
+            artifact.findings_block(),
+        )
+        if part
+    )
+    vo = _vo_body(artifact.script)
+    for tok in pack_numbers(vo):
         cleaned = tok.replace("−", "-").strip()
         if _YEAR_TOK.fullmatch(cleaned):
+            continue
+        if _trigger_chrome(tok, vo):
             continue
         if _tok_on_evidence(tok, prints, pack):
             continue
         return False
     return True
+
+
+def _prints_pack_faithful(artifact: GradeArtifact) -> bool:
+    script = (artifact.script or "").strip()
+    if not script:
+        return False
+    if not _leftover_free(script):
+        return False
+    return _spoken_prints_map_to_findings(artifact)
 
 
 def _leftover_free(script: str) -> bool:
@@ -196,38 +201,28 @@ def _leftover_free(script: str) -> bool:
     return not _leftover_vo(script)
 
 
-def _ready_to_ship(artifact: GradeArtifact) -> bool:
-    script = (artifact.script or "").strip()
-    if not script:
-        return False
-    if not _leftover_free(script):
-        return False
-    return (
-        _cites_resolve_to_findings(artifact)
-        and _cited_prints_in_script(artifact)
-        and _spoken_prints_map_to_findings(artifact)
-    )
-
-
 def _unsupported_topic_recut(grade: RoomGrade, artifact: GradeArtifact) -> bool:
     if not _TARIFF_TOPIC.search(grade.recut_detail or ""):
         return False
-    evidence = f"{artifact.research_pack or ''} {artifact.findings_block()}"
+    evidence = (
+        f"{artifact.research_pack or ''} {artifact.parallel_cites or ''} "
+        f"{artifact.findings_block()}"
+    )
     return "tariff" not in evidence.lower()
 
 
 def _false_invent_recut(grade: RoomGrade, artifact: GradeArtifact) -> bool:
-    """Summary-only invent recut when every spoken print maps to a finding id."""
+    """Invent = not in Parallel cites. Coerce recut→ship when every spoken print maps."""
     if grade.vote != "recut":
         return False
-    if not _ready_to_ship(artifact):
+    if not _prints_pack_faithful(artifact):
         return False
     if _unsupported_topic_recut(grade, artifact):
         return False
     detail = grade.recut_detail or ""
     if _INVENT_FROM_SUMMARY.search(detail):
         return True
-    if grade.recut_reason == "not_enough_information" and _INVENT_LANG.search(detail):
+    if _INVENT_LANG.search(detail):
         return True
     return False
 
