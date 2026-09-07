@@ -1419,6 +1419,73 @@ def test_critic_instruction_does_not_skip_writer() -> None:
     assert "blank" in joined and "lei" in joined
 
 
+def test_writer_and_room_use_outcome_first_weave() -> None:
+    from onecrew.agent.adk_agents import ROOM_INSTRUCTION, SCRIPT_WRITER_INSTRUCTION
+    from onecrew.agent.adk_run import artifact_prompt
+    from onecrew.script import _eight_from_pack, _prompt
+
+    writer = SCRIPT_WRITER_INSTRUCTION.lower()
+    assert "outcome" in writer or "current" in writer
+    assert "first trigger" in writer
+    assert "later" in writer or "mid" in writer
+    room = ROOM_INSTRUCTION.lower()
+    assert "cold-open" in room or "beat 1" in room
+    assert "recut" in room
+    spine = (
+        "what_counts_as_the_first_trigger: Geopolitical episode and energy-price surge "
+        "in February/March 2026.\n"
+        "USREC=0 (August 2026). Nonfarm payrolls +162k in August 2026."
+    )
+    packet = Packet(
+        id="oc-first-trigger-prompt",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="USREC=0 smashed into payrolls +162k.",
+        research_pack=spine,
+        task_spine=spine,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=_hold_findings(),
+    )
+    prompt = _prompt(packet, _eight_from_pack(packet)).lower()
+    assert "first trigger" in prompt
+    assert "outcome" in prompt or "current" in prompt
+    art = make_grade_artifact(packet)
+    bar = artifact_prompt(art).lower()
+    assert "invent" in bar or "leftover" in bar or "empty" in bar
+    assert "beat 1" in bar or "cold-open" in bar
+
+
+def test_room_does_not_recut_for_first_trigger_missing_from_beat_1() -> None:
+    artifact = GradeArtifact(
+        packet_id="oc-outcome-first",
+        research_pack_summary="what_counts_as_the_first_trigger: February/March 2026 energy shock.",
+        script="USREC=0 smashed into payrolls +162k.\nWhat started the episode: February/March 2026 energy shock.",
+    )
+    grade = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="not_enough_information",
+            recut_detail="first trigger missing from cold-open / beat 1",
+        ),
+    )
+    assert grade.vote == "ship"
+    still = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="not_enough_information",
+            recut_detail="need first trigger cite",
+        ),
+    )
+    assert still.vote == "recut"
+    assert still.recut_reason == "not_enough_information"
+
+
 def test_floor_and_api_signal_deeper_history_vs_default() -> None:
     assert 'id="deeper_history"' in FLOOR_HTML
     assert "deeper history" in FLOOR_HTML.lower()

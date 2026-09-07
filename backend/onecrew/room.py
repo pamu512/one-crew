@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel
@@ -22,6 +23,11 @@ MAX_PARALLEL_RESEARCH = 2
 ResearchFn = Callable[[str | None], Any]
 RewriteFn = Callable[[], None]
 GraderFn = Callable[[GradeArtifact], RoomGrade]
+_BEAT1_TRIGGER_NIT = re.compile(
+    r"(cold[- ]open|beat\s*1|first\s*~?\s*20).{0,80}(first[- ]trigger|transmission)"
+    r"|(first[- ]trigger|transmission).{0,80}(cold[- ]open|beat\s*1|first\s*~?\s*20)",
+    re.I,
+)
 
 
 class RoomLoopResult(BaseModel):
@@ -59,6 +65,15 @@ def run_adk_room(artifact: GradeArtifact) -> RoomGrade:
         return RoomGrade(vote="recut", recut_reason="other", recut_detail=f"ADK room down: {exc}")
 
 
+def _beat1_trigger_nit(grade: RoomGrade, artifact: GradeArtifact) -> bool:
+    """Placement-only nit. Outcome-first weave allows first-trigger after beat 1."""
+    if grade.vote != "recut":
+        return False
+    if not (artifact.script or "").strip():
+        return False
+    return bool(_BEAT1_TRIGGER_NIT.search(grade.recut_detail or ""))
+
+
 def grade_room(artifact: GradeArtifact, *, grader: GraderFn | None = None) -> RoomGrade:
     """ADK room when Vertex is up. grader= is the test stub hook."""
     if grader is not None:
@@ -69,6 +84,8 @@ def grade_room(artifact: GradeArtifact, *, grader: GraderFn | None = None) -> Ro
         raise ValueError("recut requires why: not_enough_information | other")
     if grade.vote == "recut" and grade.recut_reason == "other" and not (grade.recut_detail or "").strip():
         raise ValueError("recut other requires a short reason")
+    if _beat1_trigger_nit(grade, artifact):
+        return RoomGrade(vote="ship")
     return grade
 
 
