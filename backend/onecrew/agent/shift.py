@@ -24,6 +24,7 @@ from onecrew.picks import require_picks
 from onecrew.rails import assess_rails
 from onecrew.receipt import (
     ReceiptInvalidError,
+    ReceiptWriteOnceError,
     attach_frames,
     credit_hold_receipt,
     hold_receipt,
@@ -771,7 +772,7 @@ def _board(packet: Packet, rails: Rails) -> list:
 
 
 def run_live_packet(shift: ShiftRecord) -> Packet:
-    """Spend path. Picks → sources → script → storyboard. Boards are not optional."""
+    """Spend path. Picks → Parallel pack → ADK writer → ADK room → storyboard on ship."""
     require_picks(
         shift.topic,
         shift.platform,
@@ -826,49 +827,15 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     receipt, leftover, hit_urls, spine = _research(fresh, rails, shift.depth)
     fresh.task_spine = spine
     fresh.parallel_research_loops = 1
-    if receipt.disposition == "HOLD":
-        try:
-            write_receipt(fresh, receipt)
-        except ReceiptInvalidError as exc:
-            prior = (receipt.hold_reason or "").strip()
-            receipt.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
-            receipt.written = True
-            receipt.packet_id = fresh.id
-            fresh.receipt = receipt
-            fresh.status = "hold"
-        if receipt.findings:
-            fresh.script = ""
-            fresh.beats = []
-        else:
-            write_vo_from_pack(fresh)
-        stamp_collisions(fresh, rails)
-        attach_frames(fresh, [], rails=rails)
-        if leftover:
-            fresh.exclusions = leftover
-        elif not fresh.exclusions:
-            fresh.exclusions = [
-                Exclusion(
-                    what="Live Parallel search",
-                    reason="rails_down" if not rails.parallel else "not_searched",
-                    detail=receipt.hold_reason or "Receipt HOLD. No invented source.",
-                )
-            ]
-        if "credit" in (receipt.hold_reason or "").lower() or "402" in (
-            receipt.hold_reason or ""
-        ):
-            fresh.collision_hold_reason = (
-                "warning, not a clearance. Parallel credit. "
-                "Never collision=no without a search of the finished VO."
-            )
-        write_research_pack(fresh, hit_urls=hit_urls)
-        store.upsert_packet(fresh)
-        return fresh
-
+    verify_held = receipt.disposition == "HOLD"
     try:
         write_receipt(fresh, receipt)
     except ReceiptInvalidError as exc:
-        sanitize_stamps(list(receipt.findings or []))
-        receipt.disposition = "HOLD"
+        if receipt.disposition != "HOLD":
+            sanitize_stamps(list(receipt.findings or []))
+            receipt.disposition = "HOLD"
+            leftover = _hold_account_hits(hit_urls, list(leftover or []))
+        verify_held = True
         prior = (receipt.hold_reason or "").strip()
         receipt.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
         receipt.written = False
@@ -879,17 +846,25 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             receipt.packet_id = fresh.id
             fresh.receipt = receipt
             fresh.status = "hold"
-        if receipt.findings:
-            fresh.script = ""
-            fresh.beats = []
-        else:
-            write_vo_from_pack(fresh)
-        stamp_collisions(fresh, rails)
-        attach_frames(fresh, [], rails=rails)
-        fresh.exclusions = _hold_account_hits(hit_urls, list(leftover or []))
-        write_research_pack(fresh, hit_urls=hit_urls)
-        store.upsert_packet(fresh)
-        return fresh
+    if verify_held:
+        if leftover:
+            fresh.exclusions = leftover
+        elif not fresh.exclusions:
+            leftover = [
+                Exclusion(
+                    what="Live Parallel search",
+                    reason="rails_down" if not rails.parallel else "not_searched",
+                    detail=receipt.hold_reason or "Receipt HOLD. No invented source.",
+                )
+            ]
+            fresh.exclusions = leftover
+        if "credit" in (receipt.hold_reason or "").lower() or "402" in (
+            receipt.hold_reason or ""
+        ):
+            fresh.collision_hold_reason = (
+                "warning, not a clearance. Parallel credit. "
+                "Never collision=no without a search of the finished VO."
+            )
     write_vo_from_pack(fresh)
 
     def _research_again(missing_ask: str | None = None) -> None:
@@ -912,6 +887,9 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                 write_receipt(fresh, rec)
             except ReceiptInvalidError:
                 fresh.receipt = rec
+            except ReceiptWriteOnceError:
+                # ponytail: write-once already fired. Pack/spine already updated for rewrite.
+                pass
         else:
             fresh.receipt = rec
 

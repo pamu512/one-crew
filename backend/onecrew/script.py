@@ -21,7 +21,6 @@ _LEFTOVER_VO = re.compile(
     r"grounded event inside\s+\S+:|fringe claim about\s+|widely repeated frame about\s+",
     re.I,
 )
-_OFF_UNLESS_CITED = ("LEI", "+0.2%", "ISM", "55.6")
 _PACKET_MARK = "<<<PACKET>>>"
 _PACKET_END = "<<<END>>>"
 _SHORT = frozenset({"tiktok-length", "shorts"})
@@ -133,6 +132,9 @@ def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
     packet.beats = []
     packet.status = "hold"
     detail = "; ".join(h for h in holes if h.strip()) or "script held"
+    prior = next((row for row in packet.exclusions if row.what == _VERTEX_HOLE), None)
+    if prior is not None and (prior.detail or "").strip() and prior.detail not in detail:
+        detail = f"{prior.detail}; {detail}"
     kept = [row for row in packet.exclusions if row.what != _VERTEX_HOLE]
     kept.append(Exclusion(what=_VERTEX_HOLE, reason="rails_down", detail=detail))
     packet.exclusions = kept
@@ -198,6 +200,24 @@ _MONTH_YEAR = re.compile(
     r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
     re.I,
 )
+_TRIGGER_LABEL = re.compile(
+    r"(?:what_counts_as_the_first_trigger|first[\s_-]+trigger|proximate[\s_-]+trigger|"
+    r"first[\s_-]+transmission)\s*[:\-–—]\s*(.+)",
+    re.I,
+)
+_TRIGGER_DATE = re.compile(
+    r"(?:January|February|March|April|May|June|July|August|September|October|November|December|"
+    r"Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+    r"(?:\s*/\s*(?:January|February|March|April|May|June|July|August|September|October|November|December|"
+    r"Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec))?"
+    r"\s+\d{4}",
+    re.I,
+)
+_TRIGGER_MONTH = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b",
+    re.I,
+)
 
 
 def _month_year(when: str) -> tuple[str, str] | None:
@@ -205,6 +225,41 @@ def _month_year(when: str) -> tuple[str, str] | None:
     if not match:
         return None
     return (match.group(1).lower(), match.group(2))
+
+
+def _first_trigger_text(packet: Packet) -> str:
+    """Dated first-trigger / first transmission from spine or pack. Empty if none."""
+    blob = "\n".join([packet.task_spine or "", packet.research_pack or ""])
+    for match in _TRIGGER_LABEL.finditer(blob):
+        snippet = (match.group(1) or "").strip().split("\n")[0].strip(" .;")
+        if snippet and _TRIGGER_DATE.search(snippet):
+            return snippet[:240]
+    exec_m = re.search(r"executive_summary\s*[:\-–—]\s*(.+)", blob, re.I)
+    if exec_m:
+        para = (exec_m.group(1) or "").strip()
+        if re.search(r"proximate\s+trigger|first\s+transmission|first\s+trigger", para, re.I):
+            dated = _TRIGGER_DATE.search(para)
+            if dated:
+                return para[:240]
+    return ""
+
+
+def _trigger_voiced(vo: str, trigger: str) -> bool:
+    if not trigger or not vo:
+        return False
+    v = (vo or "").lower()
+    t = trigger.lower()
+    years = re.findall(r"\b20\d{2}\b", t)
+    if years and not any(y in v for y in years):
+        return False
+    months = [m.group(0).lower() for m in _TRIGGER_MONTH.finditer(t)]
+    if months and not any(m in v for m in months):
+        return False
+    return bool(years or months)
+
+
+def _promise_trigger_vo(packet: Packet, trigger: str) -> str:
+    return _voice(f"What started the episode: {trigger}.", packet)
 
 
 def _same_month(left: str, right: str) -> bool:
@@ -291,13 +346,26 @@ def _missing_pack_marks(packet: Packet, vo: str) -> list[str]:
     return holes
 
 
-def _accept_units(packet: Packet, units: list[dict] | None, *, spine: list[dict] | None = None) -> bool:
+def _mint_held(packet: Packet, mint_holes: list[str] | None) -> bool:
+    if mint_holes:
+        return True
+    return packet.receipt is not None and packet.receipt.disposition == "HOLD"
+
+
+def _accept_units(
+    packet: Packet,
+    units: list[dict] | None,
+    *,
+    spine: list[dict] | None = None,
+    mint_holes: list[str] | None = None,
+) -> bool:
     if not units or len(units) != 8:
         return False
     spoken = _units_spoken(units)
     if _leftover_vo(spoken):
         return False
-    if _missing_pack_marks(packet, spoken):
+    # HOLD/mint-hole packets must not require speaking broken minted prints.
+    if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
     if spine:
         key = {"cold-open", "gdp", "labor", "turn"}
@@ -324,6 +392,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     if unemp and not unemp_print and "4.1" in (unemp.claim or ""):
         unemp_print = "4.1%"
     sahm_print = _print_of(sahm, "")
+    trigger = _first_trigger_text(packet)
     if usrec and payrolls:
         labor = (
             f"Labor: payrolls {pay_print} and unemployment {unemp_print}. Named BLS."
@@ -342,12 +411,20 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             },
             {
                 "id": "promise",
-                "vo": _voice(
-                    "Three objects: the official call, the GDP prints, the Sahm alarm. "
-                    "The title is a question we will not answer with a forecast.",
-                    packet,
+                "vo": (
+                    _promise_trigger_vo(packet, trigger)
+                    if trigger
+                    else _voice(
+                        "Three objects: the official call, the GDP prints, the Sahm alarm. "
+                        "The title is a question we will not answer with a forecast.",
+                        packet,
+                    )
                 ),
-                "eyes": "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map.",
+                "eyes": (
+                    "Dated first-trigger from the pack. Official series stay on later cards."
+                    if trigger
+                    else "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map."
+                ),
                 "finding_ids": [f.id for f in (usrec, gdp, sahm) if f],
             },
             {
@@ -458,11 +535,19 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         },
         {
             "id": "promise",
-            "vo": _voice(
-                "Three objects from the pack. The title is a question we will not answer with a forecast.",
-                packet,
+            "vo": (
+                _promise_trigger_vo(packet, trigger)
+                if trigger
+                else _voice(
+                    "Three objects from the pack. The title is a question we will not answer with a forecast.",
+                    packet,
+                )
             ),
-            "eyes": "Three pack objects on screen. No leftover map.",
+            "eyes": (
+                "Dated first-trigger from the pack. Official series stay on later cards."
+                if trigger
+                else "Three pack objects on screen. No leftover map."
+            ),
             "finding_ids": [first.id] if first else [],
         },
         {
@@ -474,7 +559,11 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         {
             "id": "labor",
             "vo": _voice(f"{(second or first).claim}{_cite(second or first)}" if (second or first) else smash, packet),
-            "eyes": f"Named official series: {(second or first).claim}. Official page only.",
+            "eyes": (
+                f"Named official series: {(second or first).claim}. Official page only."
+                if (second or first)
+                else "Official series cards only."
+            ),
             "finding_ids": [(second or first).id] if (second or first) else [],
         },
         {
@@ -509,12 +598,129 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     return units
 
 
-def _vo_has_uncited_off(vo: str, fids: list[str]) -> bool:
+_OFF_NAME = re.compile(r"\bLEI\b|\bISM\b")
+_OFF_PRINT = re.compile(r"\+0\.2%|\b55\.6\b")
+_OFF_TOKEN = re.compile(r"\bLEI\b|\bISM\b|\+0\.2%|\b55\.6\b")
+
+
+def _off_cited(fids: list[str]) -> bool:
     allowed = {x.lower() for x in fids}
-    if any(tok in allowed for tok in ("lei-off", "ism-off")):
+    return any(
+        tok == "lei" or tok.startswith("lei-") or tok == "ism" or tok.startswith("ism-")
+        for tok in allowed
+    )
+
+
+def _vo_has_uncited_off(vo: str, fids: list[str]) -> bool:
+    if _off_cited(fids):
         return False
-    blob = vo or ""
-    return any(token in blob for token in _OFF_UNLESS_CITED)
+    return bool(_OFF_TOKEN.search(vo or ""))
+
+
+def _soften_uncited_off(text: str, fids: list[str]) -> tuple[str, bool]:
+    """Strip uncited LEI/ISM names. Digit leftovers stay unless next to a name."""
+    if not _vo_has_uncited_off(text, fids):
+        return text, False
+    if not _OFF_NAME.search(text or ""):
+        return text, True
+    cleaned = _OFF_PRINT.sub("", _OFF_NAME.sub("", text))
+    cleaned = _tidy_vo(cleaned)
+    if not cleaned:
+        return "Hold on the pack number.", True
+    return cleaned, True
+
+
+def _tidy_vo(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", text or "")
+    cleaned = re.sub(r"\s+([,.;:])", r"\1", cleaned)
+    cleaned = re.sub(r"\(\s*\)", "", cleaned)
+    cleaned = re.sub(r"\[\s*\]", "", cleaned)
+    return cleaned.strip(" ,.;:-")
+
+
+def _map_brackets(text: str, fn) -> str:
+    """Replace top-level [...] spans, including one nested index like field[7]."""
+    src = text or ""
+    out: list[str] = []
+    i = 0
+    n = len(src)
+    while i < n:
+        if src[i] != "[":
+            out.append(src[i])
+            i += 1
+            continue
+        depth = 0
+        j = i
+        closed = False
+        while j < n:
+            if src[j] == "[":
+                depth += 1
+            elif src[j] == "]":
+                depth -= 1
+                if depth == 0:
+                    out.append(fn(src[i + 1 : j]))
+                    i = j + 1
+                    closed = True
+                    break
+            j += 1
+        if not closed:
+            out.append(src[i])
+            i += 1
+    return "".join(out)
+
+
+# ponytail: snake_case in VO is a pack/spine field path, not a finding id.
+# Ceiling: a sourced claim that literally uses snake_case. Upgrade: allowlist from pack prose.
+_SNAKE_KEY = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+){1,}\b")
+_RISK_TOPIC = re.compile(r"\b(tariffs?)\b", re.I)
+_FINDING_LIKE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$", re.I)
+_SCHEMA_MARK = re.compile(r"_|\[|\.")
+
+
+def _is_schema_slot(token: str) -> bool:
+    """Spine/pack field path, not a finding id or a bracketed print."""
+    return bool(_SCHEMA_MARK.search(token or ""))
+
+
+def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
+    """Strip pack schema/slot cites. Keep real finding ids. Drop topics absent from pack."""
+    nits: list[str] = []
+
+    def keep_or_drop(inner: str) -> str:
+        token = (inner or "").strip()
+        if token in known:
+            return f"[{token}]"
+        if _is_schema_slot(token) or _FINDING_LIKE.match(token):
+            nits.append("pack slot token stripped from VO")
+            return ""
+        return f"[{token}]"
+
+    cleaned = _map_brackets(text or "", keep_or_drop)
+
+    def drop_snake(match: re.Match[str]) -> str:
+        word = match.group(0)
+        if word in known:
+            return word
+        nits.append("pack slot token stripped from VO")
+        return ""
+
+    cleaned = _SNAKE_KEY.sub(drop_snake, cleaned)
+    pack_l = (pack_blob or "").lower()
+
+    def drop_topic(match: re.Match[str]) -> str:
+        word = match.group(0)
+        if "tariff" in pack_l:
+            return word
+        nits.append(f"invented topic absent from pack: {word.lower()}")
+        return ""
+
+    cleaned = _RISK_TOPIC.sub(drop_topic, cleaned)
+    if not nits:
+        return text or "", []
+    cleaned = _tidy_vo(cleaned)
+    if not cleaned:
+        cleaned = "Hold on the pack number."
+    return cleaned, list(dict.fromkeys(nits))
 
 
 def _tc(total_s: int, *, hours: bool) -> str:
@@ -526,10 +732,57 @@ def _tc(total_s: int, *, hours: bool) -> str:
     return f"{m:02d}:{s:02d}"
 
 
+def _vo_uses_pack(packet: Packet, vo: str) -> bool:
+    pack_n = {n.replace("−", "-") for n in _numbers_in(_pack_text(packet))}
+    vo_n = {n.replace("−", "-") for n in _numbers_in(vo)}
+    return bool(pack_n & vo_n)
+
+
+def _vertex_keeps(
+    packet: Packet, units: list[dict] | None, *, mint_holes: list[str] | None = None
+) -> bool:
+    """Keep leftover-free Vertex 8-beats that cite findings or speak pack numbers."""
+    if not units or len(units) != 8:
+        return False
+    spoken = _units_spoken(units)
+    if _leftover_vo(spoken) or _GROUNDED_EVENT.search(spoken):
+        return False
+    known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
+    cited = any(fid in known for u in units for fid in (u.get("finding_ids") or []))
+    if cited or _vo_uses_pack(packet, spoken):
+        return True
+    return _mint_held(packet, mint_holes)
+
+
+def _warn_mint(packet: Packet, holes: list[str]) -> None:
+    extra = "; ".join(dict.fromkeys(h for h in holes if h.strip()))
+    if not extra:
+        return
+    receipt = packet.receipt
+    if receipt is None:
+        return
+    receipt.disposition = "HOLD"
+    prior = (receipt.hold_reason or "").strip()
+    if extra not in prior:
+        receipt.hold_reason = f"{prior} {extra}".strip() if prior else extra
+
+
+def _pack_source(packet: Packet) -> bool:
+    if (packet.research_pack or "").strip() or (packet.task_spine or "").strip():
+        return True
+    receipt = packet.receipt
+    return bool(receipt and receipt.findings)
+
+
 def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if len(units) != 8:
         return _fail_closed(packet, ["writer must emit 8 beats"])
+    held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
+    spoken_all = _units_spoken(units)
+    pack_grounded = _vo_uses_pack(packet, spoken_all) or any(
+        fid in known for u in units for fid in (u.get("finding_ids") or [])
+    )
     cut = require_cut(packet.cut) if packet.cut else None
     short = cut in _SHORT
     hours = bool(cut and is_long_cut(cut) and not short)
@@ -538,35 +791,40 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     lean = packet.script_lean or "centered_independent"
     beats: list[ScriptBeat] = []
     cursor = 0
+    lei_nits: list[str] = []
+    slot_nits: list[str] = []
+    pack_blob = _pack_text(packet)
+    pack_l = pack_blob.lower()
     for i, unit in enumerate(units):
         bid = unit.get("id") or _EIGHT_IDS[i]
         fids = [fid for fid in (unit.get("finding_ids") or []) if fid in known]
         vo = (unit.get("vo") or "").strip()
         eyes = (unit.get("eyes") or "").strip()
         hole = "sahm hole" in f"{vo} {eyes}".lower() or "no matching url" in f"{vo} {eyes}".lower()
+        if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
+            return _fail_closed(packet, ["VO is leftover grounded-event template"])
+        if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in pack_l:
+            return _fail_closed(packet, ["invented leftover cast"])
+        if "hormuz" not in pack_l and "jcpoa" not in pack_l:
+            if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
+                return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
+        vo, vo_nits = _sanitize_vo(vo, known, pack_blob)
+        eyes, eye_nits = _sanitize_vo(eyes, known, pack_blob)
+        slot_nits.extend(vo_nits)
+        slot_nits.extend(eye_nits)
+        for fid in known:
+            if f"[{fid}]" in vo and fid not in fids:
+                fids.append(fid)
         if not fids and known and not hole:
-            return _fail_closed(packet, [f"{bid} cites nothing in the pack"])
+            if not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
+                slot_nits.append(f"{bid} cites nothing in the pack")
         for fid in fids:
             if f"[{fid}]" not in vo:
                 vo = f"{vo} [{fid}]"
-        if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
-            return _fail_closed(packet, ["VO is leftover grounded-event template"])
-        if _vo_has_uncited_off(vo, fids):
-            return _fail_closed(packet, ["LEI/ISM spoken without a cited beat"])
-        if any(w in vo.lower() for w in ("leila", "reza")) and "leila" not in _pack_text(packet).lower():
-            return _fail_closed(packet, ["invented leftover cast"])
-        pack_blob = " ".join(
-            [
-                packet.research_pack or "",
-                packet.task_spine or "",
-                packet.topic or "",
-                packet.hook or "",
-                *(f.claim for f in _live_findings(packet)),
-            ]
-        ).lower()
-        if "hormuz" not in pack_blob and "jcpoa" not in pack_blob:
-            if any(w in vo.lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share")):
-                return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
+        vo, stripped_vo = _soften_uncited_off(vo, fids)
+        eyes, stripped_eyes = _soften_uncited_off(eyes, fids)
+        if stripped_vo or stripped_eyes:
+            lei_nits.append("LEI/ISM spoken without a cited beat")
         dur = durs[i]
         beats.append(
             ScriptBeat(
@@ -616,28 +874,61 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if _leftover_vo(spoken):
         return _fail_closed(packet, ["VO is leftover template"])
     holes = _missing_pack_marks(packet, spoken)
-    if holes:
+    if holes and not held:
         return _fail_closed(packet, [f"pack numbers missing from VO: {', '.join(holes)}"])
+    warn = list(dict.fromkeys([*lei_nits, *slot_nits]))
+    if warn:
+        _warn_mint(packet, warn)
+        packet.exclusions.append(Exclusion(what=_VERTEX_HOLE, reason="other", detail="; ".join(warn)))
     packet.status = "ready" if packet.receipt is None or packet.receipt.disposition != "HOLD" else "hold"
     return packet
 
 
+def _weave_first_trigger(packet: Packet, units: list[dict]) -> list[dict]:
+    """Outcome-first: never rewrite cold-open. If pack has a dated trigger, voice it later."""
+    trigger = _first_trigger_text(packet)
+    if not trigger or not units or len(units) != 8:
+        return units
+    if _trigger_voiced(_units_spoken(units), trigger):
+        return units
+    later = dict(units[1])
+    later["vo"] = _promise_trigger_vo(packet, trigger)
+    later["eyes"] = "Dated first-trigger from the pack. Official series stay on later cards."
+    units = list(units)
+    units[1] = later
+    return units
+
+
 def _prompt(packet: Packet, units: list[dict]) -> str:
+    trigger = _first_trigger_text(packet)
     payload = {
         "id": packet.id,
         "topic": packet.topic,
+        "platform": packet.platform,
         "tell": packet.tell,
         "tone": packet.tone,
         "cut": packet.cut,
         "script_lean": packet.script_lean,
         "pack": packet.research_pack or "",
+        "first_trigger": trigger,
         "beats": units,
     }
     return (
         f"Read this research pack. Voice the 8-beat spine. {config.GEMINI_MODEL}.\n"
-        "Pack numbers only. Do not invent stats. LEI and ISM stay off unless a beat cites them.\n"
+        "Pack-faithful only. Pack text is the authority. Do not treat foundry mint stamps as the VO source.\n"
+        "Never speak pack schema or slot ids (chronological_events, executive_summary, "
+        "missing_causal_links, what_counts_as_the_first_trigger, [field[n]]). "
+        "Finding cites stay only when they are real finding ids.\n"
+        "Flexible weave: chronological OR outcome-first OR tell/tone stance "
+        "(humor / disprove / question / facts-only). "
+        "Outcome-first: cold-open is the current named print (USREC×payrolls or other pack print). "
+        "First trigger / first transmission may appear in a later beat, not beat 1.\n"
+        f"Pack first trigger (voice later if present): {trigger or '(none — series cold-open is allowed)'}\n"
+        "Pack numbers only. Do not invent stats or topics absent from the pack. "
+        "LEI and ISM stay off unless a beat cites them. "
+        "Uncited LEI/ISM is a warning, not a blank draft.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
-        "Return the same 8-beat JSON.\n"
+        "Return 8-beat JSON from the pack.\n"
         f"{_PACKET_MARK}\n{json.dumps(payload, ensure_ascii=True)}\n{_PACKET_END}\n"
         f"PACK:\n{packet.research_pack or ''}\n"
     )
@@ -658,22 +949,22 @@ def _parse_units(raw: str) -> list[dict] | None:
     return beats
 
 
-def write_script(packet: Packet) -> Packet:
-    """8-beat timed VO from the pack. Fail-closed if the pack is empty or has no numbers."""
+def write_script(packet: Packet, writer=None) -> Packet:
+    """8-beat timed VO from the pack. Mint/verify HOLD does not blank before Vertex."""
     receipt = packet.receipt
-    if receipt is None or receipt.disposition != "READY" or not receipt.findings:
+    emit = writer or generate_script
+    if not _pack_source(packet):
         holes = ["empty pack"]
         if receipt is not None and receipt.disposition == "HOLD":
             holes = [receipt.hold_reason or "HOLD pack"]
         return _fail_closed(packet, holes)
     text = _pack_text(packet)
-    if not (packet.research_pack or "").strip() and not receipt.findings:
-        return _fail_closed(packet, ["empty pack"])
     if _GROUNDED_EVENT.search(text) and not _recession_pack(text):
         return _fail_closed(packet, ["leftover grounded-event template"])
     fiction = _invents(packet)
+    mint_holes: list[str] = []
     if not fiction and not _numbers_in(text):
-        return _fail_closed(packet, ["pack has no numbers"])
+        mint_holes.append("pack has no numbers")
     usrec = _by_series(packet, "USREC")
     payrolls = _by_series(packet, "BLS payrolls", "payrolls")
     if (
@@ -686,38 +977,52 @@ def write_script(packet: Packet) -> Packet:
             and _payroll_print_ok(payrolls.print or "")
         )
     ):
-        return _fail_closed(packet, ["foundry dropped named series"])
+        mint_holes.append("foundry dropped named series")
     if (
         payrolls
         and re.search(r"\b(fell|dropped|declined|lost|decreased|down)\b", text, re.I)
         and not _print_has_minus(payrolls.print or "")
     ):
-        return _fail_closed(packet, ["foundry dropped named series"])
+        mint_holes.append("foundry dropped named series")
     if usrec and payrolls:
         if not (usrec.when or "").strip() or not (payrolls.when or "").strip():
-            return _fail_closed(packet, ["empty when"])
+            mint_holes.append("empty when")
         if not _same_month(usrec.when, payrolls.when):
-            return _fail_closed(packet, ["smash mixed months"])
+            mint_holes.append("smash mixed months")
     if ("−0.03" in text or "-0.03" in text) and re.search(r"sahm", text, re.I) and not _by_series(
         packet, "SAHMREALTIME"
     ):
-        return _fail_closed(packet, ["Sahm no_url"])
+        mint_holes.append("Sahm no_url")
     gdp = _by_series(packet, "GDP")
     if gdp and not (gdp.print or "").strip():
-        return _fail_closed(packet, ["gdp print empty"])
+        mint_holes.append("gdp print empty")
     local = _eight_from_pack(packet)
-    if not _accept_units(packet, local):
-        return _fail_closed(packet, ["_eight_from_pack cannot place minted prints"])
-    units = local
+    local_ok = bool(local) and _accept_units(packet, local, mint_holes=mint_holes) and not mint_holes
+    units: list[dict] = []
+    spine = local if local and len(local) == 8 else []
+    vertex_detail = ""
     # Seed / leftover Hormuz stamp locally. Cloud Run boot has ADC so has_vertex
     # is true; Vertex Agent Platform 403 must not crash-loop first-open.
     if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
         try:
-            parsed = _parse_units(generate_script(_prompt(packet, local)))
-            if parsed and _accept_units(packet, parsed, spine=local):
+            parsed = _parse_units(emit(_prompt(packet, spine)))
+            if parsed and _vertex_keeps(packet, parsed, mint_holes=mint_holes):
                 units = parsed
+            elif parsed and _accept_units(
+                packet, parsed, spine=local if local_ok else None, mint_holes=mint_holes
+            ):
+                units = parsed
+            elif parsed is None:
+                vertex_detail = "Vertex script unusable"
         except VertexDownError:
-            pass
-    if not _accept_units(packet, units, spine=local) and _accept_units(packet, local):
+            vertex_detail = "Vertex script down"
+    if not units and local and len(local) == 8:
         units = local
-    return _assemble(packet, units)
+    if units and len(units) == 8:
+        units = _weave_first_trigger(packet, units)
+        _warn_mint(packet, mint_holes)
+        return _assemble(packet, units)
+    holes = list(mint_holes) if mint_holes else ["_eight_from_pack cannot place minted prints"]
+    if vertex_detail:
+        holes.append(vertex_detail)
+    return _fail_closed(packet, holes)

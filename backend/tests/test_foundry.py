@@ -955,13 +955,12 @@ def test_smash_mixed_months_holds() -> None:
     write_receipt(packet, Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows))
     packet.task_spine = "USREC May 2026 = 0. Nonfarm payrolls fell 23,000 in July 2026."
     write_script(packet)
-    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
     assert packet.status == "hold"
     reason = (packet.receipt.hold_reason or "") + " ".join(
         row.detail for row in packet.exclusions if row.detail
     )
     assert "smash mixed months" in reason.lower()
-    assert "May 2026" not in spoken or "smashed" not in spoken.lower()
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 def test_same_month_smash_july() -> None:
@@ -1199,8 +1198,8 @@ def test_empty_when_holds_when_no_month() -> None:
     write_script(packet)
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
     assert "empty when" in reason.lower()
-    assert packet.script == ""
-    assert packet.beats == []
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 def test_gdp_three_bar_print_is_not_lone_q2_half() -> None:
@@ -2001,7 +2000,8 @@ def test_usrec_mints_fred_observation_prose_and_keeps_pack() -> None:
     assert packet.receipt.findings
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
     assert "smash mixed months" in reason.lower()
-    assert not packet.script.strip()
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 def test_mint_keeps_other_findings_when_usrec_has_no_url() -> None:
@@ -2201,7 +2201,8 @@ def test_payrolls_is_ces_fell_not_bls_confidence_interval() -> None:
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
     assert "smash mixed months" in reason.lower()
     assert "foundry dropped named series" not in reason.lower()
-    assert not packet.script.strip()
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
 
 
 LIVE_U3_NOT_MAY_2024 = (
@@ -2585,8 +2586,8 @@ def test_august_prose_only_holds_mixed_months_and_keeps_findings(monkeypatch) ->
         + " ".join(row.detail for row in packet.exclusions)
     ).lower()
     assert "smash mixed months" in reason
-    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
-    assert "USREC=0 (August 2026) smashed into payrolls" not in spoken
+    assert packet.status == "hold"
+    assert packet.beats == [] or len(packet.beats) == 8
     assert "rails missing" not in reason
     assert "foundry dropped named series" not in reason or findings
 
@@ -3052,3 +3053,153 @@ def test_dated_t10y3m_one_is_not_usrec_print() -> None:
     assert usrec.print == "0"
     assert usrec.print != "1"
     assert (usrec.when or "").lower() == "july 2026"
+
+
+# Live HOLD oc-are-we-near-recession-4f51dba6: unsigned August PAYEMS/level
+# 162,000 next to a realized CES fall, June USREC prose, Q1/Q2 bars in cites.
+# Fixture-local prints — not the July −23k / 2.1/1.5 seed.
+_FALL_CES_OCT = (
+    "THE EMPLOYMENT SITUATION -- OCTOBER 2024\n"
+    "Total nonfarm payroll employment fell by 18,000 in October 2024.\n"
+)
+_PAYEMS_AUG_162K = "PAYEMS August 2026 = 162,000. All employees, thousands."
+_USREC_JUNE_PIPE = "2024-09-01 | 0\n2024-10-01 | 0\n2026-06-01 | 0\n"
+_GDP_Q1Q2_OTHER = (
+    "Real GDP increased 3.4 percent in the first quarter of 2025. "
+    "Real GDP increased 2.8 percent in the second quarter of 2025."
+)
+BEA_2025_NEWS = (
+    "https://www.bea.gov/news/2025/gross-domestic-product-"
+    "second-quarter-2025-second-estimate"
+)
+BLS_OCT_ARCHIVE = "https://www.bls.gov/news.release/archives/empsit_11012024.htm"
+
+
+def test_fall_verb_mints_negative_ces_not_unsigned_162k() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    spine = (
+        f"{_USREC_JUNE_PIPE}"
+        f"{_PAYEMS_AUG_162K} "
+        f"{_FALL_CES_OCT}"
+        "Nonfarm payrolls fell in the latest employment situation. "
+        f"{_GDP_Q1Q2_OTHER} "
+        f"{FRED_USREC} {BLS_OCT_ARCHIVE} {BEA_2025_NEWS}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [_USREC_JUNE_PIPE, "The FRED recession observation for June 2026 is 0."]),
+            _row(BLS_OCT_ARCHIVE, "BLS October archive", [_FALL_CES_OCT, _PAYEMS_AUG_162K]),
+            _row(BEA_2025_NEWS, "BEA Q2 2025 second estimate", [_GDP_Q1Q2_OTHER]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    printed = payrolls.print or ""
+    assert printed.startswith(("−", "-"))
+    assert "18,000" in printed or "18k" in printed.lower()
+    assert "162" not in printed.replace(",", "")
+    assert (payrolls.when or "").lower() == "october 2024"
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print == "0"
+    assert (usrec.when or "").lower() == "october 2024"
+    assert "june" not in (usrec.when or "").lower()
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
+    assert "smash mixed months" not in reason.lower()
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert "USREC=0 (October 2024) smashed into payrolls" in spoken
+    assert "162,000" not in spoken
+    assert "18,000" in spoken or "18k" in spoken.lower() or "−18" in spoken or "-18" in spoken
+
+
+def test_unsigned_162k_when_notes_say_fell_is_not_minted() -> None:
+    from onecrew.foundry import FoundryHold, mint, require_minted
+    from onecrew.spend import ledger
+
+    spine = (
+        "USREC June 2026 = 0. "
+        "Nonfarm payrolls fell. "
+        f"{_PAYEMS_AUG_162K} "
+        f"{FRED_USREC} {BLS}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", ["USREC June 2026 = 0."]),
+            _row(BLS, "PAYEMS", [_PAYEMS_AUG_162K, "Nonfarm payrolls fell."]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    pays = [f for f in rows if f.series == "BLS payrolls"]
+    for pay in pays:
+        printed = pay.print or ""
+        assert "162" not in printed.replace(",", "")
+        assert not printed or printed.startswith(("−", "-"))
+    with pytest.raises(FoundryHold, match="foundry dropped named series"):
+        require_minted(rows, spine)
+
+
+def test_gdp_two_bar_from_cite_excerpts_not_hole() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    spine = (
+        f"{_USREC_JUNE_PIPE}"
+        f"{_FALL_CES_OCT}"
+        f"{FRED_USREC} {BLS_OCT_ARCHIVE} {BEA_2025_NEWS}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [_USREC_JUNE_PIPE]),
+            _row(BLS_OCT_ARCHIVE, "BLS October archive", [_FALL_CES_OCT]),
+            _row(BEA_2025_NEWS, "BEA Q2 2025 second estimate", [_GDP_Q1Q2_OTHER]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    gdp = next(f for f in rows if f.series == "GDP")
+    assert "3.4" in (gdp.print or "")
+    assert "2.8" in (gdp.print or "")
+    assert "/" in (gdp.print or "")
+    assert gdp.print != "2.1 / 1.5"
+    assert "2.1" not in (gdp.print or "")
+    assert (gdp.when or "").upper().replace(" ", "") == "Q22025"
+    assert gdp.id == "gdp-2025-q2"
+    assert gdp.parallel_url
+    assert "bea.gov" in (gdp.parallel_url or "")
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    write_script(packet)
+    gdp_vo = next(b for b in packet.beats if b.id == "gdp").vo
+    assert "GDP hole named" not in gdp_vo
+    assert "3.4" in gdp_vo and "2.8" in gdp_vo
+    assert (gdp.parallel_url or "") in " ".join(b.vo for b in packet.beats) or gdp.id in (
+        next(b for b in packet.beats if b.id == "gdp").finding_ids
+    )

@@ -185,14 +185,6 @@ def _strip_forecast(text: str) -> str:
     return " ".join(keep)
 
 
-def _has_quarter_bar(text: str, quarter: int, bar: str) -> bool:
-    blob = _norm(text)
-    words = ("first", "second", "third", "fourth")
-    qtok = rf"(?:q{quarter}|{words[quarter - 1]} quarter)"
-    btok = re.escape(_norm(bar).lstrip("+-"))
-    return bool(re.search(rf"{qtok}.{{0,48}}{btok}|{btok}.{{0,48}}{qtok}", blob, re.S))
-
-
 def _bad_window(text: str) -> bool:
     low = (text or "").lower()
     return "suppose" in low or "confidence interval" in low or bool(_REV.search(low))
@@ -429,25 +421,39 @@ def verify_usrec_smash(
 def verify_gdp_bars(claim: Claim, bag: CiteBag) -> VerifyResult:
     if claim.series != "GDP":
         return VerifyResult(ok=True, reason=None)
+    from onecrew.foundry import _gdp_print_from_bars, gdp_quarter_bars
+
     blob = _strip_forecast(_bag_text(bag))
-    q1 = _has_quarter_bar(blob, 1, "2.1")
-    q2 = _has_quarter_bar(blob, 2, "1.5")
+    dated = [(k, v) for k, v in gdp_quarter_bars(blob) if k[0]]
     parsed = _parse_when(claim.when)
-    if q1 and q2:
-        if parsed and parsed[0] == "quarter" and parsed[2] == 4:
+    pair: list[tuple[tuple[int, int], str]] = []
+    if dated:
+        latest_year = dated[-1][0][0]
+        year_run = [row for row in dated if row[0][0] == latest_year]
+        if len(year_run) >= 2:
+            pair = year_run[-2:]
+    if pair:
+        if parsed and parsed[0] == "quarter" and parsed[2] == 4 and pair[-1][0][1] != 4:
             return VerifyResult(ok=False, reason="q4 vs q1/q2")
+        want = {_norm(b).lstrip("+-") for _k, b in pair}
         bars = {_norm(b).lstrip("+-") for b in _bars(claim.print)}
-        if bars != {"2.1", "1.5"}:
+        if bars != want:
             return VerifyResult(ok=False, reason="gdp bars mismatch")
-        if parsed != ("quarter", 2026, 2):
-            return VerifyResult(ok=False, reason="gdp when not Q2 2026")
-        if "2026" not in claim.id or "q2" not in claim.id.lower():
-            return VerifyResult(ok=False, reason="gdp id not gdp-2026-q2")
+        y2, q2 = pair[-1][0]
+        if parsed != ("quarter", y2, q2):
+            return VerifyResult(ok=False, reason="gdp when mismatch")
+        if str(y2) not in claim.id or f"q{q2}" not in claim.id.lower():
+            return VerifyResult(ok=False, reason="gdp id mismatch")
         return VerifyResult(ok=True, reason=None, matched_in=blob)
+    cited = _gdp_print_from_bars(gdp_quarter_bars(blob))
     bars = _bars(claim.print)
-    if len(bars) > 1 and not q2:
-        # one realized bar → one bar OK; extra 1.5 is invented
-        if any(_norm(b).lstrip("+-") == "1.5" for b in bars) and not _bar_in("1.5", blob):
+    if cited and "/" in cited:
+        want = {_norm(b).lstrip("+-") for b in _bars(cited)}
+        if {_norm(b).lstrip("+-") for b in bars} != want:
+            return VerifyResult(ok=False, reason="gdp bars mismatch")
+    if len(bars) > 1:
+        extra = [b for b in bars if not _bar_in(b, blob)]
+        if extra:
             return VerifyResult(ok=False, reason="gdp bars mismatch")
     return VerifyResult(ok=True, reason=None, matched_in=blob or None)
 

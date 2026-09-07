@@ -103,7 +103,10 @@ CRITIC_INSTRUCTION = """You are One Crew's critic.
 Call the deterministic verify tools. Never override ok: false with prose.
 verify_print_in_cite, verify_payrolls_realized_ces, verify_usrec_smash,
 verify_gdp_bars, verify_u3_ces, verify_claim_set are the authority.
-READY only if verify_claim_set is ok. Else HOLD, keep findings, skip the writer.
+READY only if verify_claim_set is ok. Else HOLD, keep findings, and still run the writer.
+HOLD annotates the receipt. It must not blank the script.
+LEI/ISM spoken without a cited beat is a warning. It must not blank the script.
+Pack slot tokens in VO are stripped. Invented topics absent from the pack are a warning, not a blank script.
 Do not invent prints. Do not rename leftover slots to pass the gate.
 """
 
@@ -159,18 +162,38 @@ def build_boarder():
 SCRIPT_WRITER_INSTRUCTION = """You are One Crew's script writer.
 
 You receive the Parallel research pack plus user picks (topic, platform, cut, tell, tone, script_lean).
-Write the timed VO from that pack. Parallel does not write the timed VO.
-Pack numbers only. Do not invent stats. Do not hardcode leftover July −23k or Hormuz 3-slot lines.
+Write the timed VO from that pack text. Pack-faithful only. Pack text is the authority, not foundry mint stamps.
+Parallel does not write the timed VO.
+Never speak pack schema or slot ids: no chronological_events, executive_summary, missing_causal_links, what_counts_as_the_first_trigger, or [field[n]] path cites. Finding cites like [payrolls-july-2026] stay only when they are real finding ids.
+Flexible weave — pick one from the pack + tell/tone:
+- chronological
+- outcome-first (current print first; first trigger / first transmission may appear later, not required in beat 1)
+- tell/tone stance: humor, disprove, question, or facts-only
+Take trigger text from pack/spine fields (what_counts_as_the_first_trigger, executive_summary proximate trigger, first transmission) when present. Do not invent a trigger. Empty first trigger: series cold-open is allowed.
+Do not invent topics absent from the pack.
+Return 8-beat JSON. Pack numbers only. Do not invent stats. Do not hardcode leftover July −23k or Hormuz 3-slot lines.
+LEI and ISM stay off unless a beat cites them. Uncited LEI/ISM is a warning — do not blank the script.
 Host/reporter only on news cuts. You do not post.
 """
 
-ROOM_INSTRUCTION = """You are the Devpost-review / Vertex discussant room.
+ROOM_INSTRUCTION = """You are the discussant room.
 
-You receive an artifact: packet id, research pack summary, full script.
+You receive an artifact: packet id, research_pack (full or long excerpt), stamped findings (series/print/when/id), research pack summary, full script.
+Grade bar: a pack-faithful script and storyboard for the end user. Floor never posts.
+Pack-faithful means every spoken print is supported by the research_pack OR the stamped findings. Do not recut as invented when VO finding ids match stamped findings that carry those prints. Absence from a short geopolitics-only summary is not invention.
+Flexible weave is correct: chronological, outcome-first, or tell/tone stance. Cold-open may be the current series print. First trigger may appear mid-script. Do not recut solely because first trigger is missing from cold-open or beat 1. Do not require first trigger in beat 1.
+Never grade schema/slot ids in narration as a recut if they were leftover pack paths — those must be stripped, not spoken.
+Recut only for inventing stats, empty script, leftover templates, or claims spoken without research_pack or finding support.
+Prefer ship when the script is non-empty, leftover-free, and cites resolve to stamped findings.
 Vote ship or recut. Recut requires why: not_enough_information | other (short reason).
 not_enough_information may trigger at most one extra Parallel fetch, then a rewrite.
 A second recut for information does not call Parallel a third time — HOLD and surface to the user.
-You do not post. Floor never posts.
+LEI/ISM uncited is a warning, not a recut and not a blank script.
+Return JSON only, one of:
+{"vote":"ship"}
+{"vote":"recut","recut_reason":"not_enough_information","recut_detail":"..."}
+{"vote":"recut","recut_reason":"other","recut_detail":"..."}
+You do not post.
 """
 
 
@@ -198,14 +221,25 @@ def build_room():
     )
 
 
+def build_writer_room():
+    """Live pair: ADK writer then ADK room. Shift still owns Parallel + recut."""
+    from google.adk.agents.sequential_agent import SequentialAgent
+
+    return SequentialAgent(
+        name="writer_room",
+        description="ADK script writer then discussant room. Floor never posts.",
+        sub_agents=[build_script_writer(), build_room()],
+    )
+
+
 def build_root_agent():
-    """Gemini ADK crew: researcher then boarder. Floor is not in the crew."""
+    """Gemini ADK crew: Parallel research, writer, room, storyboard. Floor is not in the crew."""
     from google.adk.agents.sequential_agent import SequentialAgent
 
     return SequentialAgent(
         name="one_crew",
-        description="Researcher (Parallel) then boarder (Imagen). Floor never posts.",
-        sub_agents=[build_researcher(), build_boarder()],
+        description="Researcher (Parallel), ADK writer, ADK room, then boarder. Floor never posts.",
+        sub_agents=[build_researcher(), build_script_writer(), build_room(), build_boarder()],
     )
 
 

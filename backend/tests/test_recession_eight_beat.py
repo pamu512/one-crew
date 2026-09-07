@@ -287,9 +287,9 @@ def test_empty_or_numberless_pack_holds() -> None:
         ],
     )
     write_script(bare)
-    assert bare.script == ""
-    assert bare.beats == []
     assert bare.status == "hold"
+    assert "pack has no numbers" in ((bare.receipt.hold_reason or "") if bare.receipt else "")
+    assert bare.beats == [] or len(bare.beats) == 8
 
 
 def test_snapshot_id_never_is_hormuz_seed() -> None:
@@ -797,3 +797,225 @@ def test_tone_never_says_sit_with_this() -> None:
     spoken = apply_tone("USREC=0 smashed into payrolls −23k.", "Make the viewer think", fiction=False)
     assert "Sit with this" not in spoken
     assert "sit with this" not in spoken.lower()
+
+
+_FIRST_TRIGGER_SPINE = (
+    "what_counts_as_the_first_trigger: Geopolitical episode and energy-price surge "
+    "in February/March 2026.\n"
+    "executive_summary: The proximate trigger was the February/March 2026 shock; "
+    "first transmission showed up in energy prices before the CES prints.\n"
+    "USREC=0 (August 2026). Nonfarm payrolls +162k in August 2026. "
+    "Sahm is −0.03 vs the 0.50 trigger. GDP printed 2.1, then 1.5."
+)
+
+
+def first_trigger_ces_fixture() -> Packet:
+    """Pack names a dated first-trigger. Current CES/USREC prints are the outcome."""
+    packet = Packet(
+        id="oc-are-we-near-recession-first-trigger",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="1y",
+        script_lean="centered_independent",
+        tell="Host-only desk read. Title is a question we will not answer with a forecast.",
+        tone=SEED_TONE,
+        research_pack=_FIRST_TRIGGER_SPINE,
+        task_spine=_FIRST_TRIGGER_SPINE,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=[
+            Finding(
+                id="usrec-august-2026",
+                when="August 2026",
+                claim="USREC=0 (August 2026).",
+                stamp="grounded",
+                title="USREC",
+                series="USREC",
+                print="0",
+                parallel_url=FRED_USREC,
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="payrolls-august-2026",
+                when="August 2026",
+                claim="Nonfarm payrolls +162k in August 2026.",
+                stamp="grounded",
+                title="BLS payrolls",
+                series="BLS payrolls",
+                print="+162k",
+                parallel_url=BLS_PAYROLLS,
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="gdp-2026-q2",
+                when="2026",
+                claim="GDP printed 2.1, then 1.5.",
+                stamp="grounded",
+                title="BEA GDP",
+                series="GDP",
+                print="2.1 / 1.5",
+                parallel_url=BEA_GDP,
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="sahm-august-2026",
+                when="August 2026",
+                claim="Sahm is −0.03 vs the 0.50 trigger.",
+                stamp="grounded",
+                title="Sahm rule",
+                series="SAHMREALTIME",
+                print="−0.03",
+                parallel_url=FRED_SAHM,
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+        ],
+    )
+    return packet
+
+
+def _cold(packet: Packet) -> str:
+    beat = next(b for b in packet.beats if b.id == "cold-open")
+    return f"{beat.vo} {beat.frame or ''}"
+
+
+def _later_vo(packet: Packet) -> str:
+    return " ".join(b.vo for b in packet.beats if b.id != "cold-open")
+
+
+def test_cold_open_may_be_current_series_print_when_pack_has_first_trigger() -> None:
+    packet = first_trigger_ces_fixture()
+    write_script(packet)
+    assert packet.status == "ready"
+    assert packet.script
+    assert len(packet.beats) == 8
+    cold = _cold(packet)
+    spoken = _spoken(packet)
+    assert "USREC=0" in cold
+    assert "162k" in cold.lower() or "payroll" in cold.lower()
+    assert "USREC=0" in spoken
+    assert "162k" in spoken.lower() or "162" in spoken
+    assert "2.1" in spoken and "1.5" in spoken
+
+
+def test_later_beat_may_voice_pack_first_trigger() -> None:
+    packet = first_trigger_ces_fixture()
+    write_script(packet)
+    later = _later_vo(packet).lower()
+    assert "february" in later or "march" in later or "feb" in later
+    assert "2026" in later
+    assert "geopolitical" in later or "energy" in later or "transmission" in later or "surge" in later
+
+
+def test_empty_first_trigger_still_allows_series_cold_open() -> None:
+    packet = recession_fixture()
+    assert "first trigger" not in (packet.research_pack or "").lower()
+    assert "what_counts_as_the_first_trigger" not in (packet.task_spine or "")
+    write_script(packet)
+    cold = _cold(packet)
+    assert "USREC=0" in cold
+    assert "−23k" in cold or "-23k" in cold or "payroll" in cold.lower()
+
+
+def test_vertex_outcome_open_keeps_first_trigger_in_a_later_beat(monkeypatch) -> None:
+    """Outcome-first Vertex smash stays; pack first-trigger is woven later, not beat 1."""
+    import json
+
+    packet = first_trigger_ces_fixture()
+    smash = {
+        "beats": [
+            {
+                "id": "cold-open",
+                "vo": "USREC=0 (August 2026) smashed into payrolls +162k. [usrec-august-2026] [payrolls-august-2026]",
+                "eyes": "USREC=0 and payrolls +162k on screen.",
+                "finding_ids": ["usrec-august-2026", "payrolls-august-2026"],
+            },
+            {
+                "id": "promise",
+                "vo": "Three objects from the pack. [usrec-august-2026]",
+                "eyes": "pack",
+                "finding_ids": ["usrec-august-2026"],
+            },
+            {
+                "id": "gdp",
+                "vo": "GDP printed 2.1, then 1.5. [gdp-2026-q2]",
+                "eyes": "gdp",
+                "finding_ids": ["gdp-2026-q2"],
+            },
+            {
+                "id": "labor",
+                "vo": "Labor: payrolls +162k. [payrolls-august-2026]",
+                "eyes": "ces",
+                "finding_ids": ["payrolls-august-2026"],
+            },
+            {
+                "id": "turn",
+                "vo": "Turn: Sahm −0.03 vs the 0.50 trigger. [sahm-august-2026]",
+                "eyes": "sahm",
+                "finding_ids": ["sahm-august-2026"],
+            },
+            {
+                "id": "complication",
+                "vo": "Those are not the same object. [usrec-august-2026]",
+                "eyes": "gap",
+                "finding_ids": ["usrec-august-2026"],
+            },
+            {
+                "id": "receipt",
+                "vo": "Receipt board: named series. [usrec-august-2026] [payrolls-august-2026]",
+                "eyes": "board",
+                "finding_ids": ["usrec-august-2026", "payrolls-august-2026"],
+            },
+            {
+                "id": "close",
+                "vo": "Near is not a switch. [usrec-august-2026]",
+                "eyes": "close",
+                "finding_ids": ["usrec-august-2026"],
+            },
+        ]
+    }
+
+    monkeypatch.setattr("onecrew.script.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda *_a, **_k: json.dumps(smash))
+    write_script(packet)
+    cold = _cold(packet)
+    later = _later_vo(packet).lower()
+    assert "USREC=0" in cold
+    assert "162k" in cold.lower() or "payroll" in cold.lower()
+    assert "february" in later or "march" in later
+    assert "geopolitical" in later or "energy" in later or "surge" in later
+    assert packet.script
+
+
+def test_leftover_hormuz_on_first_trigger_pack_still_fail_closed(monkeypatch) -> None:
+    packet = first_trigger_ces_fixture()
+    hormuz = (
+        '[{"id":"cold-open","vo":"Hormuz=13 smashed into JCPOA. [usrec-august-2026] [payrolls-august-2026]",'
+        '"eyes":"strait","finding_ids":["usrec-august-2026","payrolls-august-2026"]},'
+        '{"id":"promise","vo":"Strait of Hormuz leftover. [usrec-august-2026]","eyes":"pack","finding_ids":["usrec-august-2026"]},'
+        '{"id":"gdp","vo":"USREC=0 (August 2026). [usrec-august-2026]","eyes":"usrec","finding_ids":["usrec-august-2026"]},'
+        '{"id":"labor","vo":"Nonfarm payrolls +162k. [payrolls-august-2026]","eyes":"ces","finding_ids":["payrolls-august-2026"]},'
+        '{"id":"turn","vo":"Hold on the pack number. [usrec-august-2026]","eyes":"hold","finding_ids":["usrec-august-2026"]},'
+        '{"id":"complication","vo":"Those are not the same object. [usrec-august-2026]","eyes":"gap","finding_ids":["usrec-august-2026"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-august-2026]","eyes":"board","finding_ids":["usrec-august-2026"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-august-2026]","eyes":"close","finding_ids":["usrec-august-2026"]}]'
+    )
+    monkeypatch.setattr("onecrew.script.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda *_a, **_k: hormuz)
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert packet.script == ""
+    assert packet.beats == []
+    assert "hormuz" not in spoken.lower()
+    reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
+    reason += " ".join(row.detail for row in packet.exclusions)
+    assert "leftover Hormuz" in reason
