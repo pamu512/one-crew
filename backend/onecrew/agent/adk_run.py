@@ -76,8 +76,10 @@ def artifact_prompt(artifact: GradeArtifact) -> str:
     return (
         "Grade this deliverable. Vote ship or recut.\n"
         "Recut requires why: not_enough_information | other.\n"
-        "Bar: cite-faithful script + storyboard for the end user. Floor never posts.\n"
-        "Outcome-first weave is correct. Do not recut because first trigger is missing from cold-open or beat 1.\n"
+        "Bar: pack-faithful script + storyboard for the end user. Floor never posts.\n"
+        "Flexible weave is correct (chronological, outcome-first, or tell/tone stance). "
+        "Do not recut because first trigger is missing from cold-open or beat 1.\n"
+        "Do not speak or require pack schema/slot ids in narration.\n"
         "Recut only for inventing stats, empty script, leftover templates, or claims without pack support.\n"
         "Return JSON only, one of:\n"
         "{\"vote\":\"ship\"}\n"
