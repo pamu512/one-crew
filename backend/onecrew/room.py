@@ -41,6 +41,8 @@ _INVENT_LANG = re.compile(
 )
 _TARIFF_TOPIC = re.compile(r"\btariff", re.I)
 _FINDING_CITE = re.compile(r"\[([a-z0-9][a-z0-9._-]{2,80})\]", re.I)
+_TIMECODE_LINE = re.compile(r"^\d{1,2}:\d{2}")
+_YEAR_TOK = re.compile(r"^20\d{2}$")
 
 
 class RoomLoopResult(BaseModel):
@@ -147,6 +149,47 @@ def _cited_prints_in_script(artifact: GradeArtifact) -> bool:
     return True
 
 
+def _vo_body(script: str) -> str:
+    """Drop timecode / shot-list chrome so duration digits are not spoken prints."""
+    keep: list[str] = []
+    for line in (script or "").splitlines():
+        stripped = line.strip()
+        if _TIMECODE_LINE.match(stripped):
+            continue
+        if stripped.startswith(("ACTION:", "Timed VO", "BEAT ", "ACT ")):
+            continue
+        if stripped in {"WIDE", "MCU", "NARRATOR"}:
+            continue
+        keep.append(line)
+    return "\n".join(keep)
+
+
+def _tok_on_evidence(tok: str, prints: list[str], pack: str) -> bool:
+    for printed in prints:
+        for bar in _bars(printed):
+            if _bar_in(tok, bar) or _bar_in(bar, tok):
+                return True
+    return bool(pack) and _bar_in(tok, pack)
+
+
+def _spoken_prints_map_to_findings(artifact: GradeArtifact) -> bool:
+    """Every spoken print is on a cited finding or in the pack. Years/timecodes are not prints."""
+    from onecrew.script import pack_numbers
+
+    known = {row.id: row for row in artifact.stamped_findings}
+    cites = [cid for cid in _cited_finding_ids(artifact.script) if cid in known]
+    prints = [known[cid].print for cid in cites if known[cid].print]
+    pack = artifact.research_pack or ""
+    for tok in pack_numbers(_vo_body(artifact.script)):
+        cleaned = tok.replace("−", "-").strip()
+        if _YEAR_TOK.fullmatch(cleaned):
+            continue
+        if _tok_on_evidence(tok, prints, pack):
+            continue
+        return False
+    return True
+
+
 def _leftover_free(script: str) -> bool:
     from onecrew.script import _leftover_vo
 
@@ -159,7 +202,11 @@ def _ready_to_ship(artifact: GradeArtifact) -> bool:
         return False
     if not _leftover_free(script):
         return False
-    return _cites_resolve_to_findings(artifact) and _cited_prints_in_script(artifact)
+    return (
+        _cites_resolve_to_findings(artifact)
+        and _cited_prints_in_script(artifact)
+        and _spoken_prints_map_to_findings(artifact)
+    )
 
 
 def _unsupported_topic_recut(grade: RoomGrade, artifact: GradeArtifact) -> bool:

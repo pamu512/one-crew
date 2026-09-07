@@ -1720,10 +1720,16 @@ def test_grade_artifact_passes_full_pack_and_stamped_findings() -> None:
     geo = _geo_only_pack_head()
     assert len(geo) > 400
     art = make_grade_artifact(packet)
-    assert len(art.research_pack) > 400 or art.research_pack == geo
+    assert art.research_pack == geo.strip()
+    assert len(art.stamped_findings) == len(packet.receipt.findings)
     prompt = artifact_prompt(art)
     blob = f"{art.research_pack_summary}\n{prompt}"
-    for finding in packet.receipt.findings:
+    assert "stamped_findings:" in prompt
+    for finding, row in zip(packet.receipt.findings, art.stamped_findings, strict=True):
+        assert row.id == finding.id
+        assert row.series == finding.series
+        assert row.print == finding.print
+        assert row.when == finding.when
         assert finding.id in art.research_pack_summary
         assert finding.id in prompt
         assert finding.series in blob
@@ -1763,6 +1769,39 @@ def test_thin_summary_rich_findings_invent_recut_is_ship() -> None:
     )
     assert loop.grade.vote == "ship"
     assert loop.disposition == "READY"
+
+
+def test_mixed_invented_print_with_valid_cites_still_recut() -> None:
+    packet = _thin_summary_rich_findings_packet()
+    extra = "Unemployment printed 9.1% with no finding."
+    packet.script = f"{packet.script} {extra}"
+    artifact = make_grade_artifact(packet)
+    grade = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="not_enough_information",
+            recut_detail="script invents a print absent from research_pack_summary",
+        ),
+    )
+    assert grade.vote == "recut"
+    assert grade.recut_reason == "not_enough_information"
+
+
+def test_invented_tariff_with_valid_cites_still_recut() -> None:
+    packet = _thin_summary_rich_findings_packet()
+    packet.script = f"{packet.script} Tariffs slammed the labor print."
+    artifact = make_grade_artifact(packet)
+    grade = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="not_enough_information",
+            recut_detail="invented tariff with no finding or pack support",
+        ),
+    )
+    assert grade.vote == "recut"
+    assert grade.recut_reason == "not_enough_information"
 
 
 def test_invented_tariff_without_finding_or_pack_still_recut() -> None:
