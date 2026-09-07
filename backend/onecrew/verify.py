@@ -306,9 +306,12 @@ def cite_bag_from_rows(rows: list[Any], *, spine: str, hit_urls: list[str]) -> C
 def _series_of(finding: Finding) -> str | None:
     if finding.id in _LEFTOVER:
         return "leftover"
+    stamped = (finding.series or "").strip()
+    if stamped in CLOSED_SERIES:
+        return stamped
     title = (finding.title or "").lower()
     fid = (finding.id or "").lower()
-    # Title/id first. Foundry claim windows are wide and repeat neighbor series.
+    # Title/id before claim blob. Foundry claim windows are wide and repeat neighbor series.
     labeled = f"{fid} {title}"
     rules = (
         ("usrec", "USREC"),

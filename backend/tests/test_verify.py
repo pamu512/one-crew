@@ -706,6 +706,7 @@ def test_missing_cite_url_resolves_from_hits_before_hold() -> None:
         bag,
     )
     assert "cite_url not in hits" not in (gated.hold_reason or "")
+    assert gated.disposition == "READY"
     usrec = next(f for f in gated.findings if f.series == "USREC")
     pay = next(f for f in gated.findings if f.series == "BLS payrolls")
     assert usrec.parallel_url == FRED
@@ -715,6 +716,31 @@ def test_missing_cite_url_resolves_from_hits_before_hold() -> None:
     assert all(c.cite_url in {FRED, BLS} for c in named)
     checked = verify_claim_set(named, bag)
     assert "cite_url not in hits" not in checked.hold_reasons
+    assert checked.ok
+
+
+def test_stamped_series_without_series_id_still_gets_hit_url() -> None:
+    """Series already on the row. Do not require usrec/payrolls in the id."""
+    findings = [
+        Finding(
+            id="object-1",
+            claim="Official flag remains 0 for July 2026.",
+            stamp="grounded",
+            title="FRED",
+            series="USREC",
+            print="0",
+            when="July 2026",
+            parallel_url=None,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+    ]
+    gated = apply_verify_gate(
+        Receipt(packet_id="oc-stamped-series", written=False, disposition="READY", findings=findings),
+        _good_bag(),
+    )
+    assert gated.findings[0].parallel_url == FRED
+    assert "cite_url not in hits" not in (gated.hold_reason or "")
 
 
 def test_cite_url_in_hits_is_not_cite_url_not_in_hits() -> None:
