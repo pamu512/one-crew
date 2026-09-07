@@ -132,9 +132,15 @@ def _bar_in(bar: str, text: str) -> bool:
     unsigned = nb.lstrip("+-")
     # Single-digit flags must be a pipe/equals token, not a digit inside 2026-07-01.
     if unsigned in {"0", "1"}:
-        if re.search(rf"(?:usrec\s*=\s*|(?:remains|is)\s+|[|=]\s*){unsigned}\b", nt):
+        if re.search(rf"(?:usrec\s*=\s*|[|=]\s*){unsigned}(?!\.\d)\b", nt):
             return True
-        # CSV 2026-07-01,0 — comma-strip glues the cell; match the raw row.
+        if re.search(
+            rf"(?:usrec|recession indicator|recession observation).{{0,80}}"
+            rf"(?:remains|is)\s+{unsigned}(?!\.\d)\b",
+            nt,
+        ):
+            return True
+        # CSV 2026-07-01,0 — comma-strip glues the cell; match the raw or stripped row.
         if re.search(rf"(20\d{{2}})-(\d{{2}})-\d{{2}}\s*[|,]?\s*{unsigned}\b", text or ""):
             return True
         return bool(re.search(rf"(20\d{{2}})-(\d{{2}})-\d{{2}}{unsigned}\b", nt))
@@ -428,17 +434,17 @@ def smash_mixed_months(
     """True only when a smash is claimed or the pipe requires remap."""
     u_when = _parse_when(usrec_when)
     p_when = _parse_when(payrolls_when)
+    if p_when and p_when[0] == "month":
+        flag = _usrec_month_on_table(bag, p_when[1], p_when[2])
+        if flag in (0, 1) and (
+            u_when is None or (u_when[1], u_when[2]) != (p_when[1], p_when[2])
+        ):
+            return True
     if not (u_when and p_when):
         return False
     if (u_when[0], u_when[1], u_when[2]) == (p_when[0], p_when[1], p_when[2]):
         return False
-    if smash_claim_in(spoken, bag.spine or ""):
-        return True
-    if p_when[0] == "month":
-        flag = _usrec_month_on_table(bag, p_when[1], p_when[2])
-        if flag in (0, 1):
-            return True
-    return False
+    return smash_claim_in(spoken, bag.spine or "")
 
 
 def verify_usrec_smash(

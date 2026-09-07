@@ -1651,7 +1651,7 @@ def test_usrec_when_reads_fred_pipe_cells() -> None:
     assert "−23,000" in cold.vo or "-23,000" in cold.vo
 
 
-def test_usrec_august_only_still_holds_mixed_months() -> None:
+def test_usrec_august_only_independent_months_not_smash_hold() -> None:
     packet, rows = _mint_notes(LIVE_USREC_T10)
     usrec = next(f for f in rows if f.series == "USREC")
     assert usrec.print == "0"
@@ -2492,7 +2492,7 @@ def test_pipe_jul_zero_beats_august_prose_and_smashes_july() -> None:
     assert "0.5" not in gdp_vo
 
 
-def test_august_prose_only_holds_mixed_months_and_keeps_findings(monkeypatch) -> None:
+def test_august_prose_only_keeps_findings_without_smash_hold(monkeypatch) -> None:
     from onecrew.agent.shift import open_shift, run_live_packet
     from onecrew.foundry import FoundryHold
     from onecrew.models import Rails

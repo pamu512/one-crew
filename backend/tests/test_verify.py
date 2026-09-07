@@ -705,6 +705,33 @@ def test_csv_usrec_pipe_zero_is_print_in_cite_and_same_month_smash() -> None:
     assert mixed.reason == "smash mixed months"
 
 
+def test_gdp_or_lei_decimal_is_not_usrec_print() -> None:
+    """`is 1.5` / `is 0.2` must not satisfy USREC print 0/1."""
+    claim = Claim(series="USREC", print="0", when="June 2026", id="usrec-june-2026", cite_url=FRED)
+    bag = _bag(
+        excerpts=[(FRED, "USREC", "Real GDP is 1.5 percent. The LEI is 0.2 percent. June 2026 notes.")],
+        spine="June 2026 discussion. No recession flag printed.",
+        hit_urls=[FRED],
+    )
+    missed = verify_print_in_cite(claim, bag)
+    assert missed.ok is False
+    assert missed.reason == "print not in cite"
+    ones = Claim(series="USREC", print="1", when="June 2026", id="usrec-june-2026", cite_url=FRED)
+    assert verify_print_in_cite(ones, bag).reason == "print not in cite"
+
+
+def test_recession_indicator_remains_zero_is_print_in_cite() -> None:
+    claim = Claim(series="USREC", print="0", when="June 2026", id="usrec-june-2026", cite_url=FRED)
+    bag = _bag(
+        excerpts=[
+            (FRED, "USREC", "The NBER-based FRED recession indicator remains 0 for June 2026.")
+        ],
+        hit_urls=[FRED],
+    )
+    got = verify_print_in_cite(claim, bag)
+    assert got.ok is True, got.reason
+
+
 def test_glued_csv_date_still_counts_as_usrec_print() -> None:
     """Comma-stripped FRED cells (2026-06-010) must still count as print 0 for that when."""
     usrec = Claim(
