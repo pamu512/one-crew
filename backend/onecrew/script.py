@@ -200,6 +200,24 @@ _MONTH_YEAR = re.compile(
     r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
     re.I,
 )
+_TRIGGER_LABEL = re.compile(
+    r"(?:what_counts_as_the_first_trigger|first[\s_-]+trigger|proximate[\s_-]+trigger|"
+    r"first[\s_-]+transmission)\s*[:\-–—]\s*(.+)",
+    re.I,
+)
+_TRIGGER_DATE = re.compile(
+    r"(?:January|February|March|April|May|June|July|August|September|October|November|December|"
+    r"Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+    r"(?:\s*/\s*(?:January|February|March|April|May|June|July|August|September|October|November|December|"
+    r"Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec))?"
+    r"\s+\d{4}",
+    re.I,
+)
+_TRIGGER_MONTH = re.compile(
+    r"\b(january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\b",
+    re.I,
+)
 
 
 def _month_year(when: str) -> tuple[str, str] | None:
@@ -207,6 +225,41 @@ def _month_year(when: str) -> tuple[str, str] | None:
     if not match:
         return None
     return (match.group(1).lower(), match.group(2))
+
+
+def _first_trigger_text(packet: Packet) -> str:
+    """Dated first-trigger / first transmission from spine or pack. Empty if none."""
+    blob = "\n".join([packet.task_spine or "", packet.research_pack or ""])
+    for match in _TRIGGER_LABEL.finditer(blob):
+        snippet = (match.group(1) or "").strip().split("\n")[0].strip(" .;")
+        if snippet and _TRIGGER_DATE.search(snippet):
+            return snippet[:240]
+    exec_m = re.search(r"executive_summary\s*[:\-–—]\s*(.+)", blob, re.I)
+    if exec_m:
+        para = (exec_m.group(1) or "").strip()
+        if re.search(r"proximate\s+trigger|first\s+transmission|first\s+trigger", para, re.I):
+            dated = _TRIGGER_DATE.search(para)
+            if dated:
+                return para[:240]
+    return ""
+
+
+def _trigger_voiced(vo: str, trigger: str) -> bool:
+    if not trigger or not vo:
+        return False
+    v = (vo or "").lower()
+    t = trigger.lower()
+    years = re.findall(r"\b20\d{2}\b", t)
+    if years and not any(y in v for y in years):
+        return False
+    months = [m.group(0).lower() for m in _TRIGGER_MONTH.finditer(t)]
+    if months and not any(m in v for m in months):
+        return False
+    return bool(years or months)
+
+
+def _promise_trigger_vo(packet: Packet, trigger: str) -> str:
+    return _voice(f"What started the episode: {trigger}.", packet)
 
 
 def _same_month(left: str, right: str) -> bool:
@@ -339,6 +392,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     if unemp and not unemp_print and "4.1" in (unemp.claim or ""):
         unemp_print = "4.1%"
     sahm_print = _print_of(sahm, "")
+    trigger = _first_trigger_text(packet)
     if usrec and payrolls:
         labor = (
             f"Labor: payrolls {pay_print} and unemployment {unemp_print}. Named BLS."
@@ -357,12 +411,20 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             },
             {
                 "id": "promise",
-                "vo": _voice(
-                    "Three objects: the official call, the GDP prints, the Sahm alarm. "
-                    "The title is a question we will not answer with a forecast.",
-                    packet,
+                "vo": (
+                    _promise_trigger_vo(packet, trigger)
+                    if trigger
+                    else _voice(
+                        "Three objects: the official call, the GDP prints, the Sahm alarm. "
+                        "The title is a question we will not answer with a forecast.",
+                        packet,
+                    )
                 ),
-                "eyes": "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map.",
+                "eyes": (
+                    "Dated first-trigger from the pack. Official series stay on later cards."
+                    if trigger
+                    else "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map."
+                ),
                 "finding_ids": [f.id for f in (usrec, gdp, sahm) if f],
             },
             {
@@ -473,11 +535,19 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         },
         {
             "id": "promise",
-            "vo": _voice(
-                "Three objects from the pack. The title is a question we will not answer with a forecast.",
-                packet,
+            "vo": (
+                _promise_trigger_vo(packet, trigger)
+                if trigger
+                else _voice(
+                    "Three objects from the pack. The title is a question we will not answer with a forecast.",
+                    packet,
+                )
             ),
-            "eyes": "Three pack objects on screen. No leftover map.",
+            "eyes": (
+                "Dated first-trigger from the pack. Official series stay on later cards."
+                if trigger
+                else "Three pack objects on screen. No leftover map."
+            ),
             "finding_ids": [first.id] if first else [],
         },
         {
@@ -723,7 +793,23 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     return packet
 
 
+def _weave_first_trigger(packet: Packet, units: list[dict]) -> list[dict]:
+    """Outcome-first: never rewrite cold-open. If pack has a dated trigger, voice it later."""
+    trigger = _first_trigger_text(packet)
+    if not trigger or not units or len(units) != 8:
+        return units
+    if _trigger_voiced(_units_spoken(units), trigger):
+        return units
+    later = dict(units[1])
+    later["vo"] = _promise_trigger_vo(packet, trigger)
+    later["eyes"] = "Dated first-trigger from the pack. Official series stay on later cards."
+    units = list(units)
+    units[1] = later
+    return units
+
+
 def _prompt(packet: Packet, units: list[dict]) -> str:
+    trigger = _first_trigger_text(packet)
     payload = {
         "id": packet.id,
         "topic": packet.topic,
@@ -733,11 +819,15 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
         "cut": packet.cut,
         "script_lean": packet.script_lean,
         "pack": packet.research_pack or "",
+        "first_trigger": trigger,
         "beats": units,
     }
     return (
         f"Read this research pack. Voice the 8-beat spine. {config.GEMINI_MODEL}.\n"
         "Pack text is the authority. Do not treat foundry mint stamps as the VO source.\n"
+        "Outcome-first weave: cold-open is the current named print (USREC×payrolls or other pack print). "
+        "Chronological order is not required. First trigger / first transmission may appear in a later beat, not beat 1.\n"
+        f"Pack first trigger (voice later if present): {trigger or '(none — series cold-open is allowed)'}\n"
         "Pack numbers only. Do not invent stats. LEI and ISM stay off unless a beat cites them. "
         "Uncited LEI/ISM is a warning, not a blank draft.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
@@ -832,6 +922,7 @@ def write_script(packet: Packet, writer=None) -> Packet:
     if not units and local and len(local) == 8:
         units = local
     if units and len(units) == 8:
+        units = _weave_first_trigger(packet, units)
         _warn_mint(packet, mint_holes)
         return _assemble(packet, units)
     holes = list(mint_holes) if mint_holes else ["_eight_from_pack cannot place minted prints"]

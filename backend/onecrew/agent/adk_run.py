@@ -77,6 +77,8 @@ def artifact_prompt(artifact: GradeArtifact) -> str:
         "Grade this deliverable. Vote ship or recut.\n"
         "Recut requires why: not_enough_information | other.\n"
         "Bar: cite-faithful script + storyboard for the end user. Floor never posts.\n"
+        "Outcome-first weave is correct. Do not recut because first trigger is missing from cold-open or beat 1.\n"
+        "Recut only for inventing stats, empty script, leftover templates, or claims without pack support.\n"
         "Return JSON only, one of:\n"
         "{\"vote\":\"ship\"}\n"
         "{\"vote\":\"recut\",\"recut_reason\":\"not_enough_information\",\"recut_detail\":\"...\"}\n"
