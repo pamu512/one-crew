@@ -131,7 +131,10 @@ def _bar_in(bar: str, text: str) -> bool:
     unsigned = nb.lstrip("+-")
     # Single-digit flags must be a pipe/equals token, not a digit inside 2026-07-01.
     if unsigned in {"0", "1"}:
-        return bool(re.search(rf"(?:usrec\s*=\s*|[|=]\s*){unsigned}\b", nt))
+        if re.search(rf"(?:usrec\s*=\s*|[|=]\s*){unsigned}\b", nt):
+            return True
+        # CSV 2026-07-01,0 — comma-strip glues the cell; match the raw row.
+        return bool(re.search(rf"(20\d{{2}})-(\d{{2}})-\d{{2}}\s*[|,]?\s*{unsigned}\b", text or ""))
     if nb in nt:
         return True
     return bool(unsigned) and unsigned in nt
@@ -168,6 +171,13 @@ def _usrec_month_on_table(bag: CiteBag, year: int, month: int) -> int | None:
     for match in _PIPE.finditer(blob):
         if int(match.group(1)) == year and int(match.group(2)) == month:
             return int(match.group(4))
+    names = _MONTH_NAMES.get(month, [])
+    for name in names:
+        for hit in re.finditer(rf"\b{re.escape(name)}\.?\s+{year}\b", blob, re.I):
+            after = blob[hit.end() : hit.end() + 16]
+            cell = re.search(r"[=:]\s*(?:\|\s*)*([01])\b", after)
+            if cell:
+                return int(cell.group(1))
     return None
 
 
@@ -385,7 +395,18 @@ def verify_payrolls_realized_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     if not realized:
         return VerifyResult(ok=False, reason="hypo/CI/revision window")
     window = "\n".join(realized)
-    if _FALL.search(window) and not _norm(claim.print).lstrip().startswith("-"):
+    signed = claim.claim_span or window
+    if parsed and parsed[0] == "month":
+        _, year, month = parsed
+        month_sents = [
+            sent
+            for chunk in realized
+            for sent in re.split(r"(?<=[.!?])\s+", chunk)
+            if _year_adjacent_month(sent, year, month) and _has_realized_print(sent)
+        ]
+        if month_sents:
+            signed = " ".join(month_sents)
+    if _FALL.search(signed) and not _norm(claim.print).lstrip().startswith("-"):
         return VerifyResult(ok=False, reason="fall print must be negative")
     return VerifyResult(ok=True, reason=None, matched_in=window)
 

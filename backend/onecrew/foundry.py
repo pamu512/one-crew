@@ -344,8 +344,11 @@ def _usrec_iso_hits(text: str) -> list[tuple[str, str]]:
         around = blob[max(0, match.start() - 96) : match.end() + 16]
         if re.search(r"t10y3m", around, re.I):
             continue
-        if "|" not in match.group(0) and not re.search(
-            r"usrec|recession indicator", around, re.I
+        # | or , marks a FRED cell. Bare "2026-07-01 0" still needs a series cue.
+        if (
+            "|" not in match.group(0)
+            and "," not in match.group(0)
+            and not re.search(r"usrec|recession indicator", around, re.I)
         ):
             continue
         stamp = _iso_month_stamp(match.group(1), match.group(2))
@@ -1304,8 +1307,7 @@ def _legal_print(series: str, text: str) -> str | None:
             if not stamp:
                 stamp = _loose_month_year(win, raw, text)
             scored.append((raw, stamp))
-        if notes_fall:
-            scored = [row for row in scored if row[0].startswith(("−", "-"))]
+        # ponytail: a prior-month "fell" does not wipe a later rise. Rank by month.
         dated = [row for row in scored if row[1]]
         if dated:
             return max(dated, key=lambda row: _month_key(row[1]))[0]
@@ -1495,12 +1497,6 @@ def _hit_for_series(notes: str, series: str, tokens: tuple[str, ...]) -> tuple[s
         wide = _legal_print(series, notes)
         if wide and "/" in wide:
             found.append((wide, notes))
-    if series == "BLS payrolls" and _PAY_FALL.search(notes or ""):
-        falls = [h for h in found if (h[0] or "").startswith(("−", "-"))]
-        if falls:
-            found = falls
-        else:
-            found = []
     if found:
         return max(found, key=lambda h: _hit_rank(series, h[0], h[1], notes))
     return None
@@ -1739,10 +1735,13 @@ def require_minted(findings: list[Finding], notes: str) -> None:
         minted_pay = any(f.series == "BLS payrolls" and _is_payroll_print(f.print or "") for f in findings)
         if not (minted_usrec and minted_pay):
             raise FoundryHold("foundry dropped named series")
-        if _PAY_FALL.search(notes or ""):
-            pay = next((f for f in findings if f.series == "BLS payrolls"), None)
-            if pay and not (pay.print or "").startswith(("−", "-")):
-                raise FoundryHold("foundry dropped named series")
+        pay = next((f for f in findings if f.series == "BLS payrolls"), None)
+        if (
+            pay
+            and _PAY_FALL.search(pay.claim or "")
+            and not (pay.print or "").startswith(("−", "-"))
+        ):
+            raise FoundryHold("foundry dropped named series")
     if (notes or "").strip() and not any(f.stamp == "grounded" for f in findings):
         raise FoundryHold("foundry minted nothing")
 

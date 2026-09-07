@@ -267,6 +267,30 @@ def _same_month(left: str, right: str) -> bool:
     return a is not None and a == b
 
 
+_USREC_WHEN_VO = re.compile(
+    r"USREC\s*=\s*[01]\s*\(\s*("
+    r"January|February|March|April|May|June|July|August|September|October|November|December"
+    r")\s+(20\d{2})\s*\)",
+    re.I,
+)
+
+
+def _vo_mixed_smash(packet: Packet, vo: str) -> bool:
+    """True if VO claims a smash that pairs USREC when with a different payrolls month."""
+    if not re.search(r"smash(?:ed)?\s+into", vo or "", re.I):
+        return False
+    payrolls = _by_series(packet, "BLS payrolls", "payrolls")
+    usrec = _by_series(packet, "USREC")
+    if payrolls and not (payrolls.when or "").strip():
+        return True
+    if usrec and payrolls and not _same_month(usrec.when, payrolls.when):
+        return True
+    spoken = _USREC_WHEN_VO.search(vo or "")
+    if spoken and payrolls:
+        return not _same_month(f"{spoken.group(1)} {spoken.group(2)}", payrolls.when)
+    return False
+
+
 def _print_has_minus(printed: str) -> bool:
     return bool(re.search(r"[\-−]\s*\d", printed or ""))
 
@@ -364,6 +388,8 @@ def _accept_units(
     spoken = _units_spoken(units)
     if _leftover_vo(spoken):
         return False
+    if _vo_mixed_smash(packet, spoken):
+        return False
     # HOLD/mint-hole packets must not require speaking broken minted prints.
     if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
@@ -399,14 +425,24 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             if unemp_print
             else f"Labor: payrolls {pay_print}. Named BLS."
         )
+        if _same_month(usrec.when, payrolls.when):
+            cold_vo = _voice(
+                f"USREC={usrec_print} ({usrec_when}) smashed into payrolls {pay_print}."
+                f"{_cite(usrec)}{_cite(payrolls)}",
+                packet,
+            )
+            cold_eyes = f"USREC={usrec_print} and payrolls {pay_print} on screen. Official series cards only."
+        else:
+            cold_vo = _voice(
+                f"Labor: payrolls {pay_print}. Named BLS.{_cite(payrolls)}",
+                packet,
+            )
+            cold_eyes = f"payrolls {pay_print} on screen. Official series cards only."
         units = [
             {
                 "id": "cold-open",
-                "vo": _voice(
-                    f"USREC={usrec_print} ({usrec_when}) smashed into payrolls {pay_print}.{_cite(usrec)}{_cite(payrolls)}",
-                    packet,
-                ),
-                "eyes": f"USREC={usrec_print} and payrolls {pay_print} on screen. Official series cards only.",
+                "vo": cold_vo,
+                "eyes": cold_eyes,
                 "finding_ids": [f.id for f in (usrec, payrolls) if f],
             },
             {
@@ -513,6 +549,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             and second is not None
             and first is not second
             and {first.series, second.series} == {"USREC", "BLS payrolls"}
+            and _same_month(first.when, second.when)
         )
         if smash_ok:
             smash = f"{first.series}={first.print} smashed into {second.series} {second.print}."
@@ -747,6 +784,8 @@ def _vertex_keeps(
     spoken = _units_spoken(units)
     if _leftover_vo(spoken) or _GROUNDED_EVENT.search(spoken):
         return False
+    if _vo_mixed_smash(packet, spoken):
+        return False
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
     cited = any(fid in known for u in units for fid in (u.get("finding_ids") or []))
     if cited or _vo_uses_pack(packet, spoken):
@@ -922,6 +961,8 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
         "Flexible weave: chronological OR outcome-first OR tell/tone stance "
         "(humor / disprove / question / facts-only). "
         "Outcome-first: cold-open is the current named print (USREC×payrolls or other pack print). "
+        "Smash USREC into payrolls only when both share the same observation month. "
+        "Never pair USREC when with a different payrolls month as a smash.\n"
         "First trigger / first transmission may appear in a later beat, not beat 1.\n"
         f"Pack first trigger (voice later if present): {trigger or '(none — series cold-open is allowed)'}\n"
         "Pack numbers only. Do not invent stats or topics absent from the pack. "
@@ -980,7 +1021,11 @@ def write_script(packet: Packet, writer=None) -> Packet:
         mint_holes.append("foundry dropped named series")
     if (
         payrolls
-        and re.search(r"\b(fell|dropped|declined|lost|decreased|down)\b", text, re.I)
+        and re.search(
+            r"\b(fell|dropped|declined|lost|decreased|down)\b",
+            payrolls.claim or "",
+            re.I,
+        )
         and not _print_has_minus(payrolls.print or "")
     ):
         mint_holes.append("foundry dropped named series")

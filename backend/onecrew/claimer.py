@@ -281,6 +281,26 @@ def _vertex_propose(bag: CiteBag, packet: Packet | None) -> list[Claim]:
     return out
 
 
+def _align_usrec_smash(claims: list[Claim], bag: CiteBag) -> list[Claim]:
+    """USREC when = payrolls month when that month is 0/1 on the FRED pipe. No invent."""
+    pay = next((c for c in claims if c.series == "BLS payrolls"), None)
+    usrec = next((c for c in claims if c.series == "USREC"), None)
+    if pay is None or usrec is None:
+        return claims
+    parsed = _parse_when(pay.when)
+    if parsed is None or parsed[0] != "month":
+        return claims
+    _, year, month = parsed
+    flag = _usrec_month_on_table(bag, year, month)
+    if flag not in (0, 1):
+        return claims
+    usrec.print = str(flag)
+    usrec.when = pay.when
+    usrec.id = _slug("USREC", pay.when)
+    usrec.claim_span = f"USREC={flag} ({pay.when})"
+    return claims
+
+
 def propose_claims(
     bag: CiteBag,
     packet: Packet | None = None,
@@ -288,16 +308,17 @@ def propose_claims(
     proposer: Proposer | None = None,
 ) -> list[Claim]:
     """Claimer hook. Tests inject proposer. Live: Vertex, else cite scan. No foundry steal."""
+    rows: list[Claim] = []
     if proposer is not None:
-        return list(proposer(bag, packet) or [])
-    if config.has_vertex():
+        rows = list(proposer(bag, packet) or [])
+    elif config.has_vertex():
         try:
             rows = _vertex_propose(bag, packet)
-            if rows:
-                return rows
         except (VertexDownError, json.JSONDecodeError, ValueError):
-            pass
-    return claims_from_cites(bag)
+            rows = []
+    if not rows:
+        rows = claims_from_cites(bag)
+    return _align_usrec_smash(rows, bag)
 
 
 def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> list[Finding]:

@@ -375,3 +375,55 @@ def test_claims_from_cites_fall_ces_not_unsigned_162k_and_gdp_bars() -> None:
     pay_f = next(f for f in findings if f.series == "BLS payrolls")
     assert pay_f.print.startswith(("−", "-"))
     assert "162" not in (pay_f.print or "").replace(",", "")
+
+
+def test_propose_claims_remaps_june_usrec_to_july_pipe_month() -> None:
+    """Vertex-style mixed months remap when the payrolls month is 0 on the pipe."""
+    from onecrew.claimer import propose_claims
+
+    july_ces = (
+        "THE EMPLOYMENT SITUATION -- JULY 2026\n"
+        "Total nonfarm payroll employment increased by 21,000 in July 2026.\n"
+    )
+    csv = (
+        "observation_date,USREC\n"
+        + "\n".join(f"2025-{m:02d}-01,0" for m in range(1, 13))
+        + "\n2026-05-01,0\n2026-06-01,0\n2026-07-01,0\n"
+    )
+    bag = _bag(
+        excerpts=[
+            (FRED, "USREC", csv + "USREC June 2026 = 0."),
+            (BLS, "Employment Situation", july_ces),
+        ],
+        spine="USREC June 2026 = 0. " + july_ces,
+        hit_urls=[FRED, BLS],
+    )
+
+    def mixed(_bag, _packet=None):
+        return [
+            Claim(
+                series="USREC",
+                print="0",
+                when="June 2026",
+                id="usrec-june-2026",
+                cite_url=FRED,
+                claim_span="USREC=0 (June 2026)",
+            ),
+            Claim(
+                series="BLS payrolls",
+                print="+21,000",
+                when="July 2026",
+                id="payrolls-july-2026",
+                cite_url=BLS,
+                claim_span=july_ces,
+            ),
+        ]
+
+    claims = propose_claims(bag, proposer=mixed)
+    usrec = next(c for c in claims if c.series == "USREC")
+    pay = next(c for c in claims if c.series == "BLS payrolls")
+    assert usrec.when.lower() == "july 2026"
+    assert usrec.print == "0"
+    assert pay.when.lower() == "july 2026"
+    checked = verify_claim_set(claims, bag)
+    assert checked.ok, checked.hold_reasons

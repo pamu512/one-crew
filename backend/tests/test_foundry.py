@@ -3203,3 +3203,171 @@ def test_gdp_two_bar_from_cite_excerpts_not_hole() -> None:
     assert (gdp.parallel_url or "") in " ".join(b.vo for b in packet.beats) or gdp.id in (
         next(b for b in packet.beats if b.id == "gdp").finding_ids
     )
+
+
+# Live HOLD oc-are-we-near-recession-8beb0212: June USREC prose, CSV pipe
+# through July = 0, July CES rise (not the fall seed), T10Y3M chrome, and a
+# prior-month revision that says "fell". Smash month is the payrolls month.
+_JULY_RISE_CES = (
+    "THE EMPLOYMENT SITUATION -- JULY 2026\n"
+    "Total nonfarm payroll employment increased by 21,000 in July 2026.\n"
+)
+_LONG_CSV_PIPE = (
+    "observation_date,USREC\n"
+    + "\n".join(f"2025-{m:02d}-01,0" for m in range(1, 13))
+    + "\n2026-05-01,0\n2026-06-01,0\n2026-07-01,0\n"
+)
+_LIVE_JUNE_PROSE_JULY_RISE = (
+    f"{_LONG_CSV_PIPE}"
+    "USREC June 2026 = 0. "
+    "The FRED recession observation for June 2026 is 0. "
+    "https://fred.stlouisfed.org/series/T10Y3M T10Y3M = 1. "
+    "May 2026 payrolls were revised down; that month fell after the first print. "
+    f"{_JULY_RISE_CES}"
+    "Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2. "
+    f"{FRED_USREC} {BLS_JULY_ARCHIVE} {BEA_2026_NEWS}"
+)
+
+
+def test_july_pipe_zero_and_july_rise_ces_smashes_july_not_june() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+    from onecrew.verify import (
+        CiteBag,
+        CiteExcerpt,
+        apply_verify_gate,
+        claims_from_findings,
+        verify_usrec_smash,
+    )
+
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-8beb0212"
+    packet.task_spine = _LIVE_JUNE_PROSE_JULY_RISE
+    packet.research_pack = _LIVE_JUNE_PROSE_JULY_RISE
+    hit_rows = [
+        _row(FRED_USREC, "USREC", [
+            _LONG_CSV_PIPE,
+            "USREC June 2026 = 0. The FRED recession observation for June 2026 is 0.",
+        ]),
+        _row(BLS_JULY_ARCHIVE, "BLS July archive", [_JULY_RISE_CES]),
+        _row(BEA_2026_NEWS, "BEA second estimate", [
+            "Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2."
+        ]),
+    ]
+    rows = mint(
+        packet,
+        hit_rows,
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        _LIVE_JUNE_PROSE_JULY_RISE,
+    )
+    assert ledger.parallel_calls == before
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    printed = payrolls.print or ""
+    assert "21,000" in printed or "21k" in printed.lower()
+    assert not printed.startswith(("−", "-"))
+    assert (payrolls.when or "").lower() == "july 2026"
+    usrec = next(f for f in rows if f.series == "USREC")
+    assert usrec.print == "0"
+    assert usrec.print != "1"
+    assert (usrec.when or "").lower() == "july 2026"
+    assert usrec.id == "usrec-july-2026"
+    assert "june" not in (usrec.when or "").lower()
+    bag = CiteBag(
+        excerpts=[
+            CiteExcerpt(url=r.url, title=r.title, text=" ".join(r.excerpts)) for r in hit_rows
+        ],
+        spine=_LIVE_JUNE_PROSE_JULY_RISE,
+        hit_urls=[r.url for r in hit_rows],
+    )
+    claims = claims_from_findings(rows)
+    usrec_claim = next(c for c in claims if c.series == "USREC")
+    pay_claim = next(c for c in claims if c.series == "BLS payrolls")
+    smash = verify_usrec_smash(usrec_claim, pay_claim, bag)
+    assert smash.ok is True, smash.reason
+    gated = apply_verify_gate(
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+        bag,
+    )
+    assert gated.disposition == "READY", gated.hold_reason
+    write_receipt(packet, gated)
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
+    assert "smash mixed months" not in reason.lower()
+    assert "print not in cite" not in reason.lower()
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert "USREC=0 (July 2026) smashed into payrolls" in spoken
+    assert "USREC=0 (June 2026)" not in spoken
+    assert "USREC=1" not in spoken
+    assert "21,000" in spoken or "21k" in spoken.lower()
+
+
+def test_writer_rejects_mixed_month_smash_vo(monkeypatch) -> None:
+    """Vertex pack prose must not ship USREC June smashed into July payrolls."""
+    from onecrew.script import write_script
+
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-8beb0212"
+    packet.task_spine = _LIVE_JUNE_PROSE_JULY_RISE
+    packet.research_pack = _LIVE_JUNE_PROSE_JULY_RISE
+    rows = [
+        Finding(
+            id="usrec-july-2026",
+            claim="USREC=0 (July 2026)",
+            stamp="grounded",
+            series="USREC",
+            print="0",
+            when="July 2026",
+            parallel_url=FRED_USREC,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="payrolls-july-2026",
+            claim="Total nonfarm payroll employment increased by 21,000 in July 2026.",
+            stamp="grounded",
+            series="BLS payrolls",
+            print="+21,000",
+            when="July 2026",
+            parallel_url=BLS_JULY_ARCHIVE,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="gdp-2026-q2",
+            claim="GDP 2.1 / 1.5",
+            stamp="grounded",
+            series="GDP",
+            print="2.1 / 1.5",
+            when="Q2 2026",
+            parallel_url=BEA_2026_NEWS,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        _miss_finding(),
+    ]
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    mixed = (
+        '[{"id":"cold-open","vo":"USREC=0 (June 2026) smashed into payrolls +21,000. '
+        '[usrec-july-2026] [payrolls-july-2026]",'
+        '"eyes":"cards","finding_ids":["usrec-july-2026","payrolls-july-2026"]},'
+        '{"id":"promise","vo":"Three objects from the pack.","eyes":"pack","finding_ids":[]},'
+        '{"id":"gdp","vo":"GDP printed 2.1, then 1.5. [gdp-2026-q2]","eyes":"gdp","finding_ids":["gdp-2026-q2"]},'
+        '{"id":"labor","vo":"Labor: payrolls +21,000. [payrolls-july-2026]","eyes":"ces","finding_ids":["payrolls-july-2026"]},'
+        '{"id":"turn","vo":"Hold on the pack number.","eyes":"hold","finding_ids":[]},'
+        '{"id":"complication","vo":"Those are not the same object.","eyes":"gap","finding_ids":[]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-july-2026]","eyes":"board","finding_ids":["usrec-july-2026"]},'
+        '{"id":"close","vo":"Near is not a switch.","eyes":"close","finding_ids":[]}]'
+    )
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda _p: mixed)
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert "USREC=0 (June 2026) smashed into" not in spoken
+    assert "USREC=0 (July 2026) smashed into payrolls" in spoken
+    assert packet.beats
+    assert next(b for b in packet.beats if b.id == "cold-open")
