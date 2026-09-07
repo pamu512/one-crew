@@ -953,7 +953,11 @@ def test_smash_mixed_months_holds() -> None:
         _miss_finding(),
     ]
     write_receipt(packet, Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows))
-    packet.task_spine = "USREC May 2026 = 0. Nonfarm payrolls fell 23,000 in July 2026."
+    packet.task_spine = (
+        "USREC May 2026 = 0. Nonfarm payrolls fell 23,000 in July 2026. "
+        "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n"
+    )
+    packet.research_pack = packet.task_spine
     write_script(packet)
     assert packet.status == "hold"
     reason = (packet.receipt.hold_reason or "") + " ".join(
@@ -1561,7 +1565,7 @@ def test_usrec_print_is_not_t10y3m_one() -> None:
     )
     write_script(packet)
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
-    assert "smash mixed months" in reason.lower()
+    assert "smash mixed months" not in reason.lower()
     spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
     assert "USREC=1" not in spoken
     assert "smashed" not in spoken.lower() or "August 2026" not in spoken or "July" not in spoken
@@ -1647,7 +1651,7 @@ def test_usrec_when_reads_fred_pipe_cells() -> None:
     assert "−23,000" in cold.vo or "-23,000" in cold.vo
 
 
-def test_usrec_august_only_still_holds_mixed_months() -> None:
+def test_usrec_august_only_independent_months_not_smash_hold() -> None:
     packet, rows = _mint_notes(LIVE_USREC_T10)
     usrec = next(f for f in rows if f.series == "USREC")
     assert usrec.print == "0"
@@ -1660,7 +1664,7 @@ def test_usrec_august_only_still_holds_mixed_months() -> None:
     )
     write_script(packet)
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
-    assert "smash mixed months" in reason.lower()
+    assert "smash mixed months" not in reason.lower()
     assert "empty when" not in reason.lower()
 
 
@@ -1999,8 +2003,7 @@ def test_usrec_mints_fred_observation_prose_and_keeps_pack() -> None:
     write_script(packet)
     assert packet.receipt.findings
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
-    assert "smash mixed months" in reason.lower()
-    assert packet.status == "hold"
+    assert "smash mixed months" not in reason.lower()
     assert packet.beats == [] or len(packet.beats) == 8
 
 
@@ -2199,9 +2202,8 @@ def test_payrolls_is_ces_fell_not_bls_confidence_interval() -> None:
     write_script(packet)
     assert packet.receipt.findings
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
-    assert "smash mixed months" in reason.lower()
+    assert "smash mixed months" not in reason.lower()
     assert "foundry dropped named series" not in reason.lower()
-    assert packet.status == "hold"
     assert packet.beats == [] or len(packet.beats) == 8
 
 
@@ -2490,7 +2492,7 @@ def test_pipe_jul_zero_beats_august_prose_and_smashes_july() -> None:
     assert "0.5" not in gdp_vo
 
 
-def test_august_prose_only_holds_mixed_months_and_keeps_findings(monkeypatch) -> None:
+def test_august_prose_only_keeps_findings_without_smash_hold(monkeypatch) -> None:
     from onecrew.agent.shift import open_shift, run_live_packet
     from onecrew.foundry import FoundryHold
     from onecrew.models import Rails
@@ -2585,8 +2587,8 @@ def test_august_prose_only_holds_mixed_months_and_keeps_findings(monkeypatch) ->
         + " "
         + " ".join(row.detail for row in packet.exclusions)
     ).lower()
-    assert "smash mixed months" in reason
-    assert packet.status == "hold"
+    assert "smash mixed months" not in reason
+    assert findings
     assert packet.beats == [] or len(packet.beats) == 8
     assert "rails missing" not in reason
     assert "foundry dropped named series" not in reason or findings

@@ -51,6 +51,7 @@ _UNEMP = re.compile(r"unemployment|u-3|\bu3\b", re.I)
 _SAHM = re.compile(r"\bsahm\b", re.I)
 _FORECAST_RE = re.compile(r"\b(?:spf|cei)\b|disposable|final sales", re.I)
 _PIPE = re.compile(r"(20\d{2})-(\d{2})-(\d{2})\s*[|,]?\s*([01])\b")
+_SMASH_CLAIM = re.compile(r"smash(?:ed)?\s+into", re.I)
 
 
 class CiteExcerpt(BaseModel):
@@ -131,10 +132,18 @@ def _bar_in(bar: str, text: str) -> bool:
     unsigned = nb.lstrip("+-")
     # Single-digit flags must be a pipe/equals token, not a digit inside 2026-07-01.
     if unsigned in {"0", "1"}:
-        if re.search(rf"(?:usrec\s*=\s*|[|=]\s*){unsigned}\b", nt):
+        if re.search(rf"(?:usrec\s*=\s*|[|=]\s*){unsigned}(?!\.\d)\b", nt):
             return True
-        # CSV 2026-07-01,0 — comma-strip glues the cell; match the raw row.
-        return bool(re.search(rf"(20\d{{2}})-(\d{{2}})-\d{{2}}\s*[|,]?\s*{unsigned}\b", text or ""))
+        if re.search(
+            rf"(?:usrec|recession indicator|recession observation).{{0,80}}"
+            rf"(?:remains|is)\s+{unsigned}(?!\.\d)\b",
+            nt,
+        ):
+            return True
+        # CSV 2026-07-01,0 — comma-strip glues the cell; match the raw or stripped row.
+        if re.search(rf"(20\d{{2}})-(\d{{2}})-\d{{2}}\s*[|,]?\s*{unsigned}\b", text or ""):
+            return True
+        return bool(re.search(rf"(20\d{{2}})-(\d{{2}})-\d{{2}}{unsigned}\b", nt))
     if nb in nt:
         return True
     return bool(unsigned) and unsigned in nt
@@ -411,22 +420,45 @@ def verify_payrolls_realized_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     return VerifyResult(ok=True, reason=None, matched_in=window)
 
 
-def verify_usrec_smash(
-    usrec_claim: Claim, payrolls_claim: Claim | None, bag: CiteBag
-) -> VerifyResult:
-    if payrolls_claim is None:
-        return VerifyResult(ok=True, reason=None)
-    u_when = _parse_when(usrec_claim.when)
-    p_when = _parse_when(payrolls_claim.when)
-    if u_when and p_when and (u_when[0], u_when[1], u_when[2]) != (p_when[0], p_when[1], p_when[2]):
-        return VerifyResult(ok=False, reason="smash mixed months")
+def smash_claim_in(*parts: str) -> bool:
+    return any(_SMASH_CLAIM.search(part or "") for part in parts)
+
+
+def smash_mixed_months(
+    usrec_when: str,
+    payrolls_when: str,
+    bag: CiteBag,
+    *,
+    spoken: str = "",
+) -> bool:
+    """True only when a smash is claimed or the pipe requires remap."""
+    u_when = _parse_when(usrec_when)
+    p_when = _parse_when(payrolls_when)
     if p_when and p_when[0] == "month":
         flag = _usrec_month_on_table(bag, p_when[1], p_when[2])
         if flag in (0, 1) and (
             u_when is None or (u_when[1], u_when[2]) != (p_when[1], p_when[2])
         ):
-            return VerifyResult(ok=False, reason="smash mixed months")
-        # ponytail: table miss does not mint July. Upgrade: require pipe 0/1 before smash READY.
+            return True
+    if not (u_when and p_when):
+        return False
+    if (u_when[0], u_when[1], u_when[2]) == (p_when[0], p_when[1], p_when[2]):
+        return False
+    return smash_claim_in(spoken, bag.spine or "")
+
+
+def verify_usrec_smash(
+    usrec_claim: Claim, payrolls_claim: Claim | None, bag: CiteBag
+) -> VerifyResult:
+    if payrolls_claim is None:
+        return VerifyResult(ok=True, reason=None)
+    spoken = "\n".join(
+        part for part in (usrec_claim.claim_span, payrolls_claim.claim_span) if part
+    )
+    if smash_mixed_months(usrec_claim.when, payrolls_claim.when, bag, spoken=spoken):
+        return VerifyResult(ok=False, reason="smash mixed months")
+    # ponytail: table miss does not mint a smash month. Upgrade: require pipe 0/1 before smash READY.
+    u_when = _parse_when(usrec_claim.when)
     flag_when = u_when if u_when and u_when[0] == "month" else None
     if flag_when:
         flag = _usrec_month_on_table(bag, flag_when[1], flag_when[2])

@@ -141,6 +141,168 @@ def test_right_tiktok_and_left_doc_are_not_a_wrapper() -> None:
         assert stamps == [(f.id, f.stamp, f.propaganda) for f in right.receipt.findings]
 
 
+def test_independent_months_no_smash_mint_holes_skip_mixed() -> None:
+    """Script must not mint smash mixed months from observation-month mismatch alone."""
+    from onecrew.models import Finding
+
+    packet = Packet(
+        id="oc-independent-months",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        research_pack="Independent USREC and payrolls observations. No smash stamp.",
+        task_spine="Independent USREC and payrolls observations. No smash stamp.",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=[
+            Finding(
+                id="usrec-june-2026",
+                claim="USREC=0 (June 2026).",
+                stamp="grounded",
+                title="USREC",
+                series="USREC",
+                print="0",
+                when="June 2026",
+                parallel_url="https://fred.stlouisfed.org/series/USREC",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="payrolls-august-2026",
+                claim="Nonfarm payrolls increased by 10,000 in August 2026.",
+                stamp="grounded",
+                title="BLS payrolls",
+                series="BLS payrolls",
+                print="+10,000",
+                when="August 2026",
+                parallel_url="https://www.bls.gov/news.release/empsit.nr0.htm",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+        ],
+    )
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert not re.search(r"smash(?:ed)?\s+into", spoken, re.I)
+    reason = (packet.receipt.hold_reason or "").lower()
+    assert "smash mixed months" not in reason
+
+
+def test_claimed_smash_in_spine_mints_smash_mixed_months() -> None:
+    """VO/spine smash with conflicting months HOLDs even when the pipe is missing."""
+    from onecrew.models import Finding
+
+    packet = Packet(
+        id="oc-claimed-smash",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        research_pack="No payrolls-month pipe cell.",
+        task_spine="USREC=0 (June 2026) smashed into payrolls.",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=[
+            Finding(
+                id="usrec-june-2026",
+                claim="USREC=0 (June 2026).",
+                stamp="grounded",
+                title="USREC",
+                series="USREC",
+                print="0",
+                when="June 2026",
+                parallel_url="https://fred.stlouisfed.org/series/USREC",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="payrolls-august-2026",
+                claim="Nonfarm payrolls increased by 10,000 in August 2026.",
+                stamp="grounded",
+                title="BLS payrolls",
+                series="BLS payrolls",
+                print="+10,000",
+                when="August 2026",
+                parallel_url="https://www.bls.gov/news.release/empsit.nr0.htm",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+        ],
+    )
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "").lower()
+    assert "smash mixed months" in reason
+
+
+def test_pipe_remap_miss_still_mints_smash_mixed_months() -> None:
+    """Pipe 0/1 on the payrolls month with a different USREC when is still a smash hole."""
+    from onecrew.models import Finding
+
+    pack = (
+        "observation_date,USREC\n2026-05-01,0\n2026-06-01,0\n2026-08-01,0\n"
+        "Payrolls printed in August 2026."
+    )
+    packet = Packet(
+        id="oc-pipe-remap-miss",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        research_pack=pack,
+        task_spine=pack,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=[
+            Finding(
+                id="usrec-june-2026",
+                claim="USREC=0 (June 2026).",
+                stamp="grounded",
+                title="USREC",
+                series="USREC",
+                print="0",
+                when="June 2026",
+                parallel_url="https://fred.stlouisfed.org/series/USREC",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="payrolls-august-2026",
+                claim="Nonfarm payrolls increased by 10,000 in August 2026.",
+                stamp="grounded",
+                title="BLS payrolls",
+                series="BLS payrolls",
+                print="+10,000",
+                when="August 2026",
+                parallel_url="https://www.bls.gov/news.release/empsit.nr0.htm",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+        ],
+    )
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "").lower()
+    assert "smash mixed months" in reason
+
+
 def test_hold_receipt_writes_empty_script() -> None:
     packet = Packet(
         id="oc-hold",

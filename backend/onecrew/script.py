@@ -434,10 +434,11 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             cold_eyes = f"USREC={usrec_print} and payrolls {pay_print} on screen. Official series cards only."
         else:
             cold_vo = _voice(
-                f"Labor: payrolls {pay_print}. Named BLS.{_cite(payrolls)}",
+                f"USREC={usrec_print} ({usrec_when}). Labor: payrolls {pay_print}. Named BLS."
+                f"{_cite(usrec)}{_cite(payrolls)}",
                 packet,
             )
-            cold_eyes = f"payrolls {pay_print} on screen. Official series cards only."
+            cold_eyes = f"USREC={usrec_print} and payrolls {pay_print} on screen. Official series cards only."
         units = [
             {
                 "id": "cold-open",
@@ -1032,7 +1033,21 @@ def write_script(packet: Packet, writer=None) -> Packet:
     if usrec and payrolls:
         if not (usrec.when or "").strip() or not (payrolls.when or "").strip():
             mint_holes.append("empty when")
-        if not _same_month(usrec.when, payrolls.when):
+        from onecrew.verify import CiteBag, CiteExcerpt, smash_mixed_months
+
+        bag = CiteBag(
+            excerpts=[CiteExcerpt(url="", title="", text=_pack_text(packet))],
+            spine=packet.task_spine or "",
+        )
+        spoken = "\n".join(
+            [
+                packet.script or "",
+                usrec.claim or "",
+                payrolls.claim or "",
+                *(b.vo for b in packet.beats),
+            ]
+        )
+        if smash_mixed_months(usrec.when or "", payrolls.when or "", bag, spoken=spoken):
             mint_holes.append("smash mixed months")
     if ("−0.03" in text or "-0.03" in text) and re.search(r"sahm", text, re.I) and not _by_series(
         packet, "SAHMREALTIME"
