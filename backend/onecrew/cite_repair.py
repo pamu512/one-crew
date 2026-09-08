@@ -146,6 +146,24 @@ def _bag_from_search(result: Any) -> CiteBag:
     return cite_bag_from_rows(rows, spine="", hit_urls=urls)
 
 
+def _merge_bags(prior: CiteBag | None, new: CiteBag) -> CiteBag:
+    """Keep already-backed excerpts when a re-query returns a narrower hit set."""
+    if prior is None:
+        return new
+    if not (new.hit_urls or new.excerpts):
+        return prior
+    urls = list(dict.fromkeys([*(prior.hit_urls or []), *(new.hit_urls or [])]))
+    excerpts = list(prior.excerpts)
+    seen = {(e.url, e.text) for e in excerpts}
+    for excerpt in new.excerpts:
+        key = (excerpt.url, excerpt.text)
+        if key in seen:
+            continue
+        excerpts.append(excerpt)
+        seen.add(key)
+    return CiteBag(excerpts=excerpts, spine=new.spine or prior.spine, hit_urls=urls)
+
+
 def _recheck_parallel(findings: list[Finding], search_fn: SearchFn) -> tuple[CiteBag, str]:
     """status is ok | empty | down. Down is not a miss — do not drop on rail failure."""
     queries = _queries_for(findings)
@@ -383,10 +401,10 @@ def run_cite_recheck_loop(
         packet.cite_recheck_attempts = attempts
         fresh_bag, status = _recheck_parallel(missing, search_fn)
         if fresh_bag.hit_urls or fresh_bag.excerpts:
-            current_bag = fresh_bag
-            object.__setattr__(packet, "_cite_bag", fresh_bag)
+            current_bag = _merge_bags(current_bag, fresh_bag)
+            object.__setattr__(packet, "_cite_bag", current_bag)
         hit_urls.extend(u for u in fresh_bag.hit_urls if u not in hit_urls)
-        attached_all.extend(_attach_from_bag(packet, fresh_bag if fresh_bag.hit_urls else current_bag or fresh_bag))
+        attached_all.extend(_attach_from_bag(packet, current_bag or fresh_bag))
         still = {f.id for f in unsupported_cite_findings(packet, current_bag)}
         if still and status != "down":
             dropped = drop_unsupported_beats(packet, still)

@@ -299,6 +299,7 @@ def test_print_not_in_cite_parallel_miss_drops_beat_no_fail() -> None:
     assert packet.cite_recheck_attempts >= 1
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
     assert not any(b.id == "labor" for b in packet.beats)
+    assert {"promise", "gdp", "close"} <= {b.id for b in packet.beats}
     spoken = (packet.script or "") + "\n".join(b.vo for b in packet.beats)
     assert "payrolls-july-2026" not in spoken
     assert packet.beats
@@ -374,13 +375,48 @@ def test_print_not_in_cite_parallel_hit_keeps_beat_fixes_url() -> None:
     pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
     assert pay.parallel_url == BLS
     assert pay.parallel_status == "hit"
-    assert any(b.id == "labor" for b in packet.beats)
+    kept = {b.id for b in packet.beats}
+    assert {"labor", "promise", "gdp", "close"} <= kept
     assert "payrolls-july-2026" in " ".join(b.vo for b in packet.beats)
+    usrec = next(f for f in packet.receipt.findings if f.id == "usrec-july-2026")
+    assert usrec.parallel_url == FRED
     assert packet.receipt.disposition == "READY"
     assert packet.status == "ready"
     assert "print not in cite" not in (packet.receipt.hold_reason or "")
     shots = write_shot_list(packet)
     assert any(s.beat_id == "labor" for s in shots)
+    assert any(s.beat_id == "close" for s in shots)
+
+
+def test_print_not_in_cite_existing_bag_hit_relinks_without_requery() -> None:
+    stale = "https://example.com/stale-ces"
+    packet = _eight_packet(payrolls_url=stale)
+    bag = CiteBag(
+        excerpts=[
+            CiteExcerpt(url=FRED, title="USREC", text="USREC July 2026 = 0.\n" + _JULY_PIPE),
+            CiteExcerpt(url=stale, title="Stale CES", text="No payroll print on this hit."),
+            CiteExcerpt(url=BLS, title="Employment Situation", text=_JULY_CES),
+        ],
+        spine="USREC July 2026 = 0.",
+        hit_urls=[FRED, stale, BLS],
+    )
+    packet.receipt.disposition = "HOLD"
+    packet.receipt.hold_reason = "print not in cite"
+    packet.status = "hold"
+    calls = {"n": 0}
+
+    def search(**kwargs):
+        calls["n"] += 1
+        return _supporting_search(**kwargs)
+
+    result = run_cite_recheck_loop(packet, search_fn=search, bag=bag)
+    assert result.ok is True
+    assert calls["n"] == 0
+    assert packet.cite_recheck_attempts == 0
+    pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
+    assert pay.parallel_url == BLS
+    assert {"labor", "promise", "gdp", "close"} <= {b.id for b in packet.beats}
+    assert packet.receipt.disposition == "READY"
 
 
 def test_print_not_in_cite_fourth_failure_holds_loop_exhausted() -> None:
