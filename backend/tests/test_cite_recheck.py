@@ -164,6 +164,9 @@ def test_missing_cite_parallel_hit_attaches_url_keeps_beat() -> None:
         calls["n"] += 1
         return _supporting_search(**kwargs)
 
+    packet.receipt.disposition = "HOLD"
+    packet.receipt.hold_reason = "ReceiptInvalidError: grounded requires a Parallel URL on the row"
+    packet.status = "hold"
     result = run_cite_recheck_loop(packet, search_fn=search)
     assert result.ok is True
     assert calls["n"] >= 1
@@ -173,8 +176,9 @@ def test_missing_cite_parallel_hit_attaches_url_keeps_beat() -> None:
     assert pay.parallel_status == "hit"
     assert any(b.id == "labor" for b in packet.beats)
     assert "payrolls-july-2026" in " ".join(b.vo for b in packet.beats)
-    assert packet.receipt.disposition != "HOLD"
-    assert packet.status != "hold"
+    assert packet.receipt.disposition == "READY"
+    assert packet.status == "ready"
+    assert "grounded requires a Parallel URL" not in (packet.receipt.hold_reason or "")
     shots = write_shot_list(packet)
     assert any(s.beat_id == "labor" for s in shots)
 
@@ -187,6 +191,9 @@ def test_missing_cite_parallel_miss_drops_beat_and_ships() -> None:
         calls["n"] += 1
         return _empty_search(**kwargs)
 
+    packet.receipt.disposition = "HOLD"
+    packet.receipt.hold_reason = "ReceiptInvalidError: grounded requires a Parallel URL on the row"
+    packet.status = "hold"
     result = run_cite_recheck_loop(packet, search_fn=search)
     assert result.ok is True
     assert calls["n"] >= 1
@@ -196,8 +203,10 @@ def test_missing_cite_parallel_miss_drops_beat_and_ships() -> None:
     assert "payrolls-july-2026" not in spoken
     assert packet.beats
     assert packet.script.strip()
-    assert packet.receipt.disposition != "HOLD"
-    assert packet.status != "hold"
+    assert packet.receipt.disposition == "READY"
+    assert packet.status == "ready"
+    pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
+    assert pay.stamp != "grounded" or (pay.parallel_url or "").strip()
     assert not any(f.beat_id == "labor" for f in packet.frames)
     shots = write_shot_list(packet)
     assert shots
@@ -243,8 +252,8 @@ def test_cite_recheck_fourth_failure_holds_loop_exhausted() -> None:
     assert calls["n"] == MAX_CITE_RECHECKS
     assert packet.receipt is not None
     assert packet.receipt.disposition == "HOLD"
-    assert "exhausted" in (packet.receipt.hold_reason or "").lower()
-    assert "exhausted" in (result.hold_reason or "").lower()
+    assert packet.receipt.hold_reason == "cite-repair loop exhausted"
+    assert result.hold_reason == "cite-repair loop exhausted"
     assert packet.status == "hold"
     assert packet.script.strip(), "exhaust HOLD must not blank the script"
     assert packet.beats, "last spoken beat stays until a cite-faithful drop is possible"
@@ -256,7 +265,7 @@ def test_cite_recheck_fourth_failure_holds_loop_exhausted() -> None:
 
 
 def test_cite_url_not_in_hits_is_soft_verify_not_hold() -> None:
-    """Critic still names the miss. Gate does not HOLD; the loop repairs or drops."""
+    """Critic still names the miss. Gate does not HOLD solely for cite_url not in hits."""
     from onecrew.verify import CiteBag, CiteExcerpt
 
     bag = CiteBag(
@@ -392,6 +401,7 @@ def test_live_shift_runs_cite_recheck_after_writer_before_board(monkeypatch) -> 
     assert board_calls["n"] >= 1
     pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
     assert pay.parallel_url == BLS
-    assert packet.receipt.disposition != "HOLD" or "exhausted" not in (packet.receipt.hold_reason or "")
+    assert "grounded requires a Parallel URL" not in (packet.receipt.hold_reason or "")
+    assert "cite-repair loop exhausted" not in (packet.receipt.hold_reason or "")
     assert packet.script
     assert packet.frames

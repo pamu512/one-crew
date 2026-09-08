@@ -833,21 +833,29 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     try:
         write_receipt(fresh, receipt)
     except ReceiptInvalidError as exc:
-        if receipt.disposition != "HOLD":
-            sanitize_stamps(list(receipt.findings or []))
-            receipt.disposition = "HOLD"
-            leftover = _hold_account_hits(hit_urls, list(leftover or []))
-        verify_held = True
-        prior = (receipt.hold_reason or "").strip()
-        receipt.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
-        receipt.written = False
-        try:
-            write_receipt(fresh, receipt)
-        except ReceiptInvalidError:
-            receipt.written = True
+        missing_cite = "grounded requires a Parallel URL" in str(exc)
+        if missing_cite:
+            # Cite-repair loop attaches or drops. Do not HOLD solely for missing cite_url.
+            receipt.written = False
             receipt.packet_id = fresh.id
             fresh.receipt = receipt
-            fresh.status = "hold"
+            verify_held = False
+        else:
+            if receipt.disposition != "HOLD":
+                sanitize_stamps(list(receipt.findings or []))
+                receipt.disposition = "HOLD"
+                leftover = _hold_account_hits(hit_urls, list(leftover or []))
+            verify_held = True
+            prior = (receipt.hold_reason or "").strip()
+            receipt.hold_reason = f"{prior} ReceiptInvalidError: {exc}".strip()
+            receipt.written = False
+            try:
+                write_receipt(fresh, receipt)
+            except ReceiptInvalidError:
+                receipt.written = True
+                receipt.packet_id = fresh.id
+                fresh.receipt = receipt
+                fresh.status = "hold"
     if verify_held:
         if leftover:
             fresh.exclusions = leftover

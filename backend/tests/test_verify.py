@@ -754,7 +754,7 @@ def test_cite_url_in_hits_is_not_cite_url_not_in_hits() -> None:
 
 
 def test_named_cite_url_absent_from_hits_is_soft_not_hold() -> None:
-    """cite_url not in hits is a critic miss. Gate stays READY; cite-repair loop handles it."""
+    """cite_url not in hits is a critic miss. Gate stays READY; do not HOLD solely for it."""
     findings = [
         Finding(
             id="usrec-july-2026",

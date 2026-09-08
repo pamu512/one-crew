@@ -91,16 +91,16 @@ def _bag_from_search(result: Any) -> CiteBag:
     return cite_bag_from_rows(rows, spine="", hit_urls=urls)
 
 
-def _recheck_parallel(findings: list[Finding], search_fn: SearchFn) -> CiteBag:
+def _recheck_parallel(findings: list[Finding], search_fn: SearchFn) -> tuple[CiteBag, str]:
+    """status is ok | empty | down. Down is not a miss — do not drop on rail failure."""
     queries = _queries_for(findings)
     objective = queries[0]
     try:
         result = search_fn(objective=objective, search_queries=queries)
     except (ParallelDownError, ParallelCreditError):
-        return CiteBag()
-    except Exception:
-        return CiteBag()
-    return _bag_from_search(result)
+        return CiteBag(), "down"
+    bag = _bag_from_search(result)
+    return bag, ("ok" if bag.hit_urls else "empty")
 
 
 def _attach_from_bag(packet: Packet, bag: CiteBag) -> list[str]:
@@ -178,6 +178,60 @@ def rebuild_timed_vo(packet: Packet) -> None:
     packet.frames = [f for f in packet.frames if f.beat_id in kept]
 
 
+def _retire_uncited_grounded(packet: Packet) -> None:
+    """Unspoken grounded rows without a URL are not shipped. Tag fringe — do not invent a cite."""
+    receipt = packet.receipt
+    if receipt is None:
+        return
+    cited = {fid for beat in packet.beats for fid in beat.finding_ids}
+    for finding in receipt.findings:
+        if finding.id in cited or not _grounded_uncited(finding):
+            continue
+        finding.stamp = "fringe"
+        finding.parallel_status = "miss"
+        finding.parallel_url = None
+        finding.note = "Parallel miss. Included and tagged fringe. Never sold as fact."
+
+
+_CITE_HOLD_MARKERS = (
+    "grounded requires a Parallel URL",
+    "grounded claim missing cite_url",
+    "cite_url not in hits",
+    _EXHAUST_REASON,
+)
+
+
+def _clear_cite_only_hold(packet: Packet) -> None:
+    """Successful attach/drop must not leave a cite-only HOLD."""
+    if missing_cite_beats(packet):
+        return
+    _retire_uncited_grounded(packet)
+    receipt = packet.receipt
+    if receipt is None:
+        packet.status = "ready"
+        return
+    reason = (receipt.hold_reason or "").strip()
+    if receipt.disposition == "HOLD" and reason:
+        kept = [
+            part.strip()
+            for part in reason.replace("\n", ";").split(";")
+            if part.strip() and not any(m.lower() in part.lower() for m in _CITE_HOLD_MARKERS)
+        ]
+        # ReceiptInvalidError prefixes a cite-only reason as one clause.
+        if not kept and any(m.lower() in reason.lower() for m in _CITE_HOLD_MARKERS):
+            receipt.hold_reason = None
+            receipt.disposition = "READY"
+        elif kept:
+            receipt.hold_reason = "; ".join(kept)
+        else:
+            receipt.hold_reason = None
+            receipt.disposition = "READY"
+    elif receipt.disposition != "HOLD":
+        receipt.disposition = "READY"
+    if receipt.disposition == "READY":
+        packet.status = "ready"
+
+
 def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
     drop_ids = set(_beat_ids_for_findings(packet, finding_ids))
     if not drop_ids or not _can_drop_cleanly(packet, drop_ids):
@@ -185,6 +239,7 @@ def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
     dropped = [b.id for b in packet.beats if b.id in drop_ids]
     packet.beats = [b for b in packet.beats if b.id not in drop_ids]
     rebuild_timed_vo(packet)
+    _retire_uncited_grounded(packet)
     return dropped
 
 
@@ -231,8 +286,7 @@ def run_cite_recheck_loop(
         missing = missing_cite_findings(packet)
         if not missing or not missing_cite_beats(packet):
             packet.cite_recheck_attempts = attempts
-            if packet.receipt is not None and packet.receipt.disposition != "HOLD":
-                packet.status = "ready"
+            _clear_cite_only_hold(packet)
             return CiteRepairResult(
                 ok=True,
                 attempts=attempts,
@@ -248,10 +302,10 @@ def run_cite_recheck_loop(
             return result
         attempts += 1
         packet.cite_recheck_attempts = attempts
-        bag = _recheck_parallel(missing, search_fn)
+        bag, status = _recheck_parallel(missing, search_fn)
         hit_urls.extend(u for u in bag.hit_urls if u not in hit_urls)
         attached_all.extend(_attach_from_bag(packet, bag))
         still = {f.id for f in missing_cite_findings(packet)}
-        if still:
+        if still and status != "down":
             dropped = drop_unsupported_beats(packet, still)
             dropped_all.extend(dropped)
