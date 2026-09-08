@@ -233,6 +233,86 @@ def test_u3_4_3_june_2028_fails_when_year_absent_from_cite() -> None:
     assert got.reason == "u3 year absent from ces"
 
 
+def test_u3_ces_header_year_is_not_absent() -> None:
+    bag = _bag(
+        excerpts=[
+            (
+                BLS,
+                "CES",
+                "THE EMPLOYMENT SITUATION -- JULY 2026. "
+                "The unemployment rate was 4.3 percent.",
+            )
+        ],
+        hit_urls=[BLS],
+    )
+    claim = Claim(
+        series="U-3",
+        print="4.3%",
+        when="July 2026",
+        id="u3-july-2026",
+        cite_url=BLS,
+        claim_span="The unemployment rate was 4.3 percent.",
+    )
+    got = verify_u3_ces(claim, bag)
+    assert got.ok is True
+    assert got.reason != "u3 year absent from ces"
+
+
+_HYPO_THEN_JULY_CES = (
+    "Moody's Analytics noted that payrolls actually declined by 13,000 jobs in June 2024. "
+    "May 2026 payrolls were revised up from +80,000 to +129,000. "
+    "Suppose employment increases by 50,000 from one month to the next. "
+    "If, however, the reported nonfarm employment rise was 250,000, then all of "
+    "the values within the 90-percent confidence interval would be greater than zero. "
+    "THE EMPLOYMENT SITUATION -- JULY 2026. "
+    "Total nonfarm payroll employment fell by 23,000 in July 2026."
+)
+
+
+def test_hypo_ci_same_excerpt_does_not_hold_realized_july_ces() -> None:
+    bag = _bag(
+        excerpts=[(BLS, "CES mixed", _HYPO_THEN_JULY_CES)],
+        spine=_HYPO_THEN_JULY_CES,
+        hit_urls=[BLS],
+    )
+    claim = Claim(
+        series="BLS payrolls",
+        print="−23,000",
+        when="July 2026",
+        id="payrolls-july-2026",
+        cite_url=BLS,
+        claim_span="Total nonfarm payroll employment fell by 23,000 in July 2026.",
+    )
+    got = verify_payrolls_realized_ces(claim, bag)
+    assert got.ok is True
+    assert got.reason != "hypo/CI/revision window"
+
+
+def test_gdp_34_percent_index_is_not_a_bar() -> None:
+    bag = _bag(
+        excerpts=[
+            (
+                BEA,
+                "GDP",
+                "Gross Domestic Product, Second Quarter 2026 and Corporate Profits. "
+                "The index level stood at 34%. Profits were 34.0 percent of GDP.",
+            )
+        ],
+        hit_urls=[BEA],
+    )
+    claim = Claim(
+        series="GDP",
+        print="34%",
+        when="Q2 2026",
+        id="gdp-2026-q2",
+        cite_url=BEA,
+        claim_span="The index level stood at 34%.",
+    )
+    got = verify_gdp_bars(claim, bag)
+    assert got.ok is False
+    assert got.reason == "gdp bars mismatch"
+
+
 def test_verify_claim_set_ignores_agent_critic_prose() -> None:
     params = list(inspect.signature(verify_claim_set).parameters)
     assert params == ["claims", "bag"]

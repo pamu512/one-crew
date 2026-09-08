@@ -268,6 +268,15 @@ def _bad_window(text: str) -> bool:
     return "suppose" in low or "confidence interval" in low or bool(_REV.search(low))
 
 
+def _clean_ces_chunk(chunk: str) -> str:
+    """Drop hypo/CI/revision sentences. Keep realized CES + header year in the same extract."""
+    return " ".join(
+        sent
+        for sent in re.split(r"(?<=[.!?])\s+", chunk or "")
+        if sent.strip() and not _bad_window(sent)
+    )
+
+
 def _ces_chunks(bag: CiteBag) -> list[str]:
     out: list[str] = []
     for chunk in (*(e.text for e in bag.excerpts), bag.spine or ""):
@@ -447,23 +456,26 @@ def verify_payrolls_realized_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     chunks = _ces_chunks(bag)
     realized: list[str] = []
     for chunk in chunks:
-        if _bad_window(chunk) or not _has_realized_print(chunk):
+        work = _clean_ces_chunk(chunk)
+        if not work or not _has_realized_print(work):
             continue
         if parsed is None or parsed[0] != "month":
-            realized.append(chunk)
+            realized.append(work)
             continue
         _, year, month = parsed
-        months = _months_in(chunk)
+        months = _months_in(work)
         if months and month not in months:
             continue
-        if _year_adjacent_month(chunk, year, month):
-            realized.append(chunk)
+        if _year_adjacent_month(work, year, month):
+            realized.append(work)
             continue
         if not months and _year_adjacent_month(cite or _bag_text(bag), year, month):
-            realized.append(chunk)
+            realized.append(work)
     if parsed and parsed[0] == "month":
         _, year, month = parsed
-        supporting = "\n".join(realized) or "\n".join(c for c in chunks if not _bad_window(c))
+        supporting = "\n".join(realized) or "\n".join(
+            w for w in (_clean_ces_chunk(c) for c in chunks) if w
+        )
         if realized and not _year_adjacent_month(supporting, year, month) and not _year_adjacent_month(cite, year, month):
             return VerifyResult(ok=False, reason="when year not on CES")
         if not realized:
@@ -567,10 +579,12 @@ def verify_gdp_bars(claim: Claim, bag: CiteBag) -> VerifyResult:
         return VerifyResult(ok=True, reason=None, matched_in=blob)
     cited = _gdp_print_from_bars(gdp_quarter_bars(blob))
     bars = _bars(claim.print)
-    if cited and "/" in cited:
+    if cited:
         want = {_norm(b).lstrip("+-") for b in _bars(cited)}
         if {_norm(b).lstrip("+-") for b in bars} != want:
             return VerifyResult(ok=False, reason="gdp bars mismatch")
+    elif bars:
+        return VerifyResult(ok=False, reason="gdp bars mismatch")
     if len(bars) > 1:
         extra = [b for b in bars if not _bar_in(b, blob)]
         if extra:
@@ -595,11 +609,15 @@ def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     parsed = _parse_when(claim.when)
     if parsed and parsed[0] == "month":
         if not any(_year_adjacent_month(s, parsed[1], parsed[2]) for s in unemp):
-            return VerifyResult(ok=False, reason="u3 year absent from ces")
+            ces = "\n".join(_ces_chunks(bag)) or blob
+            if not _year_adjacent_month(ces, parsed[1], parsed[2]):
+                return VerifyResult(ok=False, reason="u3 year absent from ces")
     elif parsed:
         year = str(parsed[1])
         if year and not any(year in s for s in unemp):
-            return VerifyResult(ok=False, reason="u3 year absent from ces")
+            ces = "\n".join(_ces_chunks(bag)) or blob
+            if year not in ces:
+                return VerifyResult(ok=False, reason="u3 year absent from ces")
     return VerifyResult(ok=True, reason=None, matched_in=" ".join(unemp) or None)
 
 

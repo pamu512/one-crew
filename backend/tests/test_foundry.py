@@ -3373,3 +3373,113 @@ def test_writer_rejects_mixed_month_smash_vo(monkeypatch) -> None:
     assert "USREC=0 (July 2026) smashed into payrolls" in spoken
     assert packet.beats
     assert next(b for b in packet.beats if b.id == "cold-open")
+
+
+# Live oc-are-we-near-recession-ff84cb08: BEA title / corporate profits / index
+# 34 is not a GDP growth print. Two-bar 2.1/1.5 stays locked when notes have it.
+_GDP_34_NOISE = (
+    "Gross Domestic Product, Second Quarter 2026 (Second Estimate) and Corporate Profits. "
+    "Corporate profits increased 34% in the second quarter. "
+    "The index level stood at 34%. "
+    "Profits were 34.0 percent of GDP."
+)
+_GDP_34_PLUS_TWO_BAR = (
+    f"{_GDP_34_NOISE} "
+    "Real GDP increased 2.1% in Q1 2026 and 1.5% annualized in Q2 2026."
+)
+_LIVE_FF84_MIXED = (
+    "Moody's Analytics noted that payrolls actually declined by 13,000 jobs in June 2024. "
+    "May 2026 payrolls were revised up from +80,000 to +129,000. "
+    "Suppose employment increases by 50,000 from one month to the next. "
+    "If, however, the reported nonfarm employment rise was 250,000, then all of "
+    "the values within the 90-percent confidence interval would be greater than zero. "
+    "THE EMPLOYMENT SITUATION -- JULY 2026. "
+    "Total nonfarm payroll employment fell by 23,000 in July 2026. "
+    "The unemployment rate was 4.3 percent. "
+    "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n"
+    f"{_GDP_34_PLUS_TWO_BAR}"
+)
+
+
+def test_gdp_34_from_profits_or_index_is_not_minted() -> None:
+    from onecrew.foundry import FoundryHold
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    try:
+        _, noise = _mint_notes("USREC July 2026 = 0. " + _GDP_34_NOISE)
+    except FoundryHold:
+        noise = []
+    assert ledger.parallel_calls == before
+    gdps = [f for f in noise if f.series == "GDP"]
+    for gdp in gdps:
+        printed = (gdp.print or "").replace(" ", "")
+        assert printed not in {"34%", "34", "34.0", "34.0%"}
+        assert "34" not in printed
+    _, two = _mint_notes(_GDP_34_PLUS_TWO_BAR)
+    gdp = next(f for f in two if f.series == "GDP")
+    assert gdp.print == "2.1 / 1.5"
+    assert "34" not in (gdp.print or "")
+    assert gdp.id == "gdp-2026-q2"
+    assert (gdp.when or "").upper().replace(" ", "") == "Q22026"
+
+
+def test_same_excerpt_hypo_ci_and_ces_header_year_do_not_false_hold() -> None:
+    from onecrew.foundry import mint
+    from onecrew.verify import (
+        CiteBag,
+        CiteExcerpt,
+        apply_verify_gate,
+        claims_from_findings,
+        verify_payrolls_realized_ces,
+        verify_u3_ces,
+    )
+
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-ff84cb08"
+    packet.task_spine = _LIVE_FF84_MIXED
+    hit_rows = [
+        _row(FRED_USREC, "USREC", [_LIVE_FF84_MIXED]),
+        _row(BLS_JULY_ARCHIVE, "BLS mixed extract", [_LIVE_FF84_MIXED]),
+        _row(BEA_2026_NEWS, "BEA mixed extract", [_LIVE_FF84_MIXED]),
+    ]
+    rows = mint(
+        packet,
+        hit_rows,
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        _LIVE_FF84_MIXED,
+    )
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    _assert_july_ces_payrolls(payrolls)
+    u3 = next(f for f in rows if f.series == "U-3")
+    assert "4.3" in (u3.print or "")
+    assert (u3.when or "").lower() == "july 2026"
+    gdp = next(f for f in rows if f.series == "GDP")
+    assert gdp.print == "2.1 / 1.5"
+    assert "34" not in (gdp.print or "")
+    bag = CiteBag(
+        excerpts=[
+            CiteExcerpt(url=r.url, title=r.title, text=" ".join(r.excerpts)) for r in hit_rows
+        ],
+        spine=_LIVE_FF84_MIXED,
+        hit_urls=[r.url for r in hit_rows],
+    )
+    claims = claims_from_findings(rows)
+    pay_claim = next(c for c in claims if c.series == "BLS payrolls")
+    u3_claim = next(c for c in claims if c.series == "U-3")
+    assert verify_payrolls_realized_ces(pay_claim, bag).ok is True
+    assert verify_u3_ces(u3_claim, bag).ok is True
+    gated = apply_verify_gate(
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+        bag,
+    )
+    reason = (gated.hold_reason or "")
+    assert gated.disposition == "READY", reason
+    assert "hypo/CI/revision window" not in reason
+    assert "u3 year absent from ces" not in reason
+    write_receipt(packet, gated)
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert "2.1" in spoken and "1.5" in spoken
+    assert "34%" not in spoken
