@@ -324,6 +324,7 @@ class Packet(BaseModel):
     grade_artifact: GradeArtifact | None = None
     room_grade: RoomGrade | None = None
     parallel_research_loops: int = 0
+    cite_recheck_attempts: int = 0
 
 
 class ShiftRecord(BaseModel):

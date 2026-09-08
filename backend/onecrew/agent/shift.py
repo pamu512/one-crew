@@ -32,6 +32,7 @@ from onecrew.receipt import (
 )
 from onecrew.claimer import findings_from_claims, frame_findings, propose_claims
 from onecrew.foundry import FoundryHold, leftover_slot_ids, mint, require_minted, sanitize_stamps
+from onecrew.cite_repair import run_cite_recheck_loop
 from onecrew.verify import apply_verify_gate, attach_cites_from_hits, cite_bag_from_rows
 from onecrew.pack import leftover_hit_exclusions, write_research_pack
 from onecrew.research import extract_objective, search_objective, search_queries, task_research_prompt
@@ -868,6 +869,25 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             )
     write_vo_from_pack(fresh)
 
+    def _cite_repair() -> bool:
+        nonlocal leftover, hit_urls
+        if not rails.parallel:
+            return True
+        repair = run_cite_recheck_loop(fresh)
+        if repair.hit_urls:
+            hit_urls = list(dict.fromkeys([*(hit_urls or []), *repair.hit_urls]))
+        if repair.ok:
+            return True
+        stamp_collisions(fresh, rails)
+        attach_frames(fresh, [], rails=rails)
+        fresh.exclusions = leftover
+        write_research_pack(fresh, hit_urls=hit_urls)
+        store.upsert_packet(fresh)
+        return False
+
+    if not _cite_repair():
+        return fresh
+
     def _research_again(missing_ask: str | None = None) -> None:
         nonlocal leftover, hit_urls, receipt
         try:
@@ -914,6 +934,9 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         fresh.exclusions = leftover
         write_research_pack(fresh, hit_urls=hit_urls)
         store.upsert_packet(fresh)
+        return fresh
+
+    if not _cite_repair():
         return fresh
 
     stamp_collisions(fresh, rails)
