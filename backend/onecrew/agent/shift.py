@@ -596,6 +596,8 @@ def _research(
         spine=spine,
         hit_urls=list(dict.fromkeys((source_urls or []) + list(hit_urls or []))),
     )
+    # ponytail: in-memory CiteBag for print/when repair. Upgrade: persist excerpts on Packet.
+    object.__setattr__(packet, "_cite_bag", bag)
     foundry_rows: list[Finding] = []
     foundry_exc: FoundryHold | None = None
     try:
@@ -881,7 +883,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         nonlocal leftover, hit_urls
         if not rails.parallel:
             return True
-        repair = run_cite_recheck_loop(fresh)
+        repair = run_cite_recheck_loop(fresh, bag=getattr(fresh, "_cite_bag", None))
         if repair.hit_urls:
             hit_urls = list(dict.fromkeys([*(hit_urls or []), *repair.hit_urls]))
         if repair.ok:

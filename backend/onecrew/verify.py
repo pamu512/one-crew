@@ -140,6 +140,19 @@ def resolve_missing_cite(claim: Claim, bag: CiteBag) -> Claim:
     return claim
 
 
+def relink_unsupported_cite(claim: Claim, bag: CiteBag) -> Claim:
+    """Swap a stamped URL only when another Parallel hit excerpt carries print+when."""
+    if not (claim.cite_url or "").strip():
+        return resolve_missing_cite(claim, bag)
+    if verify_print_in_cite(claim, bag).ok:
+        return claim
+    for url in _cite_candidates(claim, bag):
+        trial = claim.model_copy(update={"cite_url": url})
+        if verify_print_in_cite(trial, bag).ok:
+            return trial
+    return claim
+
+
 def attach_cites_from_hits(findings: list[Finding], bag: CiteBag) -> list[Finding]:
     """Stamp parallel_url from a supporting Parallel hit. Do not invent a URL."""
     claims = [resolve_missing_cite(c, bag) for c in claims_from_findings(findings)]
@@ -640,12 +653,14 @@ _SOFT_CITE_REASONS = frozenset(
     {
         "grounded claim missing cite_url",
         "cite_url not in hits",
+        "print not in cite",
+        "when not in cite",
     }
 )
 
 
 def apply_verify_gate(receipt: Receipt, bag: CiteBag) -> Receipt:
-    """READY if hard verify passes. Missing cite_url is soft — the cite-repair loop handles it."""
+    """READY if hard verify passes. Print/when/missing cite are soft — the cite-repair loop handles them."""
     findings = attach_cites_from_hits(list(receipt.findings or []), bag)
     claims = claims_from_findings(findings)
     named = [c for c in claims if c.series in CLOSED_SERIES]
