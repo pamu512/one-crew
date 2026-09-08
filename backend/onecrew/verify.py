@@ -556,7 +556,11 @@ def verify_gdp_bars(claim: Claim, bag: CiteBag) -> VerifyResult:
     from onecrew.foundry import _gdp_print_from_bars, gdp_quarter_bars
 
     blob = _strip_forecast(_bag_text(bag))
-    dated = [(k, v) for k, v in gdp_quarter_bars(blob) if k[0]]
+    dated = [
+        (k, v)
+        for k, v in gdp_quarter_bars(blob)
+        if k[0] and re.sub(r"[^\d.]", "", v) not in {"0.5", "0.50"}
+    ]
     parsed = _parse_when(claim.when)
     pair: list[tuple[tuple[int, int], str]] = []
     if dated:
