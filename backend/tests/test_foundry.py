@@ -1213,11 +1213,10 @@ def test_gdp_three_bar_print_is_not_lone_q2_half() -> None:
     _, rows = _mint_notes("Real GDP Q4 2025 0.5%, Q1 2026 2.1%, Q2 2026 1.5%.")
     assert ledger.parallel_calls == before
     gdp = next(f for f in rows if f.series == "GDP")
-    assert "0.5" in (gdp.print or "")
-    assert "2.1" in (gdp.print or "")
-    assert "1.5" in (gdp.print or "")
-    if re.search(r"q2", gdp.when or "", re.I):
-        assert gdp.print not in {"0.5", "0.5%"}
+    assert gdp.print == "2.1 / 1.5"
+    assert "0.5" not in (gdp.print or "")
+    assert (gdp.when or "").upper().replace(" ", "") == "Q22026"
+    assert gdp.id == "gdp-2026-q2"
 
 
 def test_sahm_hole_turn_does_not_tape_usrec() -> None:
@@ -3483,3 +3482,148 @@ def test_same_excerpt_hypo_ci_and_ces_header_year_do_not_false_hold() -> None:
     spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
     assert "2.1" in spoken and "1.5" in spoken
     assert "34%" not in spoken
+
+
+# Live oc-are-we-near-recession-28a3c983: BEA third estimate names Q1 2.1
+# vs Q4 2025 0.5, plus Q2 1.5. 0.5 is the prior-quarter comparison, not the
+# GDP mint. LEI July +0.2% sits next to a 1.3% prior six-month contraction.
+NERD_GDP = "https://www.nerdwallet.com/article/investing/gdp-growth"
+BLS_EMPSIT_T17 = "https://www.bls.gov/news.release/empsit.t17.htm"
+_BEA_THIRD_VS_Q4 = (
+    "BEA third estimate: real GDP rose 2.1% annualized in Q1 vs 0.5% in Q4 2025."
+)
+_Q2_2026_BAR = "Real GDP increased 1.5% annualized in Q2 2026."
+_LEI_JULY_TURN_VS_CONTRACTION = (
+    "Conference Board LEI increased 0.2% in July (six-month growth turned "
+    "positive at 0.2% from a 1.3% contraction over the previous six months)."
+)
+_LIVE_28A3_GDP_LEI = (
+    "USREC July 2026 = 0. "
+    "July payrolls fell 23,000 and unemployment was 4.1%. "
+    f"{_BEA_THIRD_VS_Q4} "
+    f"{_Q2_2026_BAR} "
+    "SPF projects 2.2% in 2027. "
+    f"{_LEI_JULY_TURN_VS_CONTRACTION} "
+    f"{FRED_USREC} {BLS} {BEA_2026_NEWS} {NERD_GDP} {LEI_URL} {BLS_EMPSIT_T17}"
+)
+
+
+def test_q4_2025_half_plus_2026_bars_mints_two_bar_not_sole_half() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = _LIVE_28A3_GDP_LEI
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", ["USREC July 2026 = 0."]),
+            _row(BLS, "BLS Employment Situation", [
+                "July payrolls fell 23,000 and unemployment was 4.1%."
+            ]),
+            _row(NERD_GDP, "NerdWallet GDP", [_BEA_THIRD_VS_Q4]),
+            _row(BEA_2026_NEWS, "BEA second estimate", [
+                f"{_BEA_THIRD_VS_Q4} {_Q2_2026_BAR}"
+            ]),
+            _row(LEI_URL, "Conference Board LEI", [_LEI_JULY_TURN_VS_CONTRACTION]),
+            _row(BLS_EMPSIT_T17, "BLS CES table", [_LEI_JULY_TURN_VS_CONTRACTION]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        _LIVE_28A3_GDP_LEI,
+    )
+    assert ledger.parallel_calls == before
+    gdp = next(f for f in rows if f.series == "GDP")
+    assert gdp.print == "2.1 / 1.5"
+    assert "0.5" not in (gdp.print or "")
+    assert gdp.print not in {"0.5", "0.5%"}
+    assert (gdp.when or "").upper().replace(" ", "") == "Q22026"
+    assert gdp.id == "gdp-2026-q2"
+    assert "q4" not in (gdp.when or "").lower()
+    assert gdp.id != "gdp-2025-q4"
+    assert "bea.gov" in (gdp.parallel_url or "")
+    assert "nerdwallet" not in (gdp.parallel_url or "").lower()
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    write_script(packet)
+    gdp_vo = next(b for b in packet.beats if b.id == "gdp").vo
+    assert "2.1" in gdp_vo and "1.5" in gdp_vo
+    assert "0.5" not in gdp_vo
+
+
+def test_sole_q4_2025_half_comparison_does_not_mint_gdp() -> None:
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    spine = (
+        "USREC July 2026 = 0. "
+        "July payrolls fell 23,000 and unemployment was 4.1%. "
+        "BEA third estimate: real GDP rose vs 0.5% in Q4 2025. "
+        "Q4 2025 growth was only 0.5%. "
+        f"{FRED_USREC} {BLS} {NERD_GDP}"
+    )
+    packet, rows = _mint_notes(spine)
+    assert ledger.parallel_calls == before
+    gdps = [f for f in rows if f.series == "GDP"]
+    for gdp in gdps:
+        printed = (gdp.print or "").replace(" ", "")
+        assert printed not in {"0.5", "0.5%", "0.50", "0.50%"}
+        assert "0.5" not in (gdp.print or "")
+
+
+def test_lei_july_turn_is_point_two_not_prior_contraction() -> None:
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    spine = (
+        "USREC July 2026 = 0. "
+        "July payrolls fell 23,000 and unemployment was 4.1%. "
+        f"{_LEI_JULY_TURN_VS_CONTRACTION} "
+        f"{FRED_USREC} {BLS} {LEI_URL}"
+    )
+    packet, rows = _mint_notes(spine)
+    assert ledger.parallel_calls == before
+    lei = next(f for f in rows if f.series == "LEI")
+    assert "0.2" in (lei.print or "")
+    assert "1.3" not in (lei.print or "")
+    assert (lei.when or "").lower().startswith("july")
+    assert lei.id == "lei-july-2026"
+
+
+def test_lei_cite_is_conference_board_not_bls_empsit() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    before = ledger.parallel_calls
+    spine = (
+        "USREC July 2026 = 0. "
+        "July payrolls fell 23,000 and unemployment was 4.1%. "
+        f"{_LEI_JULY_TURN_VS_CONTRACTION} "
+        f"{FRED_USREC} {BLS_EMPSIT_T17} {LEI_URL}"
+    )
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", ["USREC July 2026 = 0."]),
+            _row(BLS_EMPSIT_T17, "BLS CES hours", [
+                "Average weekly hours 34.2. LEI six-month contraction 1.3%."
+            ]),
+            _row(LEI_URL, "Conference Board LEI", [_LEI_JULY_TURN_VS_CONTRACTION]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    lei = next(f for f in rows if f.series == "LEI")
+    assert "0.2" in (lei.print or "")
+    assert "1.3" not in (lei.print or "")
+    cite = f"{lei.parallel_url or ''} {getattr(lei, 'cite_url', '') or ''}".lower()
+    assert "empsit" not in cite
+    assert "bls.gov" not in cite
+    assert "conference-board.org" in cite

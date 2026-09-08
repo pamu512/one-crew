@@ -988,3 +988,53 @@ def test_glued_csv_date_still_counts_as_usrec_print() -> None:
     assert smash.ok is True, smash.reason
 
 
+def test_gdp_q4_half_is_rejected_when_2026_pair_exists() -> None:
+    bag = _bag(
+        excerpts=[
+            (
+                BEA,
+                "GDP",
+                "BEA third estimate: real GDP rose 2.1% annualized in Q1 vs 0.5% in Q4 2025. "
+                "Real GDP increased 1.5% annualized in Q2 2026.",
+            )
+        ],
+        hit_urls=[BEA],
+    )
+    claim = Claim(
+        series="GDP",
+        print="0.5",
+        when="Q4 2025",
+        id="gdp-2025-q4",
+        cite_url=BEA,
+        claim_span="real GDP rose 2.1% annualized in Q1 vs 0.5% in Q4 2025",
+    )
+    got = verify_gdp_bars(claim, bag)
+    assert got.ok is False
+    assert got.reason in {"gdp bars mismatch", "q4 vs q1/q2", "gdp when mismatch", "gdp id mismatch"}
+
+
+def test_gdp_sole_q4_half_comparison_is_not_a_bar() -> None:
+    bag = _bag(
+        excerpts=[
+            (
+                BEA,
+                "GDP",
+                "BEA third estimate: real GDP rose vs 0.5% in Q4 2025. "
+                "Q4 2025 growth was only 0.5%.",
+            )
+        ],
+        hit_urls=[BEA],
+    )
+    claim = Claim(
+        series="GDP",
+        print="0.5",
+        when="Q4 2025",
+        id="gdp-2025-q4",
+        cite_url=BEA,
+        claim_span="Q4 2025 growth was only 0.5%.",
+    )
+    got = verify_gdp_bars(claim, bag)
+    assert got.ok is False
+    assert got.reason == "gdp bars mismatch"
+
+
