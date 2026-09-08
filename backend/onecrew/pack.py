@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from onecrew.models import (
     EXCLUSION_REASONS,
     MISSING,
@@ -25,16 +27,22 @@ def seed_exclusions() -> list[Exclusion]:
     ]
 
 
-def hits_accounted(hit_urls: list[str], packet: Packet) -> bool:
-    """Every Parallel hit URL is a finding or an exclusion. Silent drop fails."""
+def unaccounted_hit_urls(hit_urls: list[str], packet: Packet) -> list[str]:
+    """Parallel hit URLs that are neither a finding nor an exclusion."""
     cited = {f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url}
     left = {ex.url for ex in packet.exclusions if ex.url}
-    return all(url in cited or url in left for url in hit_urls if url)
+    return [url for url in hit_urls if url and url not in cited and url not in left]
+
+
+def hits_accounted(hit_urls: list[str], packet: Packet) -> bool:
+    """Every Parallel hit URL is a finding or an exclusion. Silent drop fails."""
+    return not unaccounted_hit_urls(hit_urls, packet)
 
 
 def require_hits_accounted(hit_urls: list[str], packet: Packet) -> None:
-    if not hits_accounted(hit_urls, packet):
-        raise PackInvalidError("silent drop of a Parallel hit")
+    dropped = unaccounted_hit_urls(hit_urls, packet)
+    if dropped:
+        raise PackInvalidError(f"silent drop of a Parallel hit: {dropped[0]}")
 
 
 def leftover_hit_exclusions(
@@ -58,6 +66,30 @@ def leftover_hit_exclusions(
         # ponytail: Parallel title or the URL. Never invent a page name.
         out.append(Exclusion(what=title or url, reason=reason, detail=detail, url=url))
     return out
+
+
+def account_unaccounted_hits(
+    packet: Packet,
+    hit_urls: list[str] | None,
+    leftover: list[Exclusion] | None = None,
+    *,
+    reason: str = "duplicate",
+    detail: str = "Same timeline search; not stamped as a finding.",
+) -> list[Exclusion]:
+    """Every leftover Parallel URL becomes an Exclusion before pack-write."""
+    rows = list(leftover if leftover is not None else packet.exclusions)
+    kept = {f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url}
+    kept |= {ex.url for ex in rows if ex.url}
+    rows.extend(
+        leftover_hit_exclusions(
+            [SimpleNamespace(url=url, title="") for url in (hit_urls or []) if url],
+            kept,
+            reason=reason,
+            detail=detail,
+        )
+    )
+    packet.exclusions = rows
+    return rows
 
 
 def validate_exclusions(packet: Packet) -> None:
