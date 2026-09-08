@@ -14,6 +14,7 @@ from onecrew.pack import (
     leftover_hit_exclusions,
     write_research_pack,
 )
+from onecrew.store import store
 from onecrew.room import RoomGrade, RoomLoopResult
 from onecrew.script import write_script
 from onecrew.seed import leftover_hormuz_packet, seed_first_open
@@ -130,8 +131,9 @@ def test_silent_hit_drop_fails() -> None:
     extra = "https://example.com/unused-hit"
     assert hits_accounted([f.parallel_url for f in packet.receipt.findings if f.parallel_url], packet)
     assert hits_accounted([extra], packet) is False
-    with pytest.raises(PackInvalidError, match="silent drop"):
+    with pytest.raises(PackInvalidError, match="silent drop") as raised:
         write_research_pack(packet, hit_urls=[extra])
+    assert extra in str(raised.value)
     packet.exclusions.append(Exclusion(what=extra, reason="duplicate", detail="Same search.", url=extra))
     assert hits_accounted([extra], packet)
     write_research_pack(packet, hit_urls=[extra])
@@ -344,15 +346,10 @@ def test_unaccounted_parallel_hit_completes_without_pack_invalid(monkeypatch) ->
     packet = run_live_packet(shift)
     assert vo_calls["n"] >= 1
     assert packet.script
-    accounted = any(row.url == _DROPPED_HIT for row in packet.exclusions)
-    held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
-    assert accounted or held
-    if accounted:
-        assert any(row.url == _DROPPED_HIT and row.reason == "duplicate" for row in packet.exclusions)
-    if held:
-        assert "silent drop" in (packet.receipt.hold_reason or "").lower()
+    assert any(row.url == _DROPPED_HIT and row.reason == "duplicate" for row in packet.exclusions)
     assert hits_accounted([_KEPT_HIT, _DROPPED_HIT], packet)
     assert _DROPPED_HIT in (packet.research_pack or "")
+    assert "reason=duplicate" in (packet.research_pack or "")
 
 
 def test_cite_repair_extra_hit_is_accounted(monkeypatch) -> None:
@@ -375,9 +372,7 @@ def test_cite_repair_extra_hit_is_accounted(monkeypatch) -> None:
     )
     shift.rails = Rails(parallel=True, vertex=False, imagen=False)
     packet = run_live_packet(shift)
-    assert any(row.url == _DROPPED_HIT for row in packet.exclusions) or (
-        packet.receipt is not None and packet.receipt.disposition == "HOLD"
-    )
+    assert any(row.url == _DROPPED_HIT and row.reason == "duplicate" for row in packet.exclusions)
     assert hits_accounted([_KEPT_HIT, _DROPPED_HIT], packet)
     assert packet.script
 
@@ -404,6 +399,10 @@ def test_run_shift_does_not_raise_on_unaccounted_hit(monkeypatch) -> None:
     finished = asyncio.run(run_shift("Hormuz", shift=shift))
     assert finished.status == "completed"
     assert finished.error is None
+    packet = store.get_packet(finished.packet_id)
+    assert packet is not None
+    assert any(row.url == _DROPPED_HIT for row in packet.exclusions)
+    assert hits_accounted([_KEPT_HIT, _DROPPED_HIT], packet)
 
 
 def test_unaccounted_hit_shift_api_is_not_500(monkeypatch) -> None:
@@ -414,6 +413,10 @@ def test_unaccounted_hit_shift_api_is_not_500(monkeypatch) -> None:
     )
     monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
     monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel-key")
+    monkeypatch.setattr(
+        "onecrew.agent.shift.assess_rails",
+        lambda: Rails(parallel=True, vertex=False, imagen=False),
+    )
     pid = "oc-silent-drop-hold"
     body = {
         "goal": "Hormuz",
@@ -440,5 +443,101 @@ def test_unaccounted_hit_shift_api_is_not_500(monkeypatch) -> None:
     assert got.status_code == 200
     packet = got.json()
     urls = [row.get("url") for row in (packet.get("exclusions") or [])]
-    held = (packet.get("receipt") or {}).get("disposition") == "HOLD"
-    assert _DROPPED_HIT in urls or held
+    assert _DROPPED_HIT in urls
+    assert any(
+        row.get("url") == _DROPPED_HIT and row.get("reason") == "duplicate"
+        for row in (packet.get("exclusions") or [])
+    )
+
+
+def _boom_pack_write(monkeypatch) -> None:
+    """Force PackInvalidError after leftover URLs are already exclusions."""
+    real_write = write_research_pack
+
+    def boom(packet, hit_urls=None):
+        if hit_urls is not None:
+            raise PackInvalidError(f"silent drop of a Parallel hit: {_DROPPED_HIT}")
+        return real_write(packet)
+
+    monkeypatch.setattr("onecrew.agent.shift.write_research_pack", boom)
+
+
+def test_true_silent_drop_after_account_holds_not_500(monkeypatch) -> None:
+    import asyncio
+
+    vo_calls = _stub_closed_shift(
+        monkeypatch,
+        leftover=[],
+        hit_urls=[_KEPT_HIT, _DROPPED_HIT],
+    )
+    _boom_pack_write(monkeypatch)
+    shift = open_shift(
+        "Hormuz",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
+        topic="Hormuz",
+    )
+    shift.rails = Rails(parallel=True, vertex=False, imagen=False)
+    finished = asyncio.run(run_shift("Hormuz", shift=shift))
+    assert finished.status == "completed"
+    assert finished.error is None
+    packet = store.get_packet(finished.packet_id)
+    assert packet is not None
+    assert vo_calls["n"] >= 1
+    assert packet.script
+    assert packet.status == "hold"
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "HOLD"
+    reason = packet.receipt.hold_reason or ""
+    assert "silent drop" in reason.lower()
+    assert _DROPPED_HIT in reason
+    assert packet.research_pack
+    assert "HOLD" in packet.research_pack
+
+
+def test_true_silent_drop_shift_api_is_not_500(monkeypatch) -> None:
+    _stub_closed_shift(
+        monkeypatch,
+        leftover=[],
+        hit_urls=[_KEPT_HIT, _DROPPED_HIT],
+    )
+    _boom_pack_write(monkeypatch)
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel-key")
+    monkeypatch.setattr(
+        "onecrew.agent.shift.assess_rails",
+        lambda: Rails(parallel=True, vertex=False, imagen=False),
+    )
+    pid = "oc-silent-drop-pack-invalid"
+    body = {
+        "goal": "Hormuz",
+        "topic": "Hormuz",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "depth": "decade",
+        "script_lean": "centered_independent",
+        "tell": SEED_TELL,
+        "tone": SEED_TONE,
+        "packet_id": pid,
+    }
+    with TestClient(app) as client:
+        posted = client.post(
+            "/api/shifts",
+            json=body,
+            headers={"X-Shift-Token": "correct-horse"},
+        )
+        assert posted.status_code != 500
+        assert posted.status_code == 200
+        assert posted.json()["status"] == "completed"
+        assert posted.json().get("error") in {None, ""}
+        got = client.get(f"/api/packets/{pid}")
+    assert got.status_code == 200
+    packet = got.json()
+    assert packet["status"] == "hold"
+    reason = ((packet.get("receipt") or {}).get("hold_reason") or "")
+    assert "silent drop" in reason.lower()
+    assert _DROPPED_HIT in reason

@@ -318,16 +318,17 @@ def _write_closed_pack(
     leftover: list[Exclusion] | None,
     hit_urls: list[str] | None,
 ) -> list[Exclusion]:
-    """Account leftover Parallel URLs, then write the pack. Silent drop → HOLD, never raise."""
+    """Account leftover Parallel URLs, then write the pack. PackInvalidError → HOLD, never raise."""
     leftover = account_unaccounted_hits(packet, hit_urls, leftover)
     try:
         write_research_pack(packet, hit_urls=hit_urls)
     except PackInvalidError as exc:
+        log.exception("pack write held")
         _hold_pack_invalid(packet, exc)
         try:
             write_research_pack(packet)
         except PackInvalidError:
-            pass
+            log.exception("pack write held without thesis")
     return leftover
 
 
