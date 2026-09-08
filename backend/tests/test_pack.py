@@ -4,15 +4,17 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from onecrew.agent.shift import open_shift, run_live_packet
+from onecrew.agent.shift import open_shift, run_live_packet, run_shift
 from onecrew.api import app
-from onecrew.models import Exclusion, Rails
+from onecrew.cite_repair import CiteRepairResult
+from onecrew.models import Exclusion, Finding, Rails, Receipt
 from onecrew.pack import (
     PackInvalidError,
     hits_accounted,
     leftover_hit_exclusions,
     write_research_pack,
 )
+from onecrew.room import RoomGrade, RoomLoopResult
 from onecrew.script import write_script
 from onecrew.seed import leftover_hormuz_packet, seed_first_open
 from onecrew.tell import SEED_TELL
@@ -241,3 +243,202 @@ def test_invented_exclusion_title_fails() -> None:
     )
     with pytest.raises(PackInvalidError, match="invented exclusion"):
         write_research_pack(packet)
+
+
+_KEPT_HIT = "https://example.com/kept-hit"
+_DROPPED_HIT = "https://example.com/unaccounted-hit"
+
+
+def _hit_and_miss(kept: str = _KEPT_HIT) -> list[Finding]:
+    return [
+        Finding(
+            id="hormuz-hit",
+            claim="Hormuz tanker transits printed 23% below 2023 in March 2024.",
+            stamp="grounded",
+            title="Kept hit",
+            parallel_url=kept,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="hormuz-miss",
+            claim="Secret navy treaty already mined the strait shut.",
+            stamp="fringe",
+            parallel_status="miss",
+            note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+        ),
+    ]
+
+
+def _stub_closed_shift(monkeypatch, *, leftover, hit_urls, repair_hit_urls=None) -> dict:
+    """_research returns leftover as-is. Cite-repair may add more Parallel URLs."""
+
+    def research(packet, rails, depth, **_k):
+        packet.research_pack = (
+            "Hormuz tanker transits printed 23% below 2023 in March 2024."
+        )
+        packet.task_spine = packet.research_pack
+        return (
+            Receipt(
+                packet_id=packet.id,
+                written=False,
+                disposition="READY",
+                findings=_hit_and_miss(),
+                causal_links=[],
+            ),
+            list(leftover),
+            list(hit_urls),
+            packet.research_pack,
+        )
+
+    vo_calls = {"n": 0}
+
+    def tracking_vo(packet):
+        vo_calls["n"] += 1
+        packet.script = (
+            "Tanker transits printed 23% below 2023 in March 2024. [hormuz-hit]\n"
+        )
+        return packet
+
+    def repair(packet, **_k):
+        return CiteRepairResult(ok=True, hit_urls=list(repair_hit_urls or []))
+
+    monkeypatch.setattr("onecrew.agent.shift._research", research)
+    monkeypatch.setattr("onecrew.agent.shift.write_vo_from_pack", tracking_vo)
+    monkeypatch.setattr("onecrew.agent.shift.run_cite_recheck_loop", repair)
+    monkeypatch.setattr(
+        "onecrew.agent.shift.run_room_loop",
+        lambda *_a, **_k: RoomLoopResult(
+            grade=RoomGrade(vote="ship"),
+            parallel_research_calls=1,
+            disposition="READY",
+        ),
+    )
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr(
+        "onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[])
+    )
+    monkeypatch.setattr("onecrew.agent.shift._board", lambda *_a, **_k: [])
+    return vo_calls
+
+
+def test_unaccounted_parallel_hit_completes_without_pack_invalid(monkeypatch) -> None:
+    """Leftover Parallel URL is an Exclusion or HOLD. Shift completes. Never PackInvalidError."""
+    vo_calls = _stub_closed_shift(
+        monkeypatch,
+        leftover=[],
+        hit_urls=[_KEPT_HIT, _DROPPED_HIT],
+    )
+    shift = open_shift(
+        "Hormuz",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
+        topic="Hormuz",
+    )
+    shift.rails = Rails(parallel=True, vertex=False, imagen=False)
+    packet = run_live_packet(shift)
+    assert vo_calls["n"] >= 1
+    assert packet.script
+    accounted = any(row.url == _DROPPED_HIT for row in packet.exclusions)
+    held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
+    assert accounted or held
+    if accounted:
+        assert any(row.url == _DROPPED_HIT and row.reason == "duplicate" for row in packet.exclusions)
+    if held:
+        assert "silent drop" in (packet.receipt.hold_reason or "").lower()
+    assert hits_accounted([_KEPT_HIT, _DROPPED_HIT], packet)
+    assert _DROPPED_HIT in (packet.research_pack or "")
+
+
+def test_cite_repair_extra_hit_is_accounted(monkeypatch) -> None:
+    """Cite-repair re-query hits must be findings or exclusions before pack write."""
+    _stub_closed_shift(
+        monkeypatch,
+        leftover=[],
+        hit_urls=[_KEPT_HIT],
+        repair_hit_urls=[_DROPPED_HIT],
+    )
+    shift = open_shift(
+        "Hormuz",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
+        topic="Hormuz",
+    )
+    shift.rails = Rails(parallel=True, vertex=False, imagen=False)
+    packet = run_live_packet(shift)
+    assert any(row.url == _DROPPED_HIT for row in packet.exclusions) or (
+        packet.receipt is not None and packet.receipt.disposition == "HOLD"
+    )
+    assert hits_accounted([_KEPT_HIT, _DROPPED_HIT], packet)
+    assert packet.script
+
+
+def test_run_shift_does_not_raise_on_unaccounted_hit(monkeypatch) -> None:
+    import asyncio
+
+    _stub_closed_shift(
+        monkeypatch,
+        leftover=[],
+        hit_urls=[_KEPT_HIT, _DROPPED_HIT],
+    )
+    shift = open_shift(
+        "Hormuz",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
+        topic="Hormuz",
+    )
+    shift.rails = Rails(parallel=True, vertex=False, imagen=False)
+    finished = asyncio.run(run_shift("Hormuz", shift=shift))
+    assert finished.status == "completed"
+    assert finished.error is None
+
+
+def test_unaccounted_hit_shift_api_is_not_500(monkeypatch) -> None:
+    _stub_closed_shift(
+        monkeypatch,
+        leftover=[],
+        hit_urls=[_KEPT_HIT, _DROPPED_HIT],
+    )
+    monkeypatch.setenv("SHIFT_TOKEN", "correct-horse")
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel-key")
+    pid = "oc-silent-drop-hold"
+    body = {
+        "goal": "Hormuz",
+        "topic": "Hormuz",
+        "platform": "youtube",
+        "cut": "one_time_short_episode",
+        "depth": "decade",
+        "script_lean": "centered_independent",
+        "tell": SEED_TELL,
+        "tone": SEED_TONE,
+        "packet_id": pid,
+    }
+    with TestClient(app) as client:
+        posted = client.post(
+            "/api/shifts",
+            json=body,
+            headers={"X-Shift-Token": "correct-horse"},
+        )
+        assert posted.status_code != 500
+        assert posted.status_code == 200
+        assert posted.json()["status"] == "completed"
+        assert posted.json().get("error") in {None, ""}
+        got = client.get(f"/api/packets/{pid}")
+    assert got.status_code == 200
+    packet = got.json()
+    urls = [row.get("url") for row in (packet.get("exclusions") or [])]
+    held = (packet.get("receipt") or {}).get("disposition") == "HOLD"
+    assert _DROPPED_HIT in urls or held

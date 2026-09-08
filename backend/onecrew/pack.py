@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from onecrew.models import (
     EXCLUSION_REASONS,
     MISSING,
@@ -58,6 +60,30 @@ def leftover_hit_exclusions(
         # ponytail: Parallel title or the URL. Never invent a page name.
         out.append(Exclusion(what=title or url, reason=reason, detail=detail, url=url))
     return out
+
+
+def account_unaccounted_hits(
+    packet: Packet,
+    hit_urls: list[str] | None,
+    leftover: list[Exclusion] | None = None,
+    *,
+    reason: str = "duplicate",
+    detail: str = "Same timeline search; not stamped as a finding.",
+) -> list[Exclusion]:
+    """Every leftover Parallel URL becomes an Exclusion before pack-write."""
+    rows = list(leftover if leftover is not None else packet.exclusions)
+    kept = {f.parallel_url for f in (packet.receipt.findings if packet.receipt else []) if f.parallel_url}
+    kept |= {ex.url for ex in rows if ex.url}
+    rows.extend(
+        leftover_hit_exclusions(
+            [SimpleNamespace(url=url, title="") for url in (hit_urls or []) if url],
+            kept,
+            reason=reason,
+            detail=detail,
+        )
+    )
+    packet.exclusions = rows
+    return rows
 
 
 def validate_exclusions(packet: Packet) -> None:

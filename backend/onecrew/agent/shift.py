@@ -34,7 +34,12 @@ from onecrew.claimer import findings_from_claims, frame_findings, propose_claims
 from onecrew.foundry import FoundryHold, leftover_slot_ids, mint, require_minted, sanitize_stamps
 from onecrew.cite_repair import run_cite_recheck_loop
 from onecrew.verify import apply_verify_gate, attach_cites_from_hits, cite_bag_from_rows
-from onecrew.pack import leftover_hit_exclusions, write_research_pack
+from onecrew.pack import (
+    PackInvalidError,
+    account_unaccounted_hits,
+    leftover_hit_exclusions,
+    write_research_pack,
+)
 from onecrew.research import extract_objective, search_objective, search_queries, task_research_prompt
 from onecrew.room import make_grade_artifact, run_room_loop
 from onecrew.script import pack_numbers
@@ -287,6 +292,42 @@ def _hold_account_hits(hit_urls: list[str], leftover: list[Exclusion]) -> list[E
                     url=url,
                 )
             )
+    return leftover
+
+
+def _hold_pack_invalid(packet: Packet, exc: PackInvalidError) -> None:
+    reason = f"PackInvalidError: {exc}"
+    if packet.receipt is None:
+        packet.receipt = Receipt(
+            packet_id=packet.id,
+            written=False,
+            findings=[],
+            causal_links=[],
+            disposition="HOLD",
+            hold_reason=reason,
+        )
+    else:
+        packet.receipt.disposition = "HOLD"
+        prior = (packet.receipt.hold_reason or "").strip()
+        packet.receipt.hold_reason = f"{prior} {reason}".strip()
+    packet.status = "hold"
+
+
+def _write_closed_pack(
+    packet: Packet,
+    leftover: list[Exclusion] | None,
+    hit_urls: list[str] | None,
+) -> list[Exclusion]:
+    """Account leftover Parallel URLs, then write the pack. Silent drop → HOLD, never raise."""
+    leftover = account_unaccounted_hits(packet, hit_urls, leftover)
+    try:
+        write_research_pack(packet, hit_urls=hit_urls)
+    except PackInvalidError as exc:
+        _hold_pack_invalid(packet, exc)
+        try:
+            write_research_pack(packet)
+        except PackInvalidError:
+            pass
     return leftover
 
 
@@ -824,7 +865,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                 detail="Parallel rail down. No invented source.",
             )
         ]
-        write_research_pack(fresh, hit_urls=[])
+        _write_closed_pack(fresh, fresh.exclusions, [])
         store.upsert_packet(fresh)
         return fresh
 
@@ -890,8 +931,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             return True
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
-        fresh.exclusions = leftover
-        write_research_pack(fresh, hit_urls=hit_urls)
+        leftover = _write_closed_pack(fresh, leftover, hit_urls)
         store.upsert_packet(fresh)
         return False
 
@@ -941,8 +981,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
         fresh.status = "hold"
         stamp_collisions(fresh, rails)
         attach_frames(fresh, [], rails=rails)
-        fresh.exclusions = leftover
-        write_research_pack(fresh, hit_urls=hit_urls)
+        leftover = _write_closed_pack(fresh, leftover, hit_urls)
         store.upsert_packet(fresh)
         return fresh
 
@@ -953,8 +992,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
-    fresh.exclusions = leftover
-    write_research_pack(fresh, hit_urls=hit_urls)
+    leftover = _write_closed_pack(fresh, leftover, hit_urls)
     fresh.grade_artifact = make_grade_artifact(fresh)
     store.upsert_packet(fresh)
     return fresh
@@ -997,6 +1035,25 @@ async def run_shift(
             agent="floor",
             kind="info",
             message=f"{packet.id} {packet.status} — floor does not post",
+        )
+    except PackInvalidError as exc:
+        log.exception("shift pack hold")
+        packet = store.get_packet(shift.packet_id)
+        if packet is not None:
+            _hold_pack_invalid(packet, exc)
+            try:
+                write_research_pack(packet)
+            except PackInvalidError:
+                pass
+            store.upsert_packet(packet)
+        shift.status = "completed"
+        shift.finished_at = utcnow()
+        store.upsert_shift(shift)
+        bus.emit(
+            shift.id,
+            agent="floor",
+            kind="info",
+            message=f"{shift.packet_id} hold — PackInvalidError: {exc}",
         )
     except Exception as exc:  # noqa: BLE001
         log.exception("shift failed")
