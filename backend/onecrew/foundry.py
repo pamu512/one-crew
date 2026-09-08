@@ -621,6 +621,24 @@ def _gdp_strip(text: str) -> str:
         stripped,
         flags=re.I,
     )
+    stripped = re.sub(
+        r"corporate profits.{0,80}[\d.]+(?:\s*%|percent)?",
+        " ",
+        stripped,
+        flags=re.I | re.S,
+    )
+    stripped = re.sub(
+        r"index level.{0,40}[\d.]+(?:\s*%|percent)?",
+        " ",
+        stripped,
+        flags=re.I,
+    )
+    stripped = re.sub(
+        r"[\d.]+(?:\s*%|percent)\s+of\s+gdp",
+        " ",
+        stripped,
+        flags=re.I,
+    )
     return re.sub(
         r"(?:spf|fomc|philadelphia fed|survey of professional forecasters)"
         r"(?:(?!\breal\s+gdp\b).){0,220}",
@@ -1322,13 +1340,17 @@ def _legal_print(series: str, text: str) -> str | None:
         if printed:
             return printed
         stripped = _gdp_strip(text)
-        match = _PCT.search(stripped) or re.search(
-            r"(\d+\.\d+)\s*(?:%|percent)\b", stripped, re.I
+        # ponytail: first % in a GDP page is often profits/index. Only a growth verb + decimal.
+        match = re.search(
+            r"\b(?:real\s+)?gdp\b.{0,48}?"
+            r"(?:increased|rose|grew|printed|decreased|fell|contracted).{0,32}?"
+            r"(\d+\.\d+)\s*(?:%|percent)\b",
+            stripped,
+            re.I,
         )
         if not match:
             return None
-        raw = re.sub(r"\s+", "", match.group(0))
-        raw = re.sub(r"percent", "%", raw, flags=re.I)
+        raw = re.sub(r"\s+", "", match.group(1))
         if raw in {"0", "0%"}:
             return None
         return raw
