@@ -80,8 +80,7 @@ def _finding_supported(finding: Finding, bag: CiteBag) -> bool:
     claims = claims_from_findings([finding])
     if not claims:
         return True
-    claim = relink_unsupported_cite(claims[0], bag)
-    return verify_print_in_cite(claim, bag).ok
+    return verify_print_in_cite(claims[0], bag).ok
 
 
 def unsupported_cite_findings(packet: Packet, bag: CiteBag | None = None) -> list[Finding]:
@@ -361,6 +360,8 @@ def run_cite_recheck_loop(
     hit_urls: list[str] = []
     current_bag = _packet_bag(packet, bag)
     while True:
+        if current_bag and current_bag.hit_urls:
+            attached_all.extend(_attach_from_bag(packet, current_bag))
         missing = unsupported_cite_findings(packet, current_bag)
         if not missing or not unsupported_cite_beats(packet, current_bag):
             packet.cite_recheck_attempts = attempts
