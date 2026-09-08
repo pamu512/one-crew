@@ -753,7 +753,8 @@ def test_cite_url_in_hits_is_not_cite_url_not_in_hits() -> None:
         assert got.ok is True
 
 
-def test_named_cite_url_absent_from_hits_still_holds() -> None:
+def test_named_cite_url_absent_from_hits_is_soft_not_hold() -> None:
+    """cite_url not in hits is a critic miss. Gate stays READY; do not HOLD solely for it."""
     findings = [
         Finding(
             id="usrec-july-2026",
@@ -768,14 +769,17 @@ def test_named_cite_url_absent_from_hits_still_holds() -> None:
             note="Parallel URL on this row.",
         ),
     ]
+    bag = _good_bag()
     gated = apply_verify_gate(
         Receipt(packet_id="oc-named-miss", written=False, disposition="READY", findings=findings),
-        _good_bag(),
+        bag,
     )
-    assert gated.disposition == "HOLD"
-    assert "cite_url not in hits" in (gated.hold_reason or "")
+    assert gated.disposition == "READY"
+    assert "cite_url not in hits" not in (gated.hold_reason or "")
     usrec = next(f for f in gated.findings if f.id == "usrec-july-2026")
     assert usrec.parallel_url == "https://example.com/not-in-hits"
+    checked = verify_claim_set(claims_from_findings(gated.findings), bag)
+    assert "cite_url not in hits" in checked.hold_reasons
 
 
 def test_usrec_print_zero_must_appear_in_cite_or_spine() -> None:

@@ -636,8 +636,16 @@ def verify_claim_set(claims: list[Claim], bag: CiteBag) -> ClaimSetResult:
     return ClaimSetResult(ok=not uniq, results=results, hold_reasons=uniq)
 
 
+_SOFT_CITE_REASONS = frozenset(
+    {
+        "grounded claim missing cite_url",
+        "cite_url not in hits",
+    }
+)
+
+
 def apply_verify_gate(receipt: Receipt, bag: CiteBag) -> Receipt:
-    """READY only if verify_claim_set passes. HOLD keeps findings. Writer is the caller's job."""
+    """READY if hard verify passes. Missing cite_url is soft — the cite-repair loop handles it."""
     findings = attach_cites_from_hits(list(receipt.findings or []), bag)
     claims = claims_from_findings(findings)
     named = [c for c in claims if c.series in CLOSED_SERIES]
@@ -647,11 +655,14 @@ def apply_verify_gate(receipt: Receipt, bag: CiteBag) -> Receipt:
             update={"findings": findings}
         )
     checked = verify_claim_set(claims, bag)
-    if checked.ok:
-        if findings == list(receipt.findings or []):
+    hard = [r for r in checked.hold_reasons if r not in _SOFT_CITE_REASONS]
+    if not hard:
+        if findings == list(receipt.findings or []) and receipt.disposition != "HOLD":
             return receipt
-        return receipt.model_copy(update={"findings": findings})
-    reason = "; ".join(checked.hold_reasons) or "verify_claim_set failed"
+        return receipt.model_copy(
+            update={"disposition": "READY", "hold_reason": None, "findings": findings}
+        )
+    reason = "; ".join(hard) or "verify_claim_set failed"
     return receipt.model_copy(
         update={
             "disposition": "HOLD",
