@@ -256,6 +256,7 @@ class Receipt(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     disposition: Disposition
     hold_reason: str | None = None
+    cite_recheck_attempts: int = 0
     invented_source: bool = False
     collage: bool = False
     invented_stamp: bool = False
