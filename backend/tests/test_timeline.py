@@ -12,7 +12,7 @@ from onecrew.agent.adk_agents import CLAIMER_INSTRUCTION
 from onecrew.claimer import claims_from_cites, findings_from_claims
 from onecrew.cite_repair import MAX_CITE_RECHECKS, run_cite_recheck_loop
 from onecrew.cut import size_findings
-from onecrew.models import Finding, Packet, Receipt, RoomGrade, ScriptBeat, TimelineMapRow
+from onecrew.models import MISSING, Finding, Packet, Receipt, RoomGrade, ScriptBeat, TimelineMapRow
 from onecrew.receipt import ReceiptInvalidError, validate_finding
 from onecrew.verify import CLOSED_SERIES, CiteBag, CiteExcerpt, claims_from_findings
 
@@ -1177,3 +1177,136 @@ def test_forbidden_wrap_writer_does_not_link_survey_url_to_named_host_vo() -> No
     cold = next(b for b in written.beats if b.id == "cold-open")
     assert reuters.id in cold.finding_ids
     assert coface.id not in cold.finding_ids
+
+
+# Live packet oc-data-centers-are-going-to-cause-the--1cee0429 after #49:
+# pack lacked chronological_event_chain heading, timeline_map=0, junk USREC
+# id=3 print=economic recession in 2001 cite truthout.org, leftover-chrome VO.
+_ARG_NO_CHAIN_HEAD = (
+    "## Argument\n"
+    "- A cloud vendor cancelled leases in August 2026.\n"
+    "- A newspaper asked whether $1.5T financing is already a bubble.\n"
+    "- A lab and a cloud vendor announced 4.5GW.\n"
+    "\n"
+    "Task basis:\n"
+    f"{REUTERS_MSFT}\n"
+    f"{GUARDIAN_FIN}\n"
+    f"{OPENAI_ORACLE}\n"
+    "\n"
+    "High-confidence basis:\n"
+    f"- {REUTERS_MSFT}\n"
+    f"- {GUARDIAN_FIN}\n"
+    f"- {OPENAI_ORACLE}\n"
+    "\n"
+    "## Sources\n"
+    f"- Data centers survey scrape title. source: {COFACE_SURVEY}\n"
+)
+
+_CHROME_PHRASES = (
+    "Question the decision that put this on the air",
+    "Three objects from the pack",
+    "Named official series",
+    "cite-miss",
+)
+
+
+def test_parse_argument_and_task_basis_without_chain_heading() -> None:
+    """Parallel may omit chronological_event_chain. Argument + Task/High-confidence basis still stamp."""
+    from onecrew.timeline import plan_timeline
+
+    planned = plan_timeline(_ARG_NO_CHAIN_HEAD)
+    urls = {row.url for row in planned.mapping}
+    assert REUTERS_MSFT in urls
+    assert GUARDIAN_FIN in urls
+    assert OPENAI_ORACLE in urls
+    assert COFACE_SURVEY not in urls
+    theses = " ".join(row.thesis for row in planned.mapping).lower()
+    assert "cancelled leases" in theses
+    assert all(f.stamp == "timeline_event" for f in planned.findings)
+    assert all((f.parallel_url or "").startswith("http") for f in planned.findings)
+
+
+def test_empty_timeline_holds_instead_of_leftover_chrome_vo() -> None:
+    """Forbidden wrap: shipping meta VO when timeline stamps are empty."""
+    from onecrew.script import write_script
+
+    pack = (
+        "## Argument\n"
+        "Data centers are going to cause the next economic bubble.\n"
+        "\n"
+        "## Sources\n"
+        f"- Data centers survey scrape title. source: {COFACE_SURVEY}\n"
+        "# Go to content\n"
+        "Skip to main content. Cookie banner.\n"
+    )
+    packet = _packet(pack)
+    packet.tone = "Question the decisions"
+    packet.receipt.findings = [
+        Finding(
+            id="3",
+            claim=(
+                "# Economic recession in 2001\n\n"
+                "The **economic recession in 2001** followed the bust. "
+                "[cite-miss] markdown dump."
+            ),
+            stamp="grounded",
+            series="USREC",
+            print="economic recession in 2001",
+            when="2001",
+            parallel_url="https://truthout.org/articles/economic-recession-in-2001/",
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="cite-miss",
+            claim="# Go to content\nSkip to main content. Cookie banner.",
+            stamp="fringe",
+            series=MISSING,
+            print=MISSING,
+            parallel_status="miss",
+            note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+        ),
+    ]
+    packet.receipt.timeline_map = []
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(f"{b.vo} {b.frame}" for b in packet.beats)
+    assert packet.receipt.disposition == "HOLD"
+    assert packet.status == "hold"
+    reason = (packet.receipt.hold_reason or "").lower()
+    assert "chrome" in reason or "timeline" in reason
+    for phrase in _CHROME_PHRASES:
+        assert phrase not in spoken, phrase
+    assert "economic recession in 2001" not in spoken
+    assert "# Go to content" not in spoken
+    assert "Skip to main content" not in spoken
+    assert not any(f.stamp == "timeline_event" for f in packet.receipt.findings)
+
+
+def test_microsoft_lease_vo_cannot_take_coface_without_chain_heading() -> None:
+    """#49 host+path match stays. Lease VO cannot soft-cover coface when basis URLs exist."""
+    packet = _packet(_ARG_NO_CHAIN_HEAD)
+    coface = _coface_survey_finding()
+    packet.receipt.findings = [coface]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(
+            thesis="Data centers survey covering leases and campuses.",
+            url=COFACE_SURVEY,
+            finding_id=coface.id,
+        )
+    ]
+    vos = dict(_NAMED_HOST_VOS)
+    vos["cold-open"] = "NARRATOR\nA cloud vendor cancelled leases in August 2026."
+    for beat in packet.beats:
+        beat.vo = vos[beat.id]
+        beat.finding_ids = []
+
+    def _no_search(**_k):
+        raise AssertionError("pack already has High-confidence basis URLs")
+
+    run_cite_recheck_loop(packet, search_fn=_no_search)
+    lease = next(b for b in packet.beats if b.id == "cold-open")
+    cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
+    assert cited, "lease VO must cite the chain basis, not stay empty"
+    assert all((f.parallel_url or "") == REUTERS_MSFT for f in cited)
+    assert coface.id not in lease.finding_ids
+    assert all((f.parallel_url or "") != COFACE_SURVEY for f in cited)

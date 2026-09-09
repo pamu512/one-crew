@@ -178,6 +178,33 @@ def official_gdp_url(url: str) -> bool:
     return bool(_FRED_GDP.search(low))
 
 
+def official_usrec_url(url: str) -> bool:
+    """FRED / St. Louis Fed USREC page. News hosts are not a USREC cite."""
+    low = (url or "").lower()
+    return "stlouisfed.org" in low and "usrec" in low
+
+
+def official_closed_shape(series: str, printed: str, url: str = "") -> bool:
+    """Closed-series prints stay official shapes. USREC is 0/1 on the FRED pipe."""
+    raw = (printed or "").strip()
+    if series == "USREC":
+        if raw not in {"0", "1"}:
+            return False
+        # Empty cite is ok at claim-scan; findings still need a FRED URL.
+        return not (url or "").strip() or official_usrec_url(url)
+    if series == "GDP":
+        return official_gdp_url(url) and complete_print(raw)
+    if series == "BLS payrolls":
+        return _is_payroll_print(raw)
+    if series in {"U-3", "LEI"}:
+        return bool(re.search(r"[+\-−]?\d+(?:\.\d+)?\s*%", raw))
+    if series == "SAHMREALTIME":
+        return bool(re.search(r"[+\-−]?\d+\.\d+", raw))
+    if series == "ISM":
+        return complete_print(raw)
+    return complete_print(raw)
+
+
 def complete_print(printed: str) -> bool:
     """A series print, not a dangling `4,` fragment or an empty slot."""
     raw = (printed or "").strip()
@@ -262,6 +289,9 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
                 continue
             if finding.series == "GDP":
                 if not keep_official_gdp(finding):
+                    continue
+            elif finding.series == "USREC":
+                if not official_closed_shape("USREC", printed, finding.parallel_url or ""):
                     continue
             elif official and (not complete_print(printed) or not (finding.parallel_url or "").strip()):
                 continue
@@ -1368,7 +1398,7 @@ def _url_fits_series(url: str, series: str, url_keys: tuple[str, ...]) -> bool:
     if series == "SAHMREALTIME":
         return "sahmrealtime" in low or "/series/sahm" in low
     if series == "USREC":
-        return "usrec" in low
+        return official_usrec_url(url)
     if series == "BLS payrolls":
         return "bls.gov" in low
     if series == "U-3":
