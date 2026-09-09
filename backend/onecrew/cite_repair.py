@@ -158,16 +158,29 @@ def _attachable_claim(beat: ScriptBeat) -> bool:
     return bool(vo_proper_names(f"{_vo_body(beat)} {beat.frame or ''}"))
 
 
+def is_cite_faithfulness_hold(reason: str) -> bool:
+    """Room/disposition HOLD that must run cite-repair. Not a leftover-slot synonym."""
+    blob = (reason or "").lower()
+    return any(
+        marker in blob
+        for marker in ("cite-faithfulness", "cites nothing", "covering miss", "soft-wrong")
+    )
+
+
 def _named_empty_cite_ids(packet: Packet) -> set[str]:
     reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
     ids: set[str] = set()
+    beats = [b for b in packet.beats if (b.kind or "vo") != "heading"]
     for match in _BEAT_NIT.finditer(reason):
         n = int(match.group(1))
-        if 1 <= n <= len(_EIGHT_IDS):
-            ids.add(_EIGHT_IDS[n - 1])
-    for bid in _EIGHT_IDS:
+        ids.add(f"beat{n}")
+        if 1 <= n <= len(beats):
+            ids.add(beats[n - 1].id)
+    for i, bid in enumerate(_EIGHT_IDS):
         if re.search(rf"\b{re.escape(bid)}\s+cites nothing", reason, re.I):
-            ids.add(bid)
+            ids.add(f"beat{i + 1}")
+            if i < len(beats):
+                ids.add(beats[i].id)
     return ids
 
 
@@ -184,7 +197,12 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
         is_title_read_vo,
         stamp_scope,
     )
-    from onecrew.timeline import stamp_covers_vo, union_supports_prints, vo_proper_names
+    from onecrew.timeline import (
+        is_chrome_cover_stamp,
+        stamp_covers_vo,
+        union_supports_prints,
+        vo_proper_names,
+    )
 
     receipt = packet.receipt
     if receipt is None or invents_frame(cut=packet.cut, tell=packet.tell or ""):
@@ -194,6 +212,9 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
+        if not beat.finding_ids and _attachable_claim(beat):
+            # Sourced empty-cite waits for pack attach / Parallel. Not faithless.
+            continue
         vo = _vo_body(beat)
         spoken = f"{vo} {beat.frame or ''}"
         tls = [
@@ -202,6 +223,9 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             if fid in by_id and by_id[fid].stamp == "timeline_event"
         ]
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        if any(is_chrome_cover_stamp(f) for f in cited):
+            out.append(beat)
+            continue
         prior = [
             _vo_body(p)
             for p in packet.beats[: packet.beats.index(beat)]
@@ -463,7 +487,14 @@ def _stamp_pack_timeline(packet: Packet) -> list[str]:
 
 
 def _attach_timeline_beats(packet: Packet) -> list[str]:
-    from onecrew.timeline import cite_host_ok, stamp_covers_vo, stamps_for_vo
+    from onecrew.timeline import (
+        _event_nums,
+        cite_host_ok,
+        is_chrome_cover_stamp,
+        stamp_covers_vo,
+        stamp_supports_prints,
+        stamps_for_vo,
+    )
 
     receipt = packet.receipt
     if receipt is None:
@@ -471,7 +502,9 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
     tls = [
         f
         for f in receipt.findings
-        if f.stamp == "timeline_event" and (f.parallel_url or "").strip()
+        if f.stamp == "timeline_event"
+        and (f.parallel_url or "").strip()
+        and not is_chrome_cover_stamp(f)
     ]
     pairs = _chain_pairs(packet)
     by_id = {f.id: f for f in receipt.findings}
@@ -491,10 +524,16 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
                 keep.append(fid)
                 continue
             covered = stamp_covers_vo(vo, finding)
+            if is_chrome_cover_stamp(finding):
+                beat.vo = re.sub(rf"\s*\[{re.escape(fid)}\]", "", beat.vo).strip()
+                continue
             if pairs and not cite_host_ok(vo, finding.parallel_url or "", pairs) and not covered:
                 beat.vo = re.sub(rf"\s*\[{re.escape(fid)}\]", "", beat.vo).strip()
                 continue
             if not covered:
+                beat.vo = re.sub(rf"\s*\[{re.escape(fid)}\]", "", beat.vo).strip()
+                continue
+            if _event_nums(vo) and not stamp_supports_prints(vo, finding):
                 beat.vo = re.sub(rf"\s*\[{re.escape(fid)}\]", "", beat.vo).strip()
                 continue
             keep.append(fid)
@@ -515,6 +554,14 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
             if f"[{finding.id}]" not in beat.vo:
                 beat.vo = f"{beat.vo} [{finding.id}]"
             attached.append(finding.id)
+        had_ids = bool(beat.finding_ids)
+        if beat.finding_ids != keep:
+            changed = True
+        beat.finding_ids = keep
+        if not keep and not had_ids:
+            # Empty-cite VO stays searchable. Align-strip here would hollow
+            # named/print claims and skip Parallel (attempts stay 0).
+            continue
         from onecrew.script import (
             _align_vo_to_stamps,
             _drop_extra_cite_brackets,
@@ -542,6 +589,8 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
             )
             if fact:
                 new_vo = fact
+            elif is_pack_chrome_vo(new_vo):
+                new_vo = ""
         if is_thin_frame(new_frame, keep, list(receipt.findings)) or not (new_frame or "").strip():
             if keep:
                 new_frame = (
@@ -765,6 +814,9 @@ def rebuild_timed_vo(packet: Packet) -> None:
     packet.script = ("\n".join(lines).strip() + "\n") if beats else ""
     kept = {b.id for b in beats}
     packet.frames = [f for f in packet.frames if f.beat_id in kept]
+    from onecrew.script import neutralize_pack_slot_beats
+
+    neutralize_pack_slot_beats(packet)
 
 
 def _retire_incomplete_grounded(packet: Packet) -> None:
@@ -906,6 +958,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         is_thin_frame,
         is_thin_title_read_vo,
         is_title_read_vo,
+        prefer_covering_print,
         prefer_covering_scope,
         speak_stamp_fact,
         speak_stamps,
@@ -920,9 +973,14 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
+        if not beat.finding_ids and _attachable_claim(beat):
+            continue
         orig_vo = _vo_lines(beat.vo)
         vo = strip_action_chrome_vo(orig_vo, beat.frame or "")
         keep, _ = prefer_covering_scope(vo, list(beat.finding_ids), list(receipt.findings))
+        keep, print_hold = prefer_covering_print(vo, keep, list(receipt.findings))
+        if print_hold:
+            keep = []
         keep, new_vo = _align_vo_to_stamps(vo, keep, list(receipt.findings))
         _, new_frame = _align_vo_to_stamps(beat.frame or "", list(keep), list(receipt.findings))
         keep, new_vo, _ = _refuse_forecast_theater(new_vo, keep, list(receipt.findings), packet.tell or "")
@@ -1254,7 +1312,7 @@ def run_cite_recheck_loop(
     search_fn = search_fn or search
     attempts = int(getattr(packet, "cite_recheck_attempts", 0) or 0)
     reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
-    if "cite-faithfulness" in reason.lower():
+    if is_cite_faithfulness_hold(reason):
         attempts = max(attempts, 1)
         packet.cite_recheck_attempts = attempts
     attached_all: list[str] = []
@@ -1277,6 +1335,9 @@ def run_cite_recheck_loop(
     dropped_all.extend(_repair_faithless_beats(packet))
     dropped_all.extend(drop_excerpt_slot_findings(packet))
     dropped_all.extend(drop_hollow_uncited_beats(packet))
+    if (stamped or attached_all) and empty_cite_beats(packet):
+        # Pack already yielded stamps. Leftover empty-cite is a drop, not a second Parallel.
+        dropped_all.extend(drop_empty_cite_beats(packet))
     if entered_empty or entered_faithless or faithless_cite_beats(packet) or dropped_all:
         attempts = max(attempts, 1)
         packet.cite_recheck_attempts = attempts

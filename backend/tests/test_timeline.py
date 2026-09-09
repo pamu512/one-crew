@@ -963,7 +963,7 @@ def test_forbidden_wrap_lease_vo_does_not_attach_survey_url_when_basis_exists() 
         raise AssertionError("pack already has High-confidence basis URLs")
 
     run_cite_recheck_loop(packet, search_fn=_no_search)
-    lease = next(b for b in packet.beats if b.id == "cold-open")
+    lease = next(b for b in packet.beats if "cancelled leases" in (b.vo or "").lower())
     cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
     assert cited, "lease VO must cite the chain basis, not stay empty"
     assert all((f.parallel_url or "") == REUTERS_MSFT for f in cited)
@@ -1008,16 +1008,16 @@ def test_forbidden_wrap_named_host_vo_does_not_attach_survey_url_when_basis_exis
         raise AssertionError("pack already has High-confidence basis URLs")
 
     run_cite_recheck_loop(packet, search_fn=_no_search)
-    lease = next(b for b in packet.beats if b.id == "cold-open")
+    lease = next(b for b in packet.beats if "cancelled leases" in (b.vo or "").lower())
     cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
     assert cited, "lease VO must cite the chain basis, not stay empty"
     assert all((f.parallel_url or "") == REUTERS_MSFT for f in cited)
     assert coface.id not in lease.finding_ids
-    guardian = next(b for b in packet.beats if b.id == "gdp")
+    guardian = next(b for b in packet.beats if "1.5" in (b.vo or "") and "financ" in (b.vo or "").lower())
     g_cited = [f for f in packet.receipt.findings if f.id in guardian.finding_ids]
     assert g_cited
     assert all((f.parallel_url or "") == GUARDIAN_FIN for f in g_cited)
-    gw = next(b for b in packet.beats if b.id == "labor")
+    gw = next(b for b in packet.beats if "4.5" in (b.vo or ""))
     gw_cited = [f for f in packet.receipt.findings if f.id in gw.finding_ids]
     assert gw_cited
     assert all((f.parallel_url or "") == OPENAI_ORACLE for f in gw_cited)
@@ -1342,7 +1342,7 @@ def test_microsoft_lease_vo_cannot_take_coface_without_chain_heading() -> None:
         raise AssertionError("pack already has High-confidence basis URLs")
 
     run_cite_recheck_loop(packet, search_fn=_no_search)
-    lease = next(b for b in packet.beats if b.id == "cold-open")
+    lease = next(b for b in packet.beats if "cancelled leases" in (b.vo or "").lower())
     cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
     assert cited, "lease VO must cite the chain basis, not stay empty"
     assert all((f.parallel_url or "") == REUTERS_MSFT for f in cited)
@@ -2046,7 +2046,7 @@ def test_cite_repair_microsoft_lease_cannot_soft_attach_pbs() -> None:
         raise AssertionError("stamps already exist; do not soft-cover with a new survey")
 
     run_cite_recheck_loop(packet, search_fn=_no_search)
-    lease = next(b for b in packet.beats if b.id == "turn")
+    lease = next(b for b in packet.beats if "shelving" in (b.vo or "").lower())
     cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
     assert pbs.id not in lease.finding_ids
     if cited:

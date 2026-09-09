@@ -250,7 +250,15 @@ def _link_pack_findings(
 ) -> list[str]:
     """Attach stamped finding ids whose print is spoken. Do not invent a cite."""
     from onecrew.foundry import complete_print, is_pack_slot_id, leftover_slot_ids, official_gdp_url
-    from onecrew.timeline import chain_pairs, cite_host_ok, stamp_covers_vo, stamps_for_vo
+    from onecrew.timeline import (
+        cap_beat_cites,
+        chain_pairs,
+        cite_host_ok,
+        is_chrome_cover_stamp,
+        stamp_covers_vo,
+        stamps_for_vo,
+        vo_proper_names,
+    )
 
     leftover = leftover_slot_ids()
     spoken = {re.sub(r"[^\d.]+", "", n.replace("−", "-")) for n in pack_numbers(vo)}
@@ -261,7 +269,12 @@ def _link_pack_findings(
             "\n".join(p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p),
             mapping,
         )
-    out = [fid for fid in fids if not is_pack_slot_id(fid)]
+    by_id = {f.id: f for f in findings}
+    out = [
+        fid
+        for fid in fids
+        if not is_pack_slot_id(fid) and not (fid in by_id and is_chrome_cover_stamp(by_id[fid]))
+    ]
     for finding in findings:
         if is_pack_slot_id(finding.id) or finding.id in leftover or finding.id in out:
             continue
@@ -292,9 +305,6 @@ def _link_pack_findings(
             out.append(finding.id)
             keep_ids.add(finding.id)
     timeline_ids = {f.id for f in findings if f.stamp == "timeline_event"}
-    by_id = {f.id: f for f in findings}
-    from onecrew.timeline import cap_beat_cites, vo_proper_names
-
     names = vo_proper_names(vo)
     kept = [
         fid
@@ -1226,7 +1236,14 @@ def _align_vo_to_stamps(
             if spoken and keep:
                 return cap_beat_cites(vo, grounded + keep, findings), spoken
             return cap_beat_cites(vo, grounded, findings), ""
-        return cap_beat_cites(vo, fids, findings), vo
+        print_keep, print_hold = prefer_covering_print(vo, tl_fids or fids, findings)
+        if print_hold:
+            cleaned = _strip_unsupported_prints(vo, [], findings)
+            return grounded, cleaned
+        if _event_nums(vo):
+            keep_ids = cap_beat_cites(vo, grounded + print_keep, findings)
+            return keep_ids, _strip_unsupported_prints(vo, keep_ids, findings)
+        return cap_beat_cites(vo, grounded + print_keep, findings), vo
     covered = [fid for fid in tl_fids if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
     chosen = stamps_for_vo(vo, findings, [])
     if chosen:
@@ -1599,6 +1616,50 @@ def stamp_scope(finding) -> str:
     return "neutral"
 
 
+def prefer_covering_print(vo: str, fids: list[str], findings: list) -> tuple[list[str], bool]:
+    """Spoken number keeps a print-bearing stamp. Chrome/last-verified soft-cover is refused."""
+    from onecrew.timeline import (
+        _event_nums,
+        is_chrome_cover_stamp,
+        stamp_supports_prints,
+        stamp_text,
+        stamps_for_vo,
+        union_supports_prints,
+    )
+
+    by_id = {f.id: f for f in findings}
+    keep = [fid for fid in fids if fid in by_id and not is_chrome_cover_stamp(by_id[fid])]
+    nums = _event_nums(vo)
+    if not nums:
+        return keep or [fid for fid in fids if fid not in by_id or not is_chrome_cover_stamp(by_id[fid])], False
+    useful = [fid for fid in keep if _event_nums(stamp_text(by_id[fid])) & nums]
+    rows = [by_id[fid] for fid in useful]
+    if useful and union_supports_prints(vo, rows):
+        from onecrew.verify import CLOSED_SERIES
+
+        # Print-cover must not drop an already-cited closed series (empty-print LEI).
+        closed = [
+            fid
+            for fid in keep
+            if (by_id[fid].series or "").strip() in CLOSED_SERIES
+        ]
+        return list(dict.fromkeys([*useful, *closed])), False
+    chosen = [
+        f
+        for f in stamps_for_vo(vo, findings, [])
+        if not is_chrome_cover_stamp(f) and (_event_nums(stamp_text(f)) & nums)
+    ]
+    extra = list(dict.fromkeys([*useful, *[f.id for f in chosen]]))
+    extra_rows = [by_id[fid] for fid in extra if fid in by_id] + [f for f in chosen if f.id not in by_id]
+    if extra and (union_supports_prints(vo, extra_rows) or any(stamp_supports_prints(vo, f) for f in extra_rows)):
+        return extra, False
+    if useful:
+        return useful, False
+    if any(is_chrome_cover_stamp(by_id[fid]) for fid in fids if fid in by_id):
+        return [], True
+    return keep, False
+
+
 def prefer_covering_scope(vo: str, fids: list[str], findings: list) -> tuple[list[str], bool]:
     """Broad conclusion keeps a covering stamp. Narrow soft-cover is refused."""
     if not is_broad_scope_vo(vo):
@@ -1636,6 +1697,10 @@ def neutralize_pack_slot_beats(packet) -> None:
             frame.beat_id = remap[old]
             if frame.id.endswith(f"-{old}"):
                 frame.id = f"{frame.id[: -len(old)]}{frame.beat_id}"
+    for row in getattr(packet, "collisions", None) or []:
+        old = getattr(row, "beat_id", "") or ""
+        if old in remap:
+            row.beat_id = remap[old]
 
 
 def drop_thin_title_read_beats(packet) -> list[str]:
@@ -1702,12 +1767,20 @@ def _reattach_covering_scope_beats(packet) -> None:
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading":
             continue
-        keep, hold = prefer_covering_scope(_vo_lines(beat.vo), list(beat.finding_ids), rows)
+        vo = _vo_lines(beat.vo)
+        keep, hold = prefer_covering_scope(vo, list(beat.finding_ids), rows)
         if hold:
             continue
+        print_keep, print_hold = prefer_covering_print(vo, keep, rows)
+        if print_hold:
+            beat.finding_ids = []
+            vo = _strip_unsupported_prints(vo, [], rows)
+            beat.vo = f"NARRATOR\n{vo}" if (beat.vo or "").startswith("NARRATOR") else vo
+            continue
+        keep = print_keep
         if keep != list(beat.finding_ids):
             beat.finding_ids = keep
-            vo = _strip_unsupported_prints(_vo_lines(beat.vo), keep, rows)
+            vo = _strip_unsupported_prints(vo, keep, rows)
             beat.vo = f"NARRATOR\n{vo}" if (beat.vo or "").startswith("NARRATOR") else vo
             for fid in keep:
                 if f"[{fid}]" not in beat.vo:
@@ -2038,6 +2111,13 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                         packet.receipt.disposition = "HOLD"
                         packet.receipt.hold_reason = "cite-faithfulness"
                         held = True
+                fids, print_hold = prefer_covering_print(vo, fids, rows)
+                if print_hold:
+                    slot_nits.append("cite-faithfulness")
+                    if packet.receipt is not None:
+                        packet.receipt.disposition = "HOLD"
+                        packet.receipt.hold_reason = "cite-faithfulness"
+                        held = True
                 orig_eyes = eyes
                 fids, vo = _align_vo_to_stamps(vo, fids, rows)
                 _, aligned_eyes = _align_vo_to_stamps(eyes, list(fids), rows)
@@ -2079,7 +2159,17 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 eyes = _drop_extra_cite_brackets(eyes, fids)
             if voiced_trigger and trigger and not _trigger_voiced(vo, trigger):
                 vo = slot_vo
-        if not fids and not hole:
+        if fids:
+            from onecrew.timeline import _event_nums, union_supports_prints
+
+            cited = [
+                row
+                for row in (packet.receipt.findings if packet.receipt else [])
+                if row.id in fids
+            ]
+            if cited and _event_nums(vo) and not union_supports_prints(vo, cited):
+                slot_nits.append("cite-faithfulness")
+        elif not hole:
             spoken_nums = [
                 n
                 for n in _numbers_in(_vo_lines(vo))
@@ -2087,7 +2177,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             ]
             sourced = bool(spoken_nums) or bool(_MONTH_YEAR.search(_vo_lines(vo)))
             if sourced and not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
-                slot_nits.append(f"{bid} cites nothing in the pack")
+                slot_nits.append(f"beat{i + 1} cites nothing in the pack")
         for fid in fids:
             if f"[{fid}]" not in vo:
                 vo = f"{vo} [{fid}]"
