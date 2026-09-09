@@ -1162,14 +1162,15 @@ def _align_vo_to_stamps(
             if spoken and printed:
                 return grounded + [f.id for f in printed], spoken
             return grounded, ""
-        keep_ids = [f.id for f in chosen]
-        return grounded + keep_ids, _strip_unsupported_prints(cleaned, keep_ids, findings)
+        keep_ids = grounded + [f.id for f in chosen]
+        return keep_ids, _strip_unsupported_prints(cleaned, keep_ids, findings)
     if covered:
         cleaned = vo
         for fid in tl_fids:
             if fid not in covered:
                 cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
-        return grounded + covered, _strip_unsupported_prints(cleaned, covered, findings)
+        keep_ids = grounded + covered
+        return keep_ids, _strip_unsupported_prints(cleaned, keep_ids, findings)
     for finding in findings:
         if finding.stamp == "timeline_event" and stamp_covers_vo(vo, finding):
             cleaned = vo

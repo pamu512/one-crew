@@ -578,23 +578,19 @@ def test_cite_repair_reattaches_covering_host_for_org_plus_prints() -> None:
     def _no_search(**_k):
         return SimpleNamespace(results=[])
 
-    result = run_cite_recheck_loop(packet, search_fn=_no_search)
+    run_cite_recheck_loop(packet, search_fn=_no_search)
     assert packet.cite_recheck_attempts >= 1
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
     turn = next(b for b in packet.beats if b.id == "turn")
     cited = [f for f in packet.receipt.findings if f.id in turn.finding_ids]
-    assert wrong.id not in turn.finding_ids
     spoken = f"{turn.vo} {turn.frame or ''}"
-    if re.search(r"helios", spoken, re.I):
-        assert cited
-        from onecrew.timeline import url_host
+    assert wrong.id not in turn.finding_ids
+    assert cited
+    from onecrew.timeline import url_host
 
-        assert all(url_host(f.parallel_url or "") == "helios-wire.test" for f in cited)
-        assert "18" in spoken and "7" in spoken
-    else:
-        assert not result.ok or not cited
-        reason = (packet.receipt.hold_reason or "").lower()
-        assert "cite-faithfulness" in reason or "empty beat" in reason
+    assert all(url_host(f.parallel_url or "") == "helios-wire.test" for f in cited)
+    assert re.search(r"helios", spoken, re.I)
+    assert "18" in spoken and "7" in spoken
 
 
 def test_room_flags_print_only_host_on_named_org_vo() -> None:
