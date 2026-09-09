@@ -584,10 +584,220 @@ def test_writer_rejects_sahm_vo_month_off_stamp(monkeypatch) -> None:
     before = ledger.parallel_calls
     write_script(packet)
     assert ledger.parallel_calls == before
+    sahm = next(f for f in packet.receipt.findings if f.series == "SAHMREALTIME")
+    table = (
+        "Sahm June 2026 = −0.03 vs the 0.50 trigger. "
+        "2026-06-01 | 0.07\n2026-07-01 | -0.03\n"
+    )
+    assert _when_print_on_fred_row(sahm.when, sahm.print, table)
+    pair = (_norm_print(sahm.print), (sahm.when or "").lower())
+    assert pair != ("-0.03", "june 2026")
     spoken = (packet.script or "") + "\n" + "\n".join(b.vo for b in packet.beats)
-    assert "Sahm −0.03 in July 2026" not in spoken
-    assert "[sahm-june-2026]" in spoken or "[sahm-july-2026]" in spoken
+    assert f"[{sahm.id}]" in spoken
     _assert_sahm_vo_month_matches_stamp(packet)
+    if pair[0] == "-0.03":
+        assert (sahm.when or "").lower() == "july 2026"
+        assert "[sahm-july-2026]" in spoken
+        assert "Sahm −0.03 in July 2026" in spoken or "Sahm -0.03 in July 2026" in spoken
     for beat in packet.beats:
         if "[sahm-june-2026]" in (beat.vo or "") and ("−0.03" in beat.vo or "-0.03" in beat.vo):
             assert "july 2026" not in beat.vo.lower()
+
+
+# Live HOLD oc-are-we-near-recession-8945808e: CES August U-3 4.1% on the
+# same BLS cite as payrolls, plus a non-CES 20% / December 2026 print.
+_AUG_CES_U3 = (
+    "THE EMPLOYMENT SITUATION -- AUGUST 2026. "
+    "Total nonfarm payroll employment fell by 11,000 in August 2026. "
+    "The unemployment rate was 4.1% in August 2026."
+)
+_BOGUS_U3 = (
+    "The unemployment rate was 20 percent in December 2026. "
+    "Commentators asked whether the unemployment rate could reach 20 percent "
+    "by December 2026."
+)
+_USREC_AUG = "2026-08-01 | 0\nUSREC August 2026 = 0."
+
+
+def test_u3_future_or_absurd_print_holds_year_absent_from_ces() -> None:
+    """CES vintage is the lock. A later/non-CES U-3 print cannot stay READY."""
+    from onecrew.claimer import claims_from_cites, findings_from_claims, propose_claims
+    from onecrew.foundry import mint
+    from onecrew.verify import Claim, apply_verify_gate, verify_claim_set, verify_u3_ces
+
+    spine = f"{_USREC_AUG} {_AUG_CES_U3} {_BOGUS_U3} {_FRED_SAHM_TABLE}"
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-8945808e"
+    packet.task_spine = spine
+    packet.research_pack = spine
+    minted = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [_USREC_AUG]),
+            _row(BLS, "BLS", [_AUG_CES_U3]),
+            _row("https://example.com/forecast", "forecast", [_BOGUS_U3]),
+            _row(FRED_SAHM, "SAHMREALTIME", [_FRED_SAHM_TABLE]),
+        ],
+        _miss(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    bag = _bag(
+        excerpts=[
+            (BLS, "BLS", _AUG_CES_U3),
+            ("https://example.com/forecast", "forecast", _BOGUS_U3),
+            (FRED_USREC, "USREC", _USREC_AUG),
+            (FRED_SAHM, "SAHMREALTIME", _FRED_SAHM_TABLE),
+        ],
+        spine=spine,
+        hit_urls=[BLS, "https://example.com/forecast", FRED_USREC, FRED_SAHM],
+    )
+
+    def plant_december(_bag, _packet=None):
+        return [
+            Claim(
+                series="U-3",
+                print="20%",
+                when="December 2026",
+                id="unemployment-december-2026",
+                cite_url=BLS,
+                claim_span=_BOGUS_U3,
+            )
+        ]
+
+    scanned = findings_from_claims(claims_from_cites(bag), bag)
+    remapped = propose_claims(bag, proposer=plant_december)
+    assert ledger.parallel_calls == before
+    bogus = Claim(
+        series="U-3",
+        print="20%",
+        when="December 2026",
+        id="unemployment-december-2026",
+        cite_url=BLS,
+        claim_span=_BOGUS_U3,
+    )
+    assert verify_u3_ces(bogus, bag).ok is False
+    assert verify_u3_ces(bogus, bag).reason == "u3 year absent from ces"
+    checked = verify_claim_set([bogus], bag)
+    assert checked.ok is False
+    assert "u3 year absent from ces" in checked.hold_reasons
+    for rows in (minted, scanned, remapped):
+        for finding in rows:
+            if getattr(finding, "series", None) != "U-3":
+                continue
+            assert "20" not in _norm_print(finding.print)
+            assert "december" not in (finding.when or "").lower()
+            assert finding.id != "unemployment-december-2026"
+            assert "4.1" in (finding.print or "")
+    planted = [
+        Finding(
+            id="unemployment-december-2026",
+            claim="Unemployment is 20% in December 2026.",
+            stamp="grounded",
+            series="U-3",
+            print="20%",
+            when="December 2026",
+            parallel_url=BLS,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        )
+    ]
+    gated = apply_verify_gate(
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=planted),
+        bag,
+    )
+    assert ledger.parallel_calls == before
+    assert gated.disposition == "HOLD"
+    assert "u3 year absent from ces" in (gated.hold_reason or "")
+
+
+def _assert_sahm_vo_speaks_stamp_when_and_print(packet: Packet) -> None:
+    """Turn VO must speak the stamp when and the stamp print together."""
+    receipt = packet.receipt
+    assert receipt is not None
+    sahm = next(f for f in receipt.findings if f.series == "SAHMREALTIME")
+    stamp = (sahm.when or "").strip().lower()
+    printed = _norm_print(sahm.print)
+    assert stamp and printed
+    turn = next(b for b in packet.beats if b.id == "turn")
+    vo = turn.vo or ""
+    vo_n = _norm_print(vo)
+    assert f"[{sahm.id}]" in vo
+    assert printed in vo_n or printed.lstrip("+-") in vo_n
+    months = [f"{m.group(1).title()} {m.group(2)}".lower() for m in _MONTH_YEAR.finditer(vo)]
+    assert stamp in months, f"turn vo={vo!r} missing stamp when {stamp}"
+    _assert_sahm_vo_month_matches_stamp(packet)
+
+
+def test_sahm_stamp_when_print_is_one_fred_row_and_vo_speaks_it() -> None:
+    """June/−0.03 is not a FRED cell. Latest row with that print, or June/0.07."""
+    from onecrew.claimer import claims_from_cites, findings_from_claims, propose_claims
+    from onecrew.foundry import mint
+    from onecrew.verify import Claim
+
+    table = _LIVE_SAHM_JUNE_PROSE_JULY_PIPE
+    spine = f"USREC July 2026 = 0. {_CES} {table}"
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-8945808e"
+    packet.task_spine = spine
+    packet.research_pack = spine
+    minted = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [_USREC]),
+            _row(BLS, "BLS", [_CES]),
+            _row(FRED_SAHM, "SAHMREALTIME", [table]),
+        ],
+        _miss(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    bag = _bag(
+        excerpts=[
+            (FRED_SAHM, "SAHMREALTIME", table),
+            (FRED_USREC, "USREC", _USREC),
+            (BLS, "BLS", _CES),
+        ],
+        spine=spine,
+        hit_urls=[FRED_SAHM, FRED_USREC, BLS],
+    )
+
+    def june_minus(_bag, _packet=None):
+        return [
+            Claim(
+                series="SAHMREALTIME",
+                print="−0.03",
+                when="June 2026",
+                id="sahm-june-2026",
+                cite_url=FRED_SAHM,
+                claim_span=table,
+            )
+        ]
+
+    scanned = findings_from_claims(claims_from_cites(bag), bag)
+    remapped = propose_claims(bag, proposer=june_minus)
+    assert ledger.parallel_calls == before
+    for rows in (minted, scanned, remapped):
+        sahm = next(f for f in rows if getattr(f, "series", None) == "SAHMREALTIME")
+        assert _when_print_on_fred_row(sahm.when, sahm.print, table), (
+            f"{sahm.id} print={sahm.print!r} when={sahm.when!r} is not one FRED row"
+        )
+        pair = (_norm_print(sahm.print), (sahm.when or "").lower())
+        assert pair != ("-0.03", "june 2026")
+        if pair[0] == "-0.03":
+            assert pair[1] == "july 2026"
+            assert sahm.id == "sahm-july-2026"
+        if pair[1] == "june 2026":
+            assert pair[0] == "0.07"
+            assert sahm.id == "sahm-june-2026"
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=minted),
+    )
+    write_script(packet)
+    assert ledger.parallel_calls == before
+    sahm = next(f for f in packet.receipt.findings if f.series == "SAHMREALTIME")
+    assert _when_print_on_fred_row(sahm.when, sahm.print, table)
+    _assert_sahm_vo_speaks_stamp_when_and_print(packet)

@@ -116,6 +116,10 @@ _GDP_PROJ = re.compile(
     re.I,
 )
 _SAHM_PRINT = re.compile(r"([\-−])\s*0\.03")
+_U3_HEDGE = re.compile(
+    r"\bcould\b|\bforecast|\basked whether\b|\bprojects?\b|\boutlook\b|\bexpected\b",
+    re.I,
+)
 _PCT = re.compile(rf"({_SIGN}?\d+(?:\.\d+)?\s*%)")
 _SERIES_TOKEN = re.compile(
     r"\b(usrec|payroll|nonfarm|sahm|sahmrealtime|gdp|lei|ism|u-3|unemployment|nber|payems|recession indicator)\b",
@@ -1016,6 +1020,21 @@ def when_matching_print(text: str, printed: str, when: str = "") -> str:
     return max(matched, key=_month_key)
 
 
+def align_sahm_finding(finding: Finding, blob: str) -> Finding:
+    """Stamp when+print+id from one table row. Latest row that carries the print wins."""
+    if (finding.series or "") != "SAHMREALTIME":
+        return finding
+    aligned = when_matching_print(blob, finding.print or "", finding.when or "")
+    if aligned and aligned != (finding.when or ""):
+        finding.when = aligned
+        finding.id = _slug("SAHMREALTIME", aligned)
+    return finding
+
+
+def align_sahm_findings(findings: list[Finding], blob: str) -> list[Finding]:
+    return [align_sahm_finding(f, blob) for f in findings]
+
+
 def _dated_in(text: str, series: str, printed: str = "", years_from: str = "") -> str:
     if series == "GDP":
         return _gdp_when(years_from or text, printed) or _gdp_when(text, printed)
@@ -1547,7 +1566,7 @@ def _legal_print(series: str, text: str) -> str | None:
         )
         scored: list[tuple[str, str, str]] = []
         for match in re.finditer(
-            r"(?:unemployment(?:\s+rate)?|u-3).{0,48}?(\d+(?:\.\d+)?)\s*(?:%|percent\b)",
+            r"(?:unemployment(?:\s+rate)?|u-3).{0,48}?(?<![\d.])(\d+(?:\.\d+)?)(?:\s*%|\s*percent\b|%)",
             text,
             re.I,
         ):
@@ -1560,6 +1579,8 @@ def _legal_print(series: str, text: str) -> str | None:
             isol_l = re.split(r"[.;]|\d+(?:\.\d+)?\s*%", text[max(0, match.start() - 64) : match.start()])[-1]
             isol_r = re.split(r"[.;]|\d+(?:\.\d+)?\s*%", text[match.end() : match.end() + 64])[0]
             isol = isol_l + match.group(0) + isol_r
+            if _U3_HEDGE.search(isol):
+                continue
             stamp = _stamp_near_print(isol, raw) or _loose_month_year(isol, raw, text)
             kind = "ces" if re.search(r"payroll|nonfarm|ces|payroll employment", around, re.I) else "other"
             scored.append((raw, stamp, kind))
@@ -1650,6 +1671,8 @@ def _hit_for_series(notes: str, series: str, tokens: tuple[str, ...]) -> tuple[s
                 continue
         printed = _legal_print(series, sentence)
         if printed and not _foreign_cue(sentence, series):
+            if series == "U-3" and _U3_HEDGE.search(sentence):
+                continue
             hit = _keep(printed, sentence)
             if hit:
                 return hit
@@ -1683,6 +1706,19 @@ def _hit_for_series(notes: str, series: str, tokens: tuple[str, ...]) -> tuple[s
         wide = _legal_print(series, notes)
         if wide and "/" in wide:
             found.append((wide, notes))
+    if found and series == "U-3":
+        ces_hits = [
+            h
+            for h in found
+            if re.search(r"payroll|nonfarm|ces|employment situation", h[1], re.I)
+            and not _U3_HEDGE.search(h[1])
+        ]
+        if not ces_hits:
+            notes_print = _legal_print("U-3", notes)
+            if notes_print:
+                want = _norm_series_print(notes_print)
+                ces_hits = [h for h in found if _norm_series_print(h[0]) == want]
+        found = ces_hits or [h for h in found if not _U3_HEDGE.search(h[1])]
     if found:
         return max(found, key=lambda h: _hit_rank(series, h[0], h[1], notes))
     return None
