@@ -191,8 +191,15 @@ def _attach_from_bag(packet: Packet, bag: CiteBag) -> list[str]:
         linked = relink_unsupported_cite(claims[0], bag)
         url = (linked.cite_url or "").strip()
         have = (finding.parallel_url or "").strip()
-        if url and url != have:
-            relinked.append(finding.model_copy(update={"parallel_url": url, "parallel_status": "hit"}))
+        if url != have:
+            relinked.append(
+                finding.model_copy(
+                    update={
+                        "parallel_url": url or None,
+                        "parallel_status": "hit" if url else "miss",
+                    }
+                )
+            )
             continue
         relinked.append(finding)
     receipt.findings = relinked
@@ -340,7 +347,7 @@ def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
         for finding in receipt.findings:
             if finding.id not in finding_ids or finding.id in cited:
                 continue
-            if (finding.series or "") != "LEI":
+            if (finding.series or "") not in {"LEI", "U-3"}:
                 continue
             finding.stamp = "fringe"
             finding.parallel_status = "miss"

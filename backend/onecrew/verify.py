@@ -126,7 +126,7 @@ def _cite_candidates(claim: Claim, bag: CiteBag) -> list[str]:
         seen.add(key)
         out.append(raw)
     out.sort(key=lambda u: (0 if _url_fits_series(u, claim.series, ()) else 1))
-    if claim.series == "LEI":
+    if claim.series in {"LEI", "U-3"}:
         return [u for u in out if _url_fits_series(u, claim.series, ())]
     return out
 
@@ -134,7 +134,9 @@ def _cite_candidates(claim: Claim, bag: CiteBag) -> list[str]:
 def resolve_missing_cite(claim: Claim, bag: CiteBag) -> Claim:
     """Foundry forgot the URL. Copy the Parallel hit that supports print/when."""
     if (claim.cite_url or "").strip():
-        return claim
+        if claim.series != "U-3" or _url_fits_series(claim.cite_url, "U-3", ()):
+            return claim
+        claim = claim.model_copy(update={"cite_url": ""})
     for url in _cite_candidates(claim, bag):
         trial = claim.model_copy(update={"cite_url": url})
         if verify_print_in_cite(trial, bag).ok:
@@ -152,6 +154,8 @@ def relink_unsupported_cite(claim: Claim, bag: CiteBag) -> Claim:
         trial = claim.model_copy(update={"cite_url": url})
         if verify_print_in_cite(trial, bag).ok:
             return trial
+    if claim.series == "U-3" and not _url_fits_series(claim.cite_url or "", "U-3", ()):
+        return claim.model_copy(update={"cite_url": ""})
     return claim
 
 
@@ -161,6 +165,9 @@ def attach_cites_from_hits(findings: list[Finding], bag: CiteBag) -> list[Findin
     out: list[Finding] = []
     for finding in findings:
         cite = clean_cite_url(finding.parallel_url or "")
+        if finding.series == "U-3" and cite and not _url_fits_series(cite, "U-3", ()):
+            finding = finding.model_copy(update={"parallel_url": None})
+            cite = ""
         if cite:
             if cite != (finding.parallel_url or "").strip():
                 finding = finding.model_copy(update={"parallel_url": cite})
@@ -168,6 +175,8 @@ def attach_cites_from_hits(findings: list[Finding], bag: CiteBag) -> list[Findin
             continue
         claim = next((c for c in claims if c.id == finding.id), None)
         url = clean_cite_url((claim.cite_url or "") if claim else "")
+        if url and finding.series == "U-3" and not _url_fits_series(url, "U-3", ()):
+            url = ""
         if url:
             out.append(finding.model_copy(update={"parallel_url": url, "parallel_status": "hit"}))
             continue
@@ -443,17 +452,24 @@ def verify_print_in_cite(claim: Claim, bag: CiteBag) -> VerifyResult:
         return VerifyResult(ok=False, reason="grounded claim missing cite_url")
     if not _url_in(claim.cite_url, bag.hit_urls):
         return VerifyResult(ok=False, reason="cite_url not in hits")
-    if claim.series == "LEI" and not _url_fits_series(claim.cite_url, claim.series, ()):
+    if claim.series in {"LEI", "U-3"} and not _url_fits_series(claim.cite_url, claim.series, ()):
         return VerifyResult(ok=False, reason="cite_url series mismatch")
     if claim.series == "LEI" and lei_threshold_claim(claim.claim_span, claim.print):
         return VerifyResult(ok=False, reason="print not in cite")
     excerpt = _cite_text(claim, bag)
-    search = f"{excerpt}\n{bag.spine or ''}"
+    # ponytail: U-3 print must sit on the CES excerpt. Spine would bless a news wrap.
+    search = excerpt if claim.series == "U-3" else f"{excerpt}\n{bag.spine or ''}"
     bars = _bars(claim.print)
     if bars and not all(_bar_in(bar, search) for bar in bars):
         return VerifyResult(ok=False, reason="print not in cite")
-    if (claim.when or "").strip() and not _when_in_text(claim.when, f"{excerpt}\n{bag.spine or ''}"):
-        return VerifyResult(ok=False, reason="when not in cite")
+    if (claim.when or "").strip():
+        if claim.series == "U-3":
+            parsed = _parse_when(claim.when)
+            names = _MONTH_NAMES.get(parsed[2], []) if parsed and parsed[0] == "month" else []
+            if names and not any(re.search(rf"\b{re.escape(n)}\b", excerpt, re.I) for n in names):
+                return VerifyResult(ok=False, reason="when not in cite")
+        elif not _when_in_text(claim.when, search):
+            return VerifyResult(ok=False, reason="when not in cite")
     return VerifyResult(ok=True, reason=None, matched_in=excerpt or bag.spine or None)
 
 
@@ -718,6 +734,8 @@ def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     """
     if claim.series != "U-3":
         return VerifyResult(ok=True, reason=None)
+    if not _url_fits_series(claim.cite_url or "", "U-3", ()):
+        return VerifyResult(ok=False, reason="cite_url series mismatch")
     blob = _bag_text(bag)
     sents = re.split(r"(?<=[.!?])\s+", blob)
     unemp = [s for s in sents if _UNEMP.search(s) and not _SAHM.search(s)]
@@ -729,7 +747,8 @@ def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
         unemp = [s for s in sents if _UNEMP.search(s)]
         if unemp and all(_SAHM.search(s) for s in unemp):
             return VerifyResult(ok=False, reason="sahm-trigger window")
-    ces = _u3_lock_text(bag)
+    cite = _cite_text(claim, bag)
+    ces = cite.strip() or _u3_lock_text(bag)
     rows = _ces_u3_rows(ces)
     want = _u3_num(claim.print)
     key = _when_month_key(claim.when)
