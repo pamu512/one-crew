@@ -40,6 +40,14 @@ def invents_frame(*, cut: Cut | None, tell: str) -> bool:
     return _wants_story(tell)
 
 
+def wants_no_forecast_theater(tell: str) -> bool:
+    """Tell asked for realized prints and/or no forecast theater. Not every cited-prints desk read."""
+    text = (tell or "").lower()
+    if "no forecast theater" in text or "no forecast" in text:
+        return True
+    return "realized print" in text
+
+
 def tell_lane(tell: str) -> str:
     """Craft hint from free text. Not an enum and not a validator."""
     text = (tell or "").lower()

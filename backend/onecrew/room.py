@@ -105,6 +105,7 @@ def make_grade_artifact(packet: Packet) -> GradeArtifact:
         stamped_findings=stamps,
         parallel_cites=cite_block,
         timeline_map=list((packet.receipt.timeline_map if packet.receipt else None) or []),
+        tell=packet.tell or "",
     )
 
 
@@ -369,6 +370,52 @@ def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
     return False
 
 
+def _forecast_theater_hole(artifact: GradeArtifact) -> bool:
+    from onecrew.script import is_forecast_theater_vo
+    from onecrew.tell import wants_no_forecast_theater
+
+    if not wants_no_forecast_theater(artifact.tell or ""):
+        return False
+    return any(is_forecast_theater_vo(_spoken_window(window)) for window in _cite_windows(artifact.script))
+
+
+def _over_cite_hole(artifact: GradeArtifact) -> bool:
+    from onecrew.timeline import MAX_CITES_PER_BEAT
+    from onecrew.verify import CLOSED_SERIES
+
+    by_id = {row.id: row for row in artifact.stamped_findings}
+    for window in _cite_windows(artifact.script):
+        other = [
+            fid
+            for fid in _cited_ids(window)
+            if fid in by_id and (by_id[fid].series or "").strip() not in CLOSED_SERIES
+        ]
+        if len(other) > MAX_CITES_PER_BEAT:
+            return True
+    return False
+
+
+def _host_reuse_hole(artifact: GradeArtifact) -> bool:
+    from collections import Counter
+
+    from onecrew.timeline import URL_REUSE_CAP, url_host
+    from onecrew.verify import CLOSED_SERIES
+
+    by_id = {row.id: row for row in artifact.stamped_findings}
+    seen: set[str] = set()
+    used: Counter[str] = Counter()
+    for window in _cite_windows(artifact.script):
+        for fid in _cited_ids(window):
+            row = by_id.get(fid)
+            if row is None or fid in seen or (row.series or "").strip() in CLOSED_SERIES:
+                continue
+            seen.add(fid)
+            host = url_host(row.url or "")
+            if host:
+                used[host] += 1
+    return any(n > URL_REUSE_CAP for n in used.values())
+
+
 def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
     """Fail-closed: named-host / entity / print must sit on the attached stamp."""
     from onecrew.timeline import chain_pairs, cite_host_ok, pair_covers_vo, stamp_text
@@ -411,6 +458,12 @@ def grade_room(artifact: GradeArtifact, *, grader: GraderFn | None = None) -> Ro
         raise ValueError("recut requires why: not_enough_information | other")
     if grade.vote == "recut" and grade.recut_reason == "other" and not (grade.recut_detail or "").strip():
         raise ValueError("recut other requires a short reason")
+    if _forecast_theater_hole(artifact):
+        return RoomGrade(vote="recut", recut_reason="other", recut_detail="forecast theater")
+    if _over_cite_hole(artifact):
+        return RoomGrade(vote="recut", recut_reason="other", recut_detail="over-cite")
+    if _host_reuse_hole(artifact):
+        return RoomGrade(vote="recut", recut_reason="other", recut_detail="host reuse")
     if _cite_host_mismatch(artifact):
         return RoomGrade(vote="recut", recut_reason="other", recut_detail="cite-faithfulness")
     if (

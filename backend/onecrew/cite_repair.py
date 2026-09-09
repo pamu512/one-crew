@@ -210,12 +210,16 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             if _event_nums(spoken):
                 out.append(beat)
                 continue
-        from onecrew.script import is_comparative_vo
+        from onecrew.script import is_comparative_vo, is_forecast_theater_vo
+        from onecrew.tell import wants_no_forecast_theater
         from onecrew.timeline import _event_nums, _print_bearing
 
         if is_comparative_vo(spoken) and not _event_nums(spoken):
             if not tls or not any(_print_bearing(f) for f in tls):
                 out.append(beat)
+                continue
+        if wants_no_forecast_theater(packet.tell or "") and is_forecast_theater_vo(spoken):
+            out.append(beat)
     return out
 
 
@@ -481,10 +485,24 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
             if f"[{finding.id}]" not in beat.vo:
                 beat.vo = f"{beat.vo} [{finding.id}]"
             attached.append(finding.id)
-        from onecrew.script import _align_vo_to_stamps, is_pack_chrome_vo, speak_stamps
+        from onecrew.script import (
+            _align_vo_to_stamps,
+            _drop_extra_cite_brackets,
+            _refuse_forecast_theater,
+            is_pack_chrome_vo,
+            speak_stamps,
+        )
+        from onecrew.timeline import cap_beat_cites
 
         keep, new_vo = _align_vo_to_stamps(vo, keep, list(receipt.findings))
         keep, new_frame = _align_vo_to_stamps(beat.frame or "", keep, list(receipt.findings))
+        keep, new_vo, _ = _refuse_forecast_theater(new_vo, keep, list(receipt.findings), packet.tell or "")
+        keep, new_frame, _ = _refuse_forecast_theater(
+            new_frame, keep, list(receipt.findings), packet.tell or ""
+        )
+        keep = cap_beat_cites(new_vo, keep, list(receipt.findings))
+        new_vo = _drop_extra_cite_brackets(new_vo, keep)
+        new_frame = _drop_extra_cite_brackets(new_frame, keep)
         if is_pack_chrome_vo(new_vo) or not (new_vo or "").strip():
             spoken = speak_stamps(keep, list(receipt.findings))
             if spoken:
@@ -826,6 +844,8 @@ _BEAT_NIT = re.compile(r"\bbeat(\d+)\s+cites nothing", re.I)
 def _repair_faithless_beats(packet: Packet) -> list[str]:
     from onecrew.script import (
         _align_vo_to_stamps,
+        _drop_extra_cite_brackets,
+        _refuse_forecast_theater,
         _strip_tone_chrome,
         _vo_lines,
         has_tone_chrome,
@@ -835,6 +855,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         speak_stamp_fact,
         speak_stamps,
     )
+    from onecrew.timeline import cap_beat_cites
 
     receipt = packet.receipt
     if receipt is None:
@@ -846,6 +867,13 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         vo = _vo_lines(beat.vo)
         keep, new_vo = _align_vo_to_stamps(vo, list(beat.finding_ids), list(receipt.findings))
         keep, new_frame = _align_vo_to_stamps(beat.frame or "", keep, list(receipt.findings))
+        keep, new_vo, _ = _refuse_forecast_theater(new_vo, keep, list(receipt.findings), packet.tell or "")
+        keep, new_frame, _ = _refuse_forecast_theater(
+            new_frame, keep, list(receipt.findings), packet.tell or ""
+        )
+        keep = cap_beat_cites(new_vo, keep, list(receipt.findings))
+        new_vo = _drop_extra_cite_brackets(new_vo, keep)
+        new_frame = _drop_extra_cite_brackets(new_frame, keep)
         new_vo, _ = _strip_tone_chrome(new_vo)
         cited = [f for f in receipt.findings if f.id in keep]
         if is_title_read_vo(new_vo, cited):
@@ -953,6 +981,64 @@ def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
             finding.parallel_url = None
             finding.note = "Cite-repair dropped this beat. Never sold as fact."
     return dropped
+
+
+def _board_gate_reason(packet: Packet) -> str | None:
+    from collections import Counter
+
+    from onecrew.script import is_forecast_theater_vo
+    from onecrew.tell import wants_no_forecast_theater
+    from onecrew.timeline import MAX_CITES_PER_BEAT, URL_REUSE_CAP, url_host
+    from onecrew.verify import CLOSED_SERIES
+
+    if wants_no_forecast_theater(packet.tell or ""):
+        for beat in packet.beats:
+            if is_forecast_theater_vo(f"{beat.vo} {beat.frame or ''}"):
+                return "forecast theater"
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    used: Counter[str] = Counter()
+    seen: set[str] = set()
+    for beat in packet.beats:
+        other = [
+            fid
+            for fid in beat.finding_ids
+            if fid in by_id and (by_id[fid].series or "").strip() not in CLOSED_SERIES
+        ]
+        if len(other) > MAX_CITES_PER_BEAT:
+            return "over-cite"
+        for fid in other:
+            if fid in seen:
+                continue
+            seen.add(fid)
+            host = url_host(by_id[fid].parallel_url or "")
+            if host:
+                used[host] += 1
+    if any(n > URL_REUSE_CAP for n in used.values()):
+        return "host reuse"
+    return None
+
+
+def _hold_reason(packet: Packet, attempts: int, reason: str) -> CiteRepairResult:
+    packet.cite_recheck_attempts = attempts
+    receipt = packet.receipt
+    if receipt is None:
+        receipt = Receipt(
+            packet_id=packet.id,
+            written=False,
+            findings=[],
+            causal_links=[],
+            disposition="HOLD",
+            hold_reason=reason,
+        )
+        packet.receipt = receipt
+    else:
+        receipt.disposition = "HOLD"
+        prior = (receipt.hold_reason or "").strip()
+        if reason not in prior.lower():
+            receipt.hold_reason = f"{prior}; {reason}".strip() if prior else reason
+    packet.status = "hold"
+    return CiteRepairResult(ok=False, attempts=attempts, hold_reason=reason)
 
 
 def _hold_cite_faithfulness(packet: Packet, attempts: int) -> CiteRepairResult:
@@ -1144,6 +1230,13 @@ def run_cite_recheck_loop(
         if not empty and not missing_beats:
             if faithless:
                 result = _hold_cite_faithfulness(packet, attempts)
+                result.attached_ids = attached_all
+                result.dropped_beat_ids = dropped_all
+                result.hit_urls = hit_urls
+                return result
+            gate = _board_gate_reason(packet)
+            if gate:
+                result = _hold_reason(packet, attempts, gate)
                 result.attached_ids = attached_all
                 result.dropped_beat_ids = dropped_all
                 result.hit_urls = hit_urls
