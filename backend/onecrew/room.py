@@ -399,11 +399,13 @@ def _over_cite_hole(artifact: GradeArtifact) -> bool:
 
     by_id = {row.id: row for row in artifact.stamped_findings}
     for window in _cite_windows(artifact.script):
-        other = [
-            fid
-            for fid in _cited_ids(window)
-            if fid in by_id and (by_id[fid].series or "").strip() not in CLOSED_SERIES
-        ]
+        other = list(
+            dict.fromkeys(
+                fid
+                for fid in _cited_ids(window)
+                if fid in by_id and (by_id[fid].series or "").strip() not in CLOSED_SERIES
+            )
+        )
         if len(other) > MAX_CITES_PER_BEAT:
             return True
     return False

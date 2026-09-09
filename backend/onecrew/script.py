@@ -133,10 +133,14 @@ def _refuse_forecast_theater(
 
 def _drop_extra_cite_brackets(text: str, fids: list[str]) -> str:
     keep = set(fids)
+    seen: set[str] = set()
 
     def _keep(match: re.Match[str]) -> str:
         token = (match.group(1) or "").strip()
-        return match.group(0) if token in keep else ""
+        if token not in keep or token in seen:
+            return ""
+        seen.add(token)
+        return match.group(0)
 
     return re.sub(r"\s*\[([^\[\]]+)\]", _keep, text or "")
 
@@ -1345,6 +1349,18 @@ _HANGING_DATE = re.compile(
     r"\s+\d{1,2}(?:st|nd|rd|th)?\s*$",
     re.I,
 )
+_DATE_ONLY_VO = re.compile(
+    r"^(?:then,?\s+)?on\s+"
+    r"(?:January|February|March|April|May|June|July|August|September|"
+    r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+    r"\s+\d{1,2}(?:st|nd|rd|th)?\.?$",
+    re.I,
+)
+_MD_HEADING = re.compile(r"^#{1,6}\s+")
+_TRAILING_URL = re.compile(
+    r"\s*(?:\((?:https?://)[^)]+\)|(?:https?://)\S+)\s*$",
+    re.I,
+)
 _TEXT_CHROME = re.compile(r"^text\s*:\s*", re.I)
 _PACK_SLOT_NIT = "pack slot token stripped from VO"
 
@@ -1365,6 +1381,8 @@ def is_incomplete_vo(text: str) -> bool:
     if not body:
         return False
     if is_print_hole(body) or is_hanging_clause_vo(body) or _HANGING_CONJ.search(body):
+        return True
+    if _DATE_ONLY_VO.match(body):
         return True
     return bool(_BARE_ACCORDING.search(body) or _HANGING_DATE.search(body))
 
@@ -1518,7 +1536,8 @@ _UNVERIFIED_META_VO = re.compile(
     r"our research indicates|"
     r"the question on (?:many|most) minds|"
     r"(?:a |the )?common question(?:\s+\w+){0,4}|"
-    r"the question (?:is|remains) whether|"
+    r"the question (?:is|was|remains) whether|"
+    r"this (?:cut|piece|episode) asks|"
     r"\bunverified\b|"
     r"we (?:could not|cannot) (?:verify|confirm)",
     re.I,
@@ -1634,6 +1653,9 @@ def is_topic_question_vo(text: str, packet) -> bool:
         "?" in raw
         or "whether" in body
         or bool(_TOPIC_Q_LEAD.match(body))
+        or bool(_UNVERIFIED_META_VO.search(raw))
+        or "this cut asks" in body
+        or "the question was whether" in body
     )
     if not asked:
         return False
@@ -1763,9 +1785,17 @@ def _is_site_name_only(text: str) -> bool:
     return words[-1].lower().rstrip(".,") in _NEWS_TAIL
 
 
+def _strip_headline_paste(text: str) -> str:
+    """Drop markdown # and trailing (http…) so title-paste still reads as a headline."""
+    body = _bare_vo(text).strip()
+    body = _MD_HEADING.sub("", body)
+    body = _TRAILING_URL.sub("", body)
+    return _tidy_vo(body)
+
+
 def _is_headline_shaped_vo(text: str) -> bool:
     """Title Case headline, no spoken number, no claim verb+print."""
-    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    body = _strip_headline_paste(text)
     if not body or is_numeric_print(body) or re.search(r"\d|%", body):
         return False
     if _TITLE_CARD_VERB.search(body):
@@ -1780,13 +1810,16 @@ def _is_headline_shaped_vo(text: str) -> bool:
 def _is_title_like_text(text: str) -> bool:
     """PR/page/hub title, site name, or Title Case headline. Not a spoken print."""
     raw = _bare_vo(text)
-    if not raw or is_numeric_print(raw):
+    if not raw:
+        return False
+    if _looks_like_headline(raw) or _MD_HEADING.match(raw.strip()) or _TRAILING_URL.search(raw):
+        return not is_numeric_print(_strip_headline_paste(raw))
+    if is_numeric_print(raw):
         return False
     return bool(
         _has_publisher_pipe(raw)
         or _is_site_name_only(raw)
         or _is_headline_shaped_vo(raw)
-        or _looks_like_headline(raw)
         or _is_title_card(raw)
     )
 
@@ -1804,6 +1837,10 @@ def has_usable_numeric_print(finding) -> bool:
 
 def _stamp_can_cover(finding) -> bool:
     """Stamp can support spoken VO: numeric print or a real prose claim, not a title."""
+    from onecrew.timeline import is_chrome_cover_stamp
+
+    if is_chrome_cover_stamp(finding):
+        return False
     if has_usable_numeric_print(finding):
         return True
     claim = (getattr(finding, "claim", None) or "").strip()
@@ -1865,9 +1902,25 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
         for f in findings
     ):
         return False
-    if not covered and (
-        _is_site_name_only(vo) or _has_publisher_pipe(vo) or _is_headline_shaped_vo(vo)
-    ):
+    raw = _bare_vo(vo)
+    paste = bool(_MD_HEADING.match(raw.strip()) or _TRAILING_URL.search(raw))
+    headline = (
+        _is_site_name_only(vo)
+        or _has_publisher_pipe(vo)
+        or _is_headline_shaped_vo(vo)
+        or _is_title_like_text(vo)
+        or _looks_like_headline(raw)
+        or _looks_like_headline(_strip_headline_paste(vo))
+    )
+    print_cover = bool(
+        findings
+        and covered
+        and any(has_usable_numeric_print(f) for f in findings)
+        and is_numeric_print(_strip_headline_paste(raw) or raw)
+    )
+    if paste and not print_cover:
+        return True
+    if headline and not print_cover and (not covered or not findings):
         return True
     if _is_catalog_or_series_name(vo):
         return True
@@ -2423,6 +2476,7 @@ def sanitize_for_ship(packet):
     from onecrew.cite_repair import rebuild_timed_vo
 
     _drop_placeholder_cites(packet)
+    _dedupe_cap_finding_ids(packet)
     _strip_action_chrome_beats(packet)
     _strip_meta_hanging_beats(packet)
     _strip_incomplete_beats(packet)
@@ -2431,20 +2485,129 @@ def sanitize_for_ship(packet):
     uncited = _drop_uncited_ship_claims(packet)
     thin = refuse_thin_episode(packet)
     axis = ensure_topic_axes(packet)
+    _dedupe_cap_finding_ids(packet)
+    _fill_stamp_print_frames(packet)
+    dupes = _drop_duplicate_vo_beats(packet)
     neutralize_pack_slot_beats(packet)
     _strip_pack_slot_beats(packet)
     if thin:
         _hold_ship(packet, thin)
     if axis:
         _hold_ship(packet, axis)
-    if dropped or uncited or packet.beats or thin or axis:
+    if dropped or uncited or dupes or packet.beats or thin or axis:
         rebuild_timed_vo(packet)
     return packet
+
+
+def _dedupe_cap_finding_ids(packet) -> None:
+    """Unique + cap per-beat finding_ids. HOLD over-cite only if VO still needs more stamps."""
+    from onecrew.timeline import MAX_CITES_PER_BEAT, cap_beat_cites, union_supports_prints
+    from onecrew.verify import CLOSED_SERIES
+
+    receipt = packet.receipt
+    rows = list(receipt.findings if receipt else [])
+    by_id = {f.id: f for f in rows}
+    over = False
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        unique = list(
+            dict.fromkeys(
+                fid
+                for fid in beat.finding_ids
+                if fid in by_id
+                and not is_placeholder_finding_id(fid)
+                and (
+                    _stamp_can_cover(by_id[fid])
+                    or (by_id[fid].series or "").strip() in CLOSED_SERIES
+                )
+            )
+        )
+        vo = _vo_lines(beat.vo)
+        other = [fid for fid in unique if (by_id[fid].series or "").strip() not in CLOSED_SERIES]
+        if len(other) > MAX_CITES_PER_BEAT:
+            capped = cap_beat_cites(vo, unique, rows)
+            cited = [by_id[fid] for fid in capped if fid in by_id]
+            if vo and cited and not union_supports_prints(vo, cited):
+                over = True
+            unique = list(dict.fromkeys(capped))
+        beat.finding_ids = unique
+        beat.vo = _drop_extra_cite_brackets(beat.vo, unique)
+        for fid in unique:
+            if f"[{fid}]" not in beat.vo:
+                beat.vo = f"{beat.vo} [{fid}]"
+    if over:
+        _hold_ship(packet, "over-cite")
+
+
+def _fill_stamp_print_frames(packet) -> None:
+    """Mute-test: covering stamp print goes on frame/on_screen. Empty cut cannot ship."""
+    receipt = packet.receipt
+    rows = list(receipt.findings if receipt else [])
+    by_id = {f.id: f for f in rows}
+    drop: list[str] = []
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        if not beat.finding_ids:
+            continue
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        screen = speak_stamp_print(list(beat.finding_ids), rows)
+        shown = (beat.frame or "").strip()
+        title_chrome = bool(shown) and is_title_chrome_frame(shown, list(beat.finding_ids), rows)
+        if screen:
+            if not shown or title_chrome:
+                beat.frame = screen
+            continue
+        fact = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(
+            list(beat.finding_ids), rows
+        )
+        if fact and not _is_title_like_text(fact):
+            if not shown or title_chrome:
+                beat.frame = fact
+            continue
+        if cited and not any(_stamp_can_cover(f) for f in cited):
+            drop.append(beat.id)
+    if drop:
+        keep = [b for b in packet.beats if b.id not in drop]
+        if any((b.kind or "vo") != "heading" and _speech_norm(b.vo) for b in keep):
+            packet.beats = keep
+    cited_beats = [
+        b
+        for b in packet.beats
+        if (b.kind or "vo") != "heading" and b.finding_ids and _speech_norm(b.vo)
+    ]
+    if cited_beats and all(not (b.frame or "").strip() for b in cited_beats):
+        _hold_ship(packet, "thin_after_repair")
+
+
+def _drop_duplicate_vo_beats(packet) -> list[str]:
+    """Identical spoken VO ships once."""
+    seen: set[str] = set()
+    drop: list[str] = []
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        key = _speech_norm(beat.vo)
+        if not key:
+            continue
+        if key in seen:
+            drop.append(beat.id)
+            continue
+        seen.add(key)
+    if not drop:
+        return []
+    keep = [b for b in packet.beats if b.id not in drop]
+    if not any((b.kind or "vo") != "heading" and _speech_norm(b.vo) for b in keep):
+        return []
+    packet.beats = keep
+    return drop
 
 
 def _drop_placeholder_cites(packet) -> None:
     """Never keep cite-miss / missing / empty as a covering stamp."""
     from onecrew.timeline import stamps_for_vo
+    from onecrew.verify import CLOSED_SERIES
 
     receipt = packet.receipt
     rows = list(receipt.findings if receipt else [])
@@ -2455,7 +2618,12 @@ def _drop_placeholder_cites(packet) -> None:
         keep = [
             fid
             for fid in beat.finding_ids
-            if not is_placeholder_finding_id(fid) and fid in by_id
+            if not is_placeholder_finding_id(fid)
+            and fid in by_id
+            and (
+                _stamp_can_cover(by_id[fid])
+                or (by_id[fid].series or "").strip() in CLOSED_SERIES
+            )
         ]
         beat.vo = _drop_extra_cite_brackets(beat.vo, keep)
         if keep:
@@ -2598,10 +2766,22 @@ def _strip_action_chrome_beats(packet) -> None:
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading":
             continue
-        if is_slot_chrome_frame(beat.frame or ""):
+        if is_slot_chrome_frame(beat.frame or "") or is_topic_question_vo(beat.frame or "", packet):
             beat.frame = ""
+        kept: list[str] = []
+        for line in (beat.vo or "").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("ACTION:") and (
+                is_topic_question_vo(stripped, packet) or is_unverified_meta_vo(stripped)
+            ):
+                continue
+            kept.append(line)
+        if kept != (beat.vo or "").splitlines():
+            beat.vo = "\n".join(kept)
         vo = _vo_lines(beat.vo)
         cleaned = strip_action_chrome_vo(vo, beat.frame or "")
+        if is_topic_question_vo(cleaned, packet) and not is_numeric_print(_bare_vo(cleaned)):
+            cleaned = ""
         if cleaned != vo:
             beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
 
@@ -2706,10 +2886,12 @@ def speak_stamp_print(fids: list[str], findings: list[Finding]) -> str:
 def _looks_like_headline(text: str) -> bool:
     """Article / series / hub / wire headline. Not a numeric stamp print."""
     raw = (text or "").strip()
-    if not raw or is_numeric_print(raw):
+    if not raw:
         return False
-    if raw.startswith("#") or _TEXT_CHROME.match(raw):
-        return True
+    if raw.startswith("#") or _MD_HEADING.match(raw) or _TEXT_CHROME.match(raw) or _TRAILING_URL.search(raw):
+        return not is_numeric_print(_strip_headline_paste(raw))
+    if is_numeric_print(raw):
+        return False
     if ":" in raw or "|" in raw or re.search(r"\s[-–—]\s+", raw):
         return True
     if _is_site_name_only(raw) or _is_headline_shaped_vo(raw):
