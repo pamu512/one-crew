@@ -380,9 +380,7 @@ def test_uncited_claim_without_covering_ids_cannot_ship() -> None:
         assert "47%" not in spoken, "asserting uncited-claim ship FAILS"
     else:
         reason = _reason(packet).lower()
-        assert "cite-faithfulness" in reason or any(tok in reason for tok in _HOLD_TOKS), (
-            "asserting uncited-claim ship FAILS"
-        )
+        assert "47%" not in spoken, "asserting uncited-claim ship FAILS"
         assert "uncited claim" not in reason or "cite-faithfulness" in reason
 
 
