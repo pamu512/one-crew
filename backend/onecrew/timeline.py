@@ -610,7 +610,8 @@ def stamp_covers_vo(vo: str, finding: Finding) -> bool:
 
 
 def _years(text: str) -> set[str]:
-    return set(re.findall(r"\b20\d{2}\b", text or ""))
+    cleaned = re.sub(r"\[[^\]]+\]", "", text or "")
+    return set(re.findall(r"\b20\d{2}\b", cleaned))
 
 
 def stamp_supports_prints(vo: str, finding: object) -> bool:
@@ -626,8 +627,6 @@ def stamp_supports_prints(vo: str, finding: object) -> bool:
     vo_years = _years(vo)
     ev_years = _years(blob)
     if vo_years and ev_years and not (vo_years & ev_years):
-        return False
-    if vo_years and not ev_years:
         return False
     return True
 
@@ -761,8 +760,6 @@ def union_supports_prints(vo: str, findings: Iterable[object]) -> bool:
     vo_years = _years(vo)
     ev_years = _years(blob)
     if vo_years and ev_years and not (vo_years & ev_years):
-        return False
-    if vo_years and not ev_years:
         return False
     return True
 

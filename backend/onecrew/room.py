@@ -529,12 +529,29 @@ def _sanitize_disposition(packet: Packet, grade: RoomGrade, calls: int, *, ready
     from onecrew.script import sanitize_for_ship
 
     sanitize_for_ship(packet)
-    if packet.receipt is not None and packet.receipt.disposition == "HOLD":
+    reason = ((packet.receipt.hold_reason or "") if packet.receipt else "").lower()
+    ship_gate = any(
+        tok in reason
+        for tok in ("thin_after_repair", "insufficient_cite_beats", "missing topic axis")
+    )
+    if ship_gate:
+        raw = (packet.receipt.hold_reason or "") if packet.receipt else ""
+        gate = next(
+            (
+                part.strip()
+                for part in raw.replace("\n", ";").split(";")
+                if any(
+                    tok in part.lower()
+                    for tok in ("thin_after_repair", "insufficient_cite_beats", "missing topic axis")
+                )
+            ),
+            raw or hold_reason,
+        )
         return RoomLoopResult(
             grade=grade,
             parallel_research_calls=calls,
             disposition="HOLD",
-            hold_reason=packet.receipt.hold_reason or hold_reason,
+            hold_reason=gate,
         )
     if ready:
         return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")

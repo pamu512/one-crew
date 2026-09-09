@@ -1216,7 +1216,6 @@ def _align_vo_to_stamps(
         _years,
         cap_beat_cites,
         stamp_covers_vo,
-        stamp_supports_prints,
         stamp_text,
         stamps_for_vo,
         vo_proper_names,
@@ -1228,8 +1227,16 @@ def _align_vo_to_stamps(
     tl_fids = [fid for fid in fids if fid in timeline]
 
     def _when_print_ok(finding) -> bool:
-        dated = bool(_event_nums(vo) or _years(vo) or _MONTH_YEAR.search(vo or ""))
-        return (not dated) or stamp_supports_prints(vo, finding)
+        blob = stamp_text(finding)
+        vo_years = _years(vo)
+        ev_years = _years(blob)
+        if vo_years and ev_years and not (vo_years & ev_years):
+            return False
+        vo_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(vo or "")}
+        ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob or "")}
+        if vo_months and ev_months and not (vo_months & ev_months):
+            return False
+        return True
 
     if is_pack_chrome_vo(vo):
         keep = [fid for fid in tl_fids if fid in by_id]
@@ -1753,8 +1760,8 @@ def prefer_covering_print(vo: str, fids: list[str], findings: list) -> tuple[lis
         return [], True
     from onecrew.timeline import _years
 
-    dated = bool(nums or _years(vo) or _MONTH_YEAR.search(vo or ""))
-    if dated:
+    dated_when = bool(_years(vo) or _MONTH_YEAR.search(vo or ""))
+    if dated_when:
         supported = [fid for fid in keep if fid in by_id and stamp_supports_prints(vo, by_id[fid])]
         if supported and union_supports_prints(vo, [by_id[fid] for fid in supported]):
             return supported, False
@@ -2171,7 +2178,7 @@ def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: li
     raw = (text or "").strip()
     if not raw:
         return False
-    if raw.startswith("#") or _is_title_card(raw):
+    if raw.startswith("#"):
         return True
     shown = _speech_norm(raw)
     rows = [f for f in (findings or []) if not fids or f.id in set(fids)]
