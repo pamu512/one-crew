@@ -152,7 +152,16 @@ def leftover_slot_ids() -> frozenset[str]:
 
 def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
     """independent=missing cannot carry a URL. Same for propaganda/lean/who_repeats/vested."""
+    kept: list[Finding] = []
     for finding in findings:
+        if finding.parallel_url:
+            cleaned = clean_cite_url(finding.parallel_url)
+            if not cleaned:
+                if finding.series == "LEI":
+                    continue
+                finding.parallel_url = None
+            else:
+                finding.parallel_url = cleaned
         if finding.independent == MISSING:
             finding.independent_url = None
         if finding.propaganda == "yes":
@@ -171,7 +180,8 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
             finding.who_repeats_url = None
         if finding.vested_interest == MISSING:
             finding.vested_interest_url = None
-    return findings
+        kept.append(finding)
+    return kept
 
 
 def findings_from_parallel_rows(
@@ -272,8 +282,26 @@ def _month_key(stamp: str) -> tuple[int, int]:
     return (int(match.group(2)), order.index(name) + 1)
 
 
+def clean_cite_url(url: str) -> str:
+    """Strip markdown/list leftovers. Never keep a newline or trailing \\n-."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    raw = raw.replace("\\n", "\n").replace("\\r", "\r")
+    raw = re.split(r"[\n\r]", raw, maxsplit=1)[0].strip()
+    raw = raw.rstrip(".,); \t")
+    if not raw.startswith(("http://", "https://")):
+        return ""
+    if re.search(r"[\n\r\\]", raw) or any(ch.isspace() for ch in raw):
+        return ""
+    return raw
+
+
 def _broken_href(url: str) -> bool:
-    low = (url or "").lower()
+    raw = url or ""
+    if "\n" in raw or "\r" in raw or "\\n" in raw:
+        return True
+    low = raw.lower()
     return "%20htm" in low or "empsit.nr0.htm%20" in low
 
 
@@ -952,22 +980,55 @@ def _ces_when(text: str, printed: str, years_from: str = "") -> str:
     return f"{_FULL_MONTH[match.group(1).lower()]} {year}"
 
 
+def _norm_series_print(printed: str) -> str:
+    return re.sub(r"\s+", "", (printed or "").replace("−", "-").replace("+", ""))
+
+
+def _decimal_series_rows(text: str) -> list[tuple[str, str]]:
+    """FRED/prose cells: Month Year value or ISO date value. No series literals."""
+    hits: list[tuple[str, str]] = []
+    blob = text or ""
+    for match in _MONTH.finditer(blob):
+        after = blob[match.end() : match.end() + 16]
+        val = re.match(r"\s*[=:]?\s*([+\-−]?\d+\.\d+)", after)
+        if not val:
+            continue
+        hits.append((_month_stamp(match), val.group(1)))
+    for match in re.finditer(r"(20\d{2})-(\d{2})-\d{2}\s*[|,]?\s*([+\-−]?\d+\.\d+)", blob):
+        stamp = _iso_month_stamp(match.group(1), match.group(2))
+        if stamp:
+            hits.append((stamp, match.group(3)))
+    return hits
+
+
+def when_matching_print(text: str, printed: str, when: str = "") -> str:
+    """Align when to the table row that carries this print. Do not invent a minus."""
+    want = _norm_series_print(printed)
+    if not want:
+        return when
+    matched = [
+        stamp for stamp, value in _decimal_series_rows(text) if _norm_series_print(value) == want
+    ]
+    if not matched:
+        return when
+    if when:
+        for stamp in matched:
+            if stamp.lower() == when.strip().lower():
+                return stamp
+    return max(matched, key=_month_key)
+
+
 def _dated_in(text: str, series: str, printed: str = "", years_from: str = "") -> str:
     if series == "GDP":
         return _gdp_when(years_from or text, printed) or _gdp_when(text, printed)
     if series == "USREC":
         return _usrec_latest_when(text)
     if series == "SAHMREALTIME" and printed:
-        row = re.search(
-            r"((?:January|February|March|April|June|July|August|September|October|November|December|"
-            r"Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+20\d{2})\s*[=:]\s*[\-−]?\s*0\.03",
-            text or "",
-            re.I,
+        aligned = when_matching_print(years_from or text, printed) or when_matching_print(
+            text, printed
         )
-        if row:
-            month = _MONTH.search(row.group(1))
-            if month:
-                return _month_stamp(month)
+        if aligned:
+            return aligned
     if series in {"BLS payrolls", "U-3"} and printed:
         ces = _ces_when(text, printed, years_from)
         if ces:
@@ -1099,9 +1160,9 @@ def _citation_table(hit_rows: list, extracted: object, spine: str) -> list[_Cite
     by_url: dict[str, _Cite] = {}
 
     def add(url: str | None, title: str = "", excerpts: list | None = None) -> None:
-        if not url or not str(url).startswith(("http://", "https://")):
+        key = clean_cite_url(str(url) if url else "")
+        if not key:
             return
-        key = str(url).rstrip(".,);")
         row = by_url.get(key)
         if row is None:
             row = _Cite(url=key, title=(title or "").strip(), excerpts=[])
@@ -1717,6 +1778,8 @@ def _mint_from_notes(
         if series == "GDP" and _GDP_PROJ.search(claim) and "/" not in (printed or ""):
             continue
         when = _when(claim, series, notes, printed)
+        if series == "SAHMREALTIME":
+            when = when_matching_print(f"{claim} {notes}", printed, when) or when
         cite = _pick_cite(table, url_keys, tokens + (series.lower(),), series)
         if series in {"BLS payrolls", "U-3"}:
             cite = _pick_bls_cite(table, when) or cite

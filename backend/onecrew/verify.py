@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
-from onecrew.foundry import leftover_slot_ids, _url_fits_series, lei_threshold_claim
+from onecrew.foundry import leftover_slot_ids, _url_fits_series, lei_threshold_claim, clean_cite_url
 from onecrew.models import MISSING, Finding, Receipt
 
 SeriesName = Literal["USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME"]
@@ -160,14 +160,19 @@ def attach_cites_from_hits(findings: list[Finding], bag: CiteBag) -> list[Findin
     claims = [resolve_missing_cite(c, bag) for c in claims_from_findings(findings)]
     out: list[Finding] = []
     for finding in findings:
-        cite = (finding.parallel_url or "").strip()
+        cite = clean_cite_url(finding.parallel_url or "")
         if cite:
+            if cite != (finding.parallel_url or "").strip():
+                finding = finding.model_copy(update={"parallel_url": cite})
             out.append(finding)
             continue
         claim = next((c for c in claims if c.id == finding.id), None)
-        url = (claim.cite_url or "").strip() if claim else ""
+        url = clean_cite_url((claim.cite_url or "") if claim else "")
         if url:
             out.append(finding.model_copy(update={"parallel_url": url, "parallel_status": "hit"}))
+            continue
+        if finding.parallel_url and not cite:
+            out.append(finding.model_copy(update={"parallel_url": None}))
             continue
         out.append(finding)
     return out

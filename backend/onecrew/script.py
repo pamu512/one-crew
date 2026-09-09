@@ -443,7 +443,9 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     if unemp and not unemp_print and "4.1" in (unemp.claim or ""):
         unemp_print = "4.1%"
     sahm_print = _print_of(sahm, "")
-    gdp_vo, gdp_eyes = _gdp_lines(_print_of(gdp, ""))
+    gdp_print = _print_of(gdp, "")
+    gdp_vo, gdp_eyes = _gdp_lines(gdp_print)
+    gdp_named = bool(gdp and gdp_print)
     gdp_fallback = gdp or usrec or sahm or payrolls
     trigger = _first_trigger_text(packet)
     if usrec and payrolls:
@@ -479,15 +481,23 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                     _promise_trigger_vo(packet, trigger)
                     if trigger
                     else _voice(
-                        "Three objects: the official call, the GDP prints, the Sahm alarm. "
-                        "The title is a question we will not answer with a forecast.",
+                        (
+                            "Three objects: the official call, the GDP prints, the Sahm alarm. "
+                            if gdp_named
+                            else "Three objects: the official call, the Sahm alarm. "
+                        )
+                        + "The title is a question we will not answer with a forecast.",
                         packet,
                     )
                 ),
                 "eyes": (
                     "Dated first-trigger from the pack. Official series stay on later cards."
                     if trigger
-                    else "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map."
+                    else (
+                        "Three objects labeled: official call, GDP prints, Sahm alarm. No leftover map."
+                        if gdp_named
+                        else "Three objects labeled: official call, Sahm alarm. No leftover map."
+                    )
                 ),
                 "finding_ids": [f.id for f in (usrec, gdp, sahm) if f],
             },
@@ -1025,6 +1035,29 @@ def _voice_stamped_marks(packet: Packet, units: list[dict]) -> list[dict]:
     return out
 
 
+def _stamped_named_series(packet: Packet) -> set[str]:
+    receipt = packet.receipt
+    if not receipt:
+        return set()
+    return {
+        f.series
+        for f in receipt.findings
+        if f.stamp == "grounded" and (f.print or "").strip() and f.print != MISSING
+    }
+
+
+def _strip_unstamped_series_name(text: str, word: str) -> str:
+    """Remove a series nickname that has no stamped print. No leftover comma pile."""
+    blob = text or ""
+    blob = re.sub(rf",?\s*the {word} prints,?", ",", blob, flags=re.I)
+    blob = re.sub(rf"\b{word} prints\b,?", "", blob, flags=re.I)
+    blob = re.sub(rf"\b{word}\b", "", blob, flags=re.I)
+    blob = re.sub(r"\s+,", ",", blob)
+    blob = re.sub(r",\s*,+", ",", blob)
+    blob = re.sub(r"\s{2,}", " ", blob)
+    return blob.strip(" ,")
+
+
 def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if len(units) != 8:
         return _fail_closed(packet, ["writer must emit 8 beats"])
@@ -1049,6 +1082,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     pack_blob = _pack_text(packet)
     cite_blob = _hit_cite_blob(packet)
     pack_l = pack_blob.lower()
+    stamped = _stamped_named_series(packet)
     for i, unit in enumerate(units):
         bid = unit.get("id") or _EIGHT_IDS[i]
         fids = [fid for fid in (unit.get("finding_ids") or []) if fid in known]
@@ -1064,6 +1098,9 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
         vo, vo_nits = _sanitize_vo(vo, known, pack_blob)
         eyes, eye_nits = _sanitize_vo(eyes, known, pack_blob)
+        if "GDP" not in stamped:
+            vo = _strip_unstamped_series_name(vo, "gdp")
+            eyes = _strip_unstamped_series_name(eyes, "gdp")
         slot_nits.extend(vo_nits)
         slot_nits.extend(eye_nits)
         if _invents(packet):
