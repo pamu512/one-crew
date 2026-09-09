@@ -41,20 +41,11 @@ def invents_frame(*, cut: Cut | None, tell: str) -> bool:
 
 
 def wants_no_forecast_theater(tell: str) -> bool:
-    """Tell asked for cite-faithful realized prints. Forecast/outlook is not the spine."""
+    """Tell asked for realized prints and/or no forecast theater. Not every cited-prints desk read."""
     text = (tell or "").lower()
-    return any(
-        cue in text
-        for cue in (
-            "no forecast theater",
-            "forecast theater",
-            "no forecast",
-            "realized print",
-            "cited print",
-            "cite-faithful",
-            "cite faithful",
-        )
-    )
+    if "no forecast theater" in text or "no forecast" in text:
+        return True
+    return "realized print" in text
 
 
 def tell_lane(tell: str) -> str:

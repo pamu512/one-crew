@@ -87,11 +87,12 @@ def pack_numbers(text: str) -> list[str]:
 _FORECAST_SPINE = re.compile(
     r"\boutlook\s+forecast\b|"
     r"\bforecasts?\s+from\b|"
-    r"\bforecast(?:ed|s)?\s+a\b|"
-    r"\bprojects?\s+a\b",
+    r"\b(?:january|february|march|april|may|june|july|august|september|"
+    r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)"
+    r"\s+outlook\b",
     re.I,
 )
-_FORECAST_META = re.compile(r"will not answer with a forecast", re.I)
+_FORECAST_META = re.compile(r"(?:will|does|do)\s+not\s+(?:answer with a )?forecast", re.I)
 
 
 def is_forecast_theater_vo(text: str) -> bool:
@@ -1754,6 +1755,13 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 eyes = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows) or eyes
             if not _vo_lines(vo).strip() and fids:
                 vo = speak_stamps(fids, rows)
+            fids, vo, after_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
+            fids, eyes, after_frame = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
+            if after_hold or after_frame:
+                slot_nits.append("forecast theater")
+            fids = cap_beat_cites(vo, fids, rows)
+            vo = _drop_extra_cite_brackets(vo, fids)
+            eyes = _drop_extra_cite_brackets(eyes, fids)
         if not fids and not hole:
             spoken_nums = [
                 n

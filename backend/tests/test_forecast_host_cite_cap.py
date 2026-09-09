@@ -220,8 +220,7 @@ def test_room_ship_cannot_bypass_forecast_theater() -> None:
     packet.beats[4].finding_ids = [printed.id]
     grade = grade_room(make_grade_artifact(packet), grader=lambda _a: RoomGrade(vote="ship"))
     assert grade.vote == "recut"
-    detail = f"{grade.recut_detail or ''} {grade.recut_reason or ''}".lower()
-    assert "forecast theater" in detail or "cite-faithfulness" in detail
+    assert (grade.recut_detail or "").lower() == "forecast theater"
 
 
 def test_grounded_parallel_rows_obey_host_reuse_cap() -> None:
@@ -347,8 +346,7 @@ def test_room_ship_cannot_bypass_over_cite() -> None:
     packet.beats[0].finding_ids = ids
     grade = grade_room(make_grade_artifact(packet), grader=lambda _a: RoomGrade(vote="ship"))
     assert grade.vote == "recut"
-    detail = (grade.recut_detail or "").lower()
-    assert "over-cite" in detail or "cite-faithfulness" in detail
+    assert (grade.recut_detail or "").lower() == "over-cite"
 
 
 def test_room_ship_cannot_bypass_host_overreuse() -> None:
@@ -369,8 +367,7 @@ def test_room_ship_cannot_bypass_host_overreuse() -> None:
     packet.script = "\n".join(parts)
     grade = grade_room(make_grade_artifact(packet), grader=lambda _a: RoomGrade(vote="ship"))
     assert grade.vote == "recut"
-    detail = (grade.recut_detail or "").lower()
-    assert "host reuse" in detail or "cite-faithfulness" in detail
+    assert (grade.recut_detail or "").lower() == "host reuse"
 
 
 def test_cite_repair_strips_forecast_theater_or_holds() -> None:
