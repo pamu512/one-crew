@@ -493,6 +493,93 @@ def _vo_mentions_label(vo: str, label: str) -> bool:
     return bool(re.search(rf"\b{re.escape(label)}\b", vo, re.I))
 
 
+# Sentence-start / function words. Derived from grammar, not a topic list.
+_FUNCTION = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "from",
+        "this",
+        "that",
+        "with",
+        "into",
+        "over",
+        "under",
+        "about",
+        "after",
+        "before",
+        "when",
+        "those",
+        "these",
+        "their",
+        "there",
+        "then",
+        "than",
+        "narrator",
+        "receipt",
+        "near",
+        "hold",
+        "turn",
+        "labor",
+        "official",
+        "named",
+        "series",
+        "board",
+        "close",
+        "promise",
+        "asked",
+        "whether",
+        "already",
+        "announced",
+        "printed",
+        "cited",
+        "events",
+        "title",
+        "stays",
+        "question",
+        "same",
+        "object",
+        "switch",
+        "beat",
+        "action",
+        "wide",
+        "card",
+    }
+)
+_PROPER = re.compile(r"\b([A-Z][A-Za-z0-9]+(?:[A-Z][a-zA-Z0-9]+)*)\b")
+
+
+def vo_proper_names(vo: str) -> set[str]:
+    """Capitalized tokens in VO. Months and function words dropped. No topic list."""
+    skip = {k.lower() for k in _MONTH_NUM} | _FUNCTION
+    names: set[str] = set()
+    for match in _PROPER.finditer(vo or ""):
+        raw = match.group(1)
+        if raw.lower() in skip or len(raw) < 4:
+            continue
+        names.add(raw.lower())
+    return names
+
+
+def pair_covers_vo(vo: str, thesis: str, url: str) -> bool:
+    """Named VO tokens must appear on this stamp's URL/title/claim. Else refuse."""
+    names = vo_proper_names(vo)
+    if not names:
+        return True
+    labels = {lab.lower() for lab in host_labels(url)}
+    blob = f"{thesis or ''} {url or ''}".lower()
+    return any(name in blob or name in labels for name in names)
+
+
+def stamp_covers_vo(vo: str, finding: Finding) -> bool:
+    blob = f"{finding.claim or ''} {finding.print or ''} {finding.title or ''}"
+    title = (finding.title or "").strip().lower()
+    if title in {"timeline_event", "grounded", "mainstream", "fringe"}:
+        blob = f"{finding.claim or ''} {finding.print or ''}"
+    return pair_covers_vo(vo, blob, finding.parallel_url or "")
+
+
 def named_basis_urls(vo: str, pairs: Iterable[tuple[str, str]]) -> list[str]:
     """Chain basis URLs whose host label is spoken. No topic names."""
     out: list[str] = []
@@ -545,6 +632,7 @@ def spoken_match(vo: str, finding: Finding) -> bool:
 def spoken_basis_url(vo: str, pairs: Iterable[tuple[str, str]]) -> str | None:
     """High-confidence basis URL for this spoken beat. Named host wins over soft overlap."""
     rows = [(t, u) for t, u in (pairs or []) if t and u]
+    rows = [(t, u) for t, u in rows if pair_covers_vo(vo, t, u)]
     if not rows:
         return None
     named = named_basis_urls(vo, rows)
@@ -568,6 +656,10 @@ def cite_host_ok(vo: str, url: str, pairs: Iterable[tuple[str, str]]) -> bool:
     raw = (url or "").strip()
     if not raw:
         return False
+    if vo_proper_names(vo) and not pair_covers_vo(vo, "", raw):
+        covered = [(t, u) for t, u in (pairs or []) if pair_covers_vo(vo, t, u)]
+        if not any(url_key(u) == url_key(raw) for _t, u in covered):
+            return False
     want = spoken_basis_url(vo, pairs)
     if want:
         return url_key(raw) == url_key(want)
@@ -591,7 +683,7 @@ def best_timeline_finding(
         for f in findings or []
         if getattr(f, "stamp", "") == TIMELINE_STAMP and (f.parallel_url or "").strip()
     ]
-    exact = [f for f in tls if url_key(f.parallel_url or "") == url_key(want)]
+    exact = [f for f in tls if url_key(f.parallel_url or "") == url_key(want) and stamp_covers_vo(vo, f)]
     return exact[0] if exact else None
 
 

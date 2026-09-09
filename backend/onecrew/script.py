@@ -194,7 +194,7 @@ def _link_pack_findings(
 ) -> list[str]:
     """Attach stamped finding ids whose print is spoken. Do not invent a cite."""
     from onecrew.foundry import complete_print, is_pack_slot_id, leftover_slot_ids, official_gdp_url
-    from onecrew.timeline import best_timeline_finding, chain_pairs, cite_host_ok
+    from onecrew.timeline import best_timeline_finding, chain_pairs, cite_host_ok, stamp_covers_vo
 
     leftover = leftover_slot_ids()
     spoken = {re.sub(r"[^\d.]+", "", n.replace("−", "-")) for n in pack_numbers(vo)}
@@ -223,12 +223,21 @@ def _link_pack_findings(
         if want and want in spoken:
             out.append(finding.id)
     best = best_timeline_finding(vo, findings, pairs) if pairs else None
-    if best is not None and cite_host_ok(vo, best.parallel_url or "", pairs):
+    if best is None:
+        best = next((f for f in findings if f.stamp == "timeline_event" and stamp_covers_vo(vo, f)), None)
+    if best is not None and (not pairs or cite_host_ok(vo, best.parallel_url or "", pairs)):
         if best.id not in out:
             out.append(best.id)
     timeline_ids = {f.id for f in findings if f.stamp == "timeline_event"}
+    by_id = {f.id: f for f in findings}
     keep = best.id if best is not None else None
-    return [fid for fid in out if fid not in timeline_ids or fid == keep]
+    return [
+        fid
+        for fid in out
+        if fid not in timeline_ids
+        or fid == keep
+        or (fid in by_id and stamp_covers_vo(vo, by_id[fid]))
+    ]
 
 
 def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
@@ -1061,6 +1070,55 @@ def _strip_uncited_tokens(text: str, tokens: list[str]) -> str:
     return _tidy_vo(out) or "The named print stays on the card."
 
 
+def _drop_named_claims(text: str, names: set[str]) -> str:
+    """Drop sentences that speak an unsupported proper name. Keep the rest."""
+    if not names or not (text or "").strip():
+        return text or ""
+    parts = re.split(r"(?<=[.!?])\s+", text)
+    keep = [
+        part
+        for part in parts
+        if not any(re.search(rf"\b{re.escape(name)}\b", part, re.I) for name in names)
+    ]
+    return _tidy_vo(" ".join(keep))
+
+
+def _align_vo_to_stamps(
+    vo: str,
+    fids: list[str],
+    findings: list[Finding],
+) -> tuple[list[str], str]:
+    """Named-entity VO may only keep a timeline stamp that covers it. Else drop the claim."""
+    from onecrew.timeline import stamp_covers_vo, vo_proper_names
+
+    names = vo_proper_names(vo)
+    by_id = {f.id: f for f in findings}
+    timeline = {f.id for f in findings if f.stamp == "timeline_event"}
+    grounded = [fid for fid in fids if fid not in timeline]
+    tl_fids = [fid for fid in fids if fid in timeline]
+    if not names:
+        return fids, vo
+    covered = [fid for fid in tl_fids if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
+    if covered:
+        cleaned = vo
+        for fid in tl_fids:
+            if fid not in covered:
+                cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
+        return grounded + covered, cleaned
+    for finding in findings:
+        if finding.stamp == "timeline_event" and stamp_covers_vo(vo, finding):
+            cleaned = vo
+            for fid in tl_fids:
+                cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
+            return grounded + [finding.id], cleaned
+    if not tl_fids and grounded:
+        return grounded, vo
+    cleaned = _drop_named_claims(vo, names)
+    for fid in tl_fids:
+        cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
+    return grounded, cleaned or _SPEAKABLE_FALLBACK
+
+
 def _org_span(name: str) -> bool:
     return any(part.lower() in _ORG_WORD for part in name.split())
 
@@ -1394,9 +1452,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             if f"[{fid}]" in vo and fid not in fids:
                 fids.append(fid)
         if not _invents(packet):
-            fids = _link_pack_findings(
-                vo, fids, packet.receipt.findings if packet.receipt else [], packet=packet
-            )
+            rows = packet.receipt.findings if packet.receipt else []
+            fids = _link_pack_findings(vo, fids, rows, packet=packet)
+            fids, vo = _align_vo_to_stamps(vo, fids, rows)
+            fids, eyes = _align_vo_to_stamps(eyes, fids, rows)
         if not fids and not hole:
             spoken_nums = [
                 n

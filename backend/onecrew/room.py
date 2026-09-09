@@ -258,6 +258,10 @@ def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
             url = row.url
             if not cite_host_ok(window, url, pairs):
                 return True
+            from onecrew.timeline import pair_covers_vo
+
+            if not pair_covers_vo(window, getattr(row, "claim", "") or "", url):
+                return True
     return False
 
 
