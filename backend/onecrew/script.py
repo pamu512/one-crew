@@ -153,12 +153,17 @@ def _cite(finding: Finding | None) -> str:
 def _link_pack_findings(vo: str, fids: list[str], findings: list[Finding]) -> list[str]:
     """Attach stamped finding ids whose print is spoken. Do not invent a cite."""
     from onecrew.foundry import complete_print, leftover_slot_ids
+    from onecrew.timeline import spoken_match
 
     leftover = leftover_slot_ids()
     spoken = {re.sub(r"[^\d.]+", "", n.replace("−", "-")) for n in pack_numbers(vo)}
     out = list(fids)
     for finding in findings:
         if finding.id in leftover or finding.id in out:
+            continue
+        if finding.stamp == "timeline_event":
+            if spoken_match(vo, finding):
+                out.append(finding.id)
             continue
         if finding.stamp != "grounded":
             continue
@@ -1247,7 +1252,8 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 for n in _numbers_in(_vo_lines(vo))
                 if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
             ]
-            if spoken_nums and not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
+            sourced = bool(spoken_nums) or bool(_MONTH_YEAR.search(_vo_lines(vo)))
+            if sourced and not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
                 slot_nits.append(f"{bid} cites nothing in the pack")
         for fid in fids:
             if f"[{fid}]" not in vo:

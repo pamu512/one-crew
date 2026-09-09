@@ -102,6 +102,7 @@ def make_grade_artifact(packet: Packet) -> GradeArtifact:
         research_pack=excerpt,
         stamped_findings=stamps,
         parallel_cites=cite_block,
+        timeline_map=list((packet.receipt.timeline_map if packet.receipt else None) or []),
     )
 
 

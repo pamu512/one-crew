@@ -240,15 +240,65 @@ def _finding_from_beat(beat: ScriptBeat, bag: CiteBag, used: set[str]) -> Findin
         return Finding(
             id=fid,
             claim=(blob or vo)[:400],
-            stamp="grounded",
-            title=(excerpt.title or beat.id),
+            stamp="timeline_event",
+            title="timeline_event",
+            series="timeline_event",
             print=printed,
             when=when,
             parallel_url=url,
             parallel_status="hit",
-            note="Parallel URL on this row.",
+            note="Timeline event. Parallel URL on this row.",
         )
     return None
+
+
+def _pack_text(packet: Packet) -> str:
+    return "\n".join(p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p)
+
+
+def _stamp_pack_timeline(packet: Packet) -> list[str]:
+    from onecrew.timeline import apply_timeline, plan_timeline
+
+    receipt = packet.receipt
+    if receipt is None:
+        receipt = Receipt(packet_id=packet.id, written=False, findings=[], disposition="READY")
+        packet.receipt = receipt
+    used = {f.id for f in receipt.findings}
+    seen = {(f.parallel_url or "").strip() for f in receipt.findings if (f.parallel_url or "").strip()}
+    planned = plan_timeline(_pack_text(packet), used=used, seen_urls=seen)
+    apply_timeline(receipt.findings, planned)
+    if planned.mapping:
+        have = {(row.thesis, row.url, row.finding_id) for row in receipt.timeline_map}
+        receipt.timeline_map = list(receipt.timeline_map) + [
+            row for row in planned.mapping if (row.thesis, row.url, row.finding_id) not in have
+        ]
+    return [row.finding_id for row in planned.mapping]
+
+
+def _attach_timeline_beats(packet: Packet) -> list[str]:
+    from onecrew.timeline import spoken_match
+
+    receipt = packet.receipt
+    if receipt is None:
+        return []
+    tls = [
+        f
+        for f in receipt.findings
+        if f.stamp == "timeline_event" and (f.parallel_url or "").strip()
+    ]
+    attached: list[str] = []
+    for beat in list(empty_cite_beats(packet)):
+        vo = _vo_body(beat)
+        for finding in tls:
+            if not spoken_match(vo, finding):
+                continue
+            if finding.id not in beat.finding_ids:
+                beat.finding_ids.append(finding.id)
+            if f"[{finding.id}]" not in beat.vo:
+                beat.vo = f"{beat.vo} [{finding.id}]"
+            attached.append(finding.id)
+            break
+    return attached
 
 
 def _attach_empty_cite_beats(packet: Packet, bag: CiteBag | None) -> list[str]:
@@ -269,6 +319,16 @@ def _attach_empty_cite_beats(packet: Packet, bag: CiteBag | None) -> list[str]:
             beat.finding_ids.append(finding.id)
         if f"[{finding.id}]" not in beat.vo:
             beat.vo = f"{beat.vo} [{finding.id}]"
+        if finding.stamp == "timeline_event" and (finding.parallel_url or "").strip():
+            from onecrew.models import TimelineMapRow
+            from onecrew.timeline import log as timeline_log
+
+            thesis = _vo_body(beat)
+            row = TimelineMapRow(
+                thesis=thesis, url=finding.parallel_url or "", finding_id=finding.id
+            )
+            timeline_log.info("timeline map: %s -> %s -> %s", row.thesis, row.url, row.finding_id)
+            receipt.timeline_map = list(receipt.timeline_map) + [row]
         attached.append(finding.id)
     return attached
 
@@ -613,9 +673,17 @@ def run_cite_recheck_loop(
     dropped_all: list[str] = []
     hit_urls: list[str] = []
     current_bag = _packet_bag(packet, bag)
+    entered_empty = bool(empty_cite_beats(packet))
+    stamped = _stamp_pack_timeline(packet)
+    attached_all.extend(stamped)
+    attached_all.extend(_attach_timeline_beats(packet))
+    if entered_empty and (stamped or attached_all):
+        attempts = max(attempts, 1)
+        packet.cite_recheck_attempts = attempts
     while True:
         if current_bag and (current_bag.hit_urls or current_bag.excerpts):
             attached_all.extend(_attach_from_bag(packet, current_bag))
+            attached_all.extend(_attach_timeline_beats(packet))
             attached_all.extend(_attach_empty_cite_beats(packet, current_bag))
         missing = unsupported_cite_findings(packet, current_bag)
         empty = empty_cite_beats(packet)

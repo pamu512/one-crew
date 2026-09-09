@@ -717,6 +717,20 @@ def _research(
     else:
         findings = foundry_rows
     findings = [row for row in findings if row.id not in leftover_slot_ids()]
+    from onecrew.timeline import apply_timeline, plan_timeline
+
+    planned_timeline = plan_timeline(
+        packet.research_pack or spine,
+        used={f.id for f in findings},
+        seen_urls={(f.parallel_url or "").strip() for f in findings if (f.parallel_url or "").strip()},
+    )
+    apply_timeline(findings, planned_timeline)
+    if any(row.stamp == "timeline_event" for row in findings) and not any(
+        row.parallel_status == "miss" for row in findings
+    ):
+        fringe = _fringe_from_rows(miss_rows, {row.id for row in findings})
+        if fringe:
+            findings.append(fringe)
     findings = attach_cites_from_hits(findings, bag)
     if not findings or not any(row.parallel_status == "hit" for row in findings):
         leftover.extend(
@@ -806,6 +820,7 @@ def _research(
             findings=findings,
             causal_links=[],
             disposition="READY",
+            timeline_map=list(planned_timeline.mapping),
         ),
         bag,
     )

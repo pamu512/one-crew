@@ -16,6 +16,10 @@ from onecrew.models import (
 GROUNDED = "grounded"
 MAINSTREAM = "mainstream"
 FRINGE = "fringe"
+TIMELINE = "timeline_event"
+_MACRO_SERIES = frozenset(
+    {"USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME", "ISM"}
+)
 
 
 class ReceiptWriteOnceError(RuntimeError):
@@ -117,6 +121,14 @@ def validate_finding(finding: Finding) -> None:
     if finding.stamp == GROUNDED:
         if finding.parallel_status != "hit" or not _url_ok(finding.parallel_url):
             raise ReceiptInvalidError("grounded requires a Parallel URL on the row")
+    if finding.stamp == TIMELINE:
+        if finding.parallel_status != "hit" or not _url_ok(finding.parallel_url):
+            raise ReceiptInvalidError("timeline_event requires a Parallel URL on the row")
+        series = (finding.series or "").strip()
+        if series in _MACRO_SERIES:
+            raise ReceiptInvalidError("timeline_event cannot carry a closed macro series")
+        if series not in {"", TIMELINE, MISSING}:
+            raise ReceiptInvalidError("timeline_event series must be timeline_event or empty")
     if finding.stamp == MAINSTREAM:
         if finding.parallel_url:
             raise ReceiptInvalidError("mainstream is widely repeated, not a source")

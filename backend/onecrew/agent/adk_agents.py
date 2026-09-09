@@ -165,7 +165,7 @@ SCRIPT_WRITER_INSTRUCTION = """You are One Crew's ADK script writer.
 Parallel already researched. You write the timed VO. You are not the foundry and you do not mint READY.
 You receive the Parallel pack (cite URLs + excerpts/summaries) plus user picks (topic, platform, cut, tell, tone, script_lean).
 Write compelling cite-faithful timed VO from that pack. Pack-faithful only. Pack text is the authority, not foundry mint stamps.
-Nonfiction: nothing uncited — every spoken print or claim must appear in a Parallel cite (hit URL + excerpt/summary) or a stamped finding from those cites. Every sourced beat must carry those finding ids (or pack cite URLs) on the beat — do not ship untagged factual VO.
+Nonfiction: nothing uncited — every spoken print or claim must appear in a Parallel cite (hit URL + excerpt/summary) or a stamped finding from those cites (grounded or timeline_event). Cite timeline_event findings for narrative milestones. If no grounded or timeline_event stamp exists for a spoken claim, drop the claim. Every sourced beat must carry those finding ids (or pack cite URLs) on the beat — do not ship untagged factual VO.
 Fiction: research is reference only. Do not speak real person names from the pack. Label invented people (frame).
 Parallel does not write the timed VO.
 Never speak pack schema or slot ids: no chronological_events, executive_summary, missing_causal_links, what_counts_as_the_first_trigger, or [field[n]] path cites. Finding cites like [payrolls-july-2026] stay only when they are real finding ids.

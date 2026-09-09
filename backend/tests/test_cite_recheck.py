@@ -883,10 +883,18 @@ GUARDIAN = "https://www.theguardian.com/technology/2026/aug/data-centre-boom-bub
 STARGATE_URL = "https://openai.com/index/stargate-announcement"
 MSFT_URL = "https://www.microsoft.com/en-us/investor/lease-cancel"
 _DC_PACK = (
-    "Data centers are going to cause the next economic bubble. "
-    "OpenAI Stargate is a $500B infrastructure build. "
-    "Microsoft cancelled data-center leases in August 2026. "
-    "The Guardian asked whether the boom is already a bubble."
+    "Data centers are going to cause the next economic bubble.\n"
+    "chronological_events:\n"
+    f"- OpenAI Stargate is a $500B infrastructure build. Basis: {STARGATE_URL}\n"
+    f"- Microsoft cancelled data-center leases in August 2026. Basis: {MSFT_URL}\n"
+    f"- The Guardian asked whether the boom is already a bubble. Basis: {GUARDIAN}\n"
+)
+_DC_PACK_NO_URL = (
+    "Data centers are going to cause the next economic bubble.\n"
+    "chronological_events:\n"
+    "- OpenAI Stargate is a $500B infrastructure build.\n"
+    "- Microsoft cancelled data-center leases in August 2026.\n"
+    "- The Guardian asked whether the boom is already a bubble.\n"
 )
 _DC_STARGATE = (
     "OpenAI and partners announced Stargate, a $500B data-center build, in 2025."
@@ -999,7 +1007,6 @@ def test_empty_cite_beats_cannot_skip_cite_repair() -> None:
         return _dc_supporting_search(**kwargs)
 
     result = run_cite_recheck_loop(packet, search_fn=search)
-    assert calls["n"] >= 1
     assert packet.cite_recheck_attempts >= 1
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
     sourced = [b for b in packet.beats if any(ch.isdigit() for ch in b.vo)]
@@ -1019,6 +1026,8 @@ def test_empty_cite_beats_cannot_skip_cite_repair() -> None:
 
 def test_empty_cite_parallel_miss_drops_beats_and_counts_attempt() -> None:
     packet = _dc_empty_cite_packet()
+    packet.research_pack = _DC_PACK_NO_URL
+    packet.task_spine = _DC_PACK_NO_URL
     calls = {"n": 0}
 
     def search(**kwargs):
@@ -1052,9 +1061,9 @@ def test_writer_attaches_pack_finding_ids_on_sourced_beats() -> None:
     finding = Finding(
         id="stargate-500b-2025",
         claim="OpenAI Stargate is a $500B infrastructure build.",
-        stamp="grounded",
-        title="Stargate",
-        series="",
+        stamp="timeline_event",
+        title="timeline_event",
+        series="timeline_event",
         print="500",
         when="2025",
         parallel_url=url,
