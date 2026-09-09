@@ -495,3 +495,70 @@ def test_propose_claims_remaps_june_usrec_to_july_pipe_month() -> None:
     assert pay.when.lower() == "july 2026"
     checked = verify_claim_set(claims, bag)
     assert checked.ok, checked.hold_reasons
+
+
+TRUTHOUT = "https://truthout.org/articles/economic-recession-in-2001/"
+
+
+def test_forbidden_wrap_usrec_prose_print_and_news_host_are_not_minted() -> None:
+    """USREC must be 0/1 from the FRED pipe. Prose + news host + numeric id is illegal."""
+    from onecrew.claimer import findings_from_claims, propose_claims
+
+    bag = _bag(
+        excerpts=[
+            (
+                TRUTHOUT,
+                "recession recap",
+                "The economic recession in 2001 followed the dot-com bust.",
+            )
+        ],
+        spine="Data centers are going to cause the next economic bubble. economic recession in 2001.",
+        hit_urls=[TRUTHOUT],
+    )
+
+    def junk_proposer(_bag, _packet=None):
+        return [
+            Claim(
+                series="USREC",
+                print="economic recession in 2001",
+                when="2001",
+                id="3",
+                cite_url=TRUTHOUT,
+                claim_span="economic recession in 2001",
+            )
+        ]
+
+    claims = propose_claims(bag, proposer=junk_proposer)
+    assert not any(c.series == "USREC" for c in claims)
+    assert not any(c.id == "3" for c in claims)
+    rows = findings_from_claims(
+        [
+            Claim(
+                series="USREC",
+                print="economic recession in 2001",
+                when="2001",
+                id="3",
+                cite_url=TRUTHOUT,
+                claim_span="economic recession in 2001",
+            )
+        ],
+        bag,
+    )
+    assert not any(f.series == "USREC" for f in rows)
+    assert not any(f.id == "3" for f in rows)
+    assert not any((f.print or "") == "economic recession in 2001" for f in rows)
+
+    legal = findings_from_claims(
+        [
+            Claim(
+                series="USREC",
+                print="0",
+                when="July 2026",
+                id="usrec-july-2026",
+                cite_url=FRED,
+                claim_span="USREC=0 (July 2026)",
+            )
+        ],
+        _bag(excerpts=[(FRED, "USREC", "USREC July 2026 = 0.")], hit_urls=[FRED]),
+    )
+    assert any(f.series == "USREC" and f.print == "0" for f in legal)

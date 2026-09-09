@@ -68,8 +68,15 @@ _HIGH_BASIS = re.compile(
     re.I,
 )
 _HEADING = re.compile(rf"(?im)^(?:argument\s+)?{_CHAIN_KEY}\s*:?\s*$")
+_ARG_HEAD = re.compile(r"(?im)^(?:#{1,3}\s+)?argument\s*:?\s*$")
+_TASK_BASIS_HEAD = re.compile(
+    rf"(?im)^(?:#{1,3}\s+)?task\s+basis(?:\s+{_CHAIN_KEY})?\s*:?\s*$"
+)
+_HIGH_LIST_HEAD = re.compile(
+    r"(?im)^(?:#{1,3}\s+)?high[- ]confidence\s+basis(?:\s+list)?\s*:?\s*$"
+)
 _INDEXED = re.compile(rf"(?im)^(?:argument\s+)?{_CHAIN_KEY}\[(\d+)\]\s*:\s*(.+)$")
-_BASIS_FIELD = re.compile(rf"(?im)Task basis {_CHAIN_KEY}\s*:\s*(.+)$")
+_BASIS_FIELD = re.compile(rf"(?im)Task basis(?:\s+{_CHAIN_KEY})?\s*:\s*(.+)$")
 _BULLET = re.compile(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+(.+)$")
 _NEXT_HEAD = re.compile(r"(?m)^(?:#{1,3}\s+)?[A-Za-z][\w ]{0,48}:\s*$")
 _DICT_EVENTS = re.compile(
@@ -150,20 +157,35 @@ def _urls_in(text: str) -> list[str]:
     return list(dict.fromkeys(u for u in (_clean_url(m.group(0)) for m in _URL.finditer(text or "")) if u))
 
 
-def _basis_urls(text: str) -> list[str]:
-    out: list[str] = []
-    for match in _BASIS_FIELD.finditer(text or ""):
-        out.extend(_urls_in(match.group(1)))
-    return list(dict.fromkeys(out))
-
-
-def _section_body(text: str) -> str:
-    match = _HEADING.search(text or "")
+def _section_after(text: str, heading: re.Pattern[str]) -> str:
+    match = heading.search(text or "")
     if not match:
         return ""
     rest = (text or "")[match.end() :]
     stop = _NEXT_HEAD.search(rest)
     return rest[: stop.start()] if stop else rest
+
+
+def _basis_urls(text: str) -> list[str]:
+    """Task basis / High-confidence lists. Sources already stripped by caller."""
+    out: list[str] = []
+    for match in _BASIS_FIELD.finditer(text or ""):
+        out.extend(_urls_in(match.group(1)))
+    for head in (_TASK_BASIS_HEAD, _HIGH_LIST_HEAD):
+        out.extend(_urls_in(_section_after(text, head)))
+    for match in _HIGH_BASIS.finditer(text or ""):
+        url = _clean_url(match.group(1))
+        if url:
+            out.append(url)
+    return list(dict.fromkeys(out))
+
+
+def _section_body(text: str) -> str:
+    for head in (_HEADING, _ARG_HEAD):
+        body = _section_after(text, head)
+        if _bullets(body):
+            return body
+    return ""
 
 
 def _structured_events(text: str) -> list[str]:

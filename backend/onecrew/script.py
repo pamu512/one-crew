@@ -97,13 +97,15 @@ _SHORT_IDS = {
 
 
 def _legal_spoken_finding(finding: Finding) -> bool:
-    """Cite-able row: not excerpts[N] / unofficial GDP. Fringe and fiction frames stay."""
-    from onecrew.foundry import complete_print, is_pack_slot_id, official_gdp_url
+    """Cite-able row: not excerpts[N] / unofficial GDP / USREC prose. Fringe and fiction frames stay."""
+    from onecrew.foundry import complete_print, is_pack_slot_id, official_closed_shape, official_gdp_url
 
     if is_pack_slot_id(finding.id):
         return False
     if finding.series == "GDP":
         return official_gdp_url(finding.parallel_url or "") and complete_print(finding.print or "")
+    if finding.series == "USREC":
+        return official_closed_shape("USREC", finding.print or "", finding.parallel_url or "")
     if finding.stamp == "timeline_event":
         return bool((finding.parallel_url or "").strip())
     return True
@@ -131,6 +133,11 @@ def _by_series(packet: Packet, *names: str) -> Finding | None:
             continue
         if finding.series == "GDP" or finding.id in _SHORT_IDS.get("GDP", frozenset()):
             if not _gdp_series_usable(finding):
+                continue
+        if finding.series == "USREC" or finding.id in _SHORT_IDS.get("USREC", frozenset()):
+            from onecrew.foundry import official_closed_shape
+
+            if not official_closed_shape("USREC", finding.print or "", finding.parallel_url or ""):
                 continue
         if finding.series in wanted or finding.id in ids:
             return finding
@@ -741,10 +748,26 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     else:
         findings = _live_findings(packet)
         named = _named_prints(packet)
-        first = named[0] if named else (findings[0] if findings else None)
+        speakable = [
+            f
+            for f in findings
+            if _legal_spoken_finding(f)
+            and (f.id or "") not in {"cite-miss", "frame-miss"}
+            and f.stamp != "fringe"
+        ]
+        from onecrew.foundry import leftover_wrap
+
+        if leftover_wrap(findings) and not _invents(packet):
+            return []
+        first = named[0] if named else next(
+            (f for f in speakable if (f.stamp or "") == "timeline_event"),
+            None,
+        )
+        if first is None:
+            first = next((f for f in speakable if f.stamp == "grounded"), None)
         second = named[1] if len(named) > 1 else None
         if second is None and first is not None:
-            second = next((f for f in findings if f is not first), None)
+            second = next((f for f in speakable if f is not first), None)
         third = named[2] if len(named) > 2 else first
         leftover_costume = {((first.series or "").lower() if first else ""), ((second.series or "").lower() if second else "")}
         smash_ok = (
@@ -755,6 +778,10 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             and _same_month(first.when, second.when)
         )
         timeline_row = first is not None and (first.stamp or "") == "timeline_event"
+        has_timeline = any((f.stamp or "") == "timeline_event" for f in findings)
+        # Empty timeline + no official/event object: HOLD. Fiction and leftover Hormuz still write.
+        if not has_timeline and not named and not speakable and not _invents(packet):
+            return []
         if smash_ok:
             smash = f"{first.series}={first.print} smashed into {second.series} {second.print}."
             eyes = f"{first.series}={first.print} and {second.series} {second.print} on screen. Official series cards only."
@@ -783,18 +810,14 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                 _promise_trigger_vo(packet, trigger)
                 if trigger
                 else _voice(
-                    (
-                        "The title is a question we will not answer with a forecast."
-                        if timeline_row
-                        else "Three objects from the pack. The title is a question we will not answer with a forecast."
-                    ),
+                    "The title is a question we will not answer with a forecast.",
                     packet,
                 )
             ),
             "eyes": (
                 "Dated first-trigger from the pack. Official series stay on later cards."
                 if trigger
-                else ("Cited events on later cards." if timeline_row else "Three objects labeled from the pack.")
+                else "Cited events on later cards."
             ),
             "finding_ids": [first.id] if first else [],
         },
@@ -809,12 +832,8 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             "vo": _voice(f"{(second or first).claim}{_cite(second or first)}" if (second or first) else smash, packet),
             "eyes": (
                 f"Cited event: {(second or first).claim}."
-                if timeline_row and (second or first)
-                else (
-                    f"Named official series: {(second or first).claim}. Official page only."
-                    if (second or first)
-                    else "Cited event on screen."
-                )
+                if (second or first)
+                else "Cited event on screen."
             ),
             "finding_ids": [(second or first).id] if (second or first) else [],
         },
@@ -1636,4 +1655,10 @@ def write_script(packet: Packet, writer=None) -> Packet:
     holes = list(mint_holes) if mint_holes else ["_eight_from_pack cannot place minted prints"]
     if vertex_detail:
         holes.append(vertex_detail)
+    has_timeline = any(
+        (f.stamp or "") == "timeline_event"
+        for f in ((receipt.findings if receipt else []) or [])
+    )
+    if not has_timeline and not _named_prints(packet) and not _invents(packet):
+        holes.append("leftover chrome VO without timeline stamps")
     return _fail_closed(packet, holes)

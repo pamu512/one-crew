@@ -4049,3 +4049,56 @@ def test_consensus_plus_realized_ces_mints_realized_not_estimate() -> None:
     assert "23,000" in (payrolls.print or "")
     assert "53,000" not in (payrolls.print or "")
     assert (payrolls.when or "").lower() == "july 2026"
+
+
+def test_forbidden_wrap_usrec_prose_print_dropped_from_mint_and_stamps() -> None:
+    """Foundry stays macro-only. News prose is not a USREC print."""
+    from onecrew.foundry import mint, sanitize_stamps
+
+    truthout = "https://truthout.org/articles/economic-recession-in-2001/"
+    notes = (
+        "Data centers are going to cause the next economic bubble. "
+        "The economic recession in 2001 followed the dot-com bust."
+    )
+    packet = Packet(
+        id="oc-usrec-prose",
+        topic="Data centers are going to cause the next economic bubble",
+        hook="Data centers are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone=SEED_TONE,
+        task_spine=notes,
+        research_pack=notes,
+    )
+    try:
+        rows = mint(
+            packet,
+            [_row(truthout, "recession recap", [notes])],
+            [_row("https://example.com/fringe", "miss", ["fringe offtake"])],
+            SimpleNamespace(results=[], errors=[]),
+            notes,
+        )
+    except Exception:
+        rows = []
+    assert not any(f.series == "USREC" for f in rows)
+    kept = sanitize_stamps(
+        [
+            Finding(
+                id="3",
+                claim="The economic recession in 2001 followed the dot-com bust.",
+                stamp="grounded",
+                series="USREC",
+                print="economic recession in 2001",
+                when="2001",
+                parallel_url=truthout,
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            )
+        ]
+    )
+    assert not any(f.series == "USREC" for f in kept)
+    assert not any(f.id == "3" for f in kept)

@@ -23,7 +23,9 @@ from onecrew.foundry import (
     align_sahm_pair,
     latest_sahm_cell,
     is_pack_slot_id,
+    official_closed_shape,
     official_gdp_url,
+    official_usrec_url,
 )
 from onecrew.models import MISSING, Finding, Packet
 from onecrew.verify import (
@@ -71,12 +73,14 @@ Proposer = Callable[[CiteBag, Packet | None], list[Claim]]
 
 
 def _keep_closed_claim(claim: Claim) -> bool:
-    """Closed-series only. Drop excerpt-slot ids and unofficial/fantasy GDP."""
+    """Closed-series only. Official print shapes. No USREC prose / news hosts."""
     if is_pack_slot_id(claim.id or ""):
         return False
+    if claim.series in CLOSED_SERIES:
+        return official_closed_shape(
+            claim.series, claim.print or "", claim.cite_url or "", require_cite=False
+        )
     if not complete_print(claim.print or ""):
-        return False
-    if claim.series == "GDP" and not official_gdp_url(claim.cite_url or ""):
         return False
     return True
 
@@ -430,6 +434,8 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
         if not cite:
             continue
         if claim.series == "ISM" and "ismworld.org" not in cite.lower():
+            continue
+        if claim.series == "USREC" and not official_usrec_url(cite):
             continue
         if claim.series == "U-3" and (not cite or not _url_fits_series(cite, "U-3", ())):
             continue
