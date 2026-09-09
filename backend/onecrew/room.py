@@ -357,7 +357,9 @@ def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
         is_thin_frame,
         is_thin_title_read_vo,
         is_title_read_vo,
+        is_print_only_vo,
         is_unverified_meta_vo,
+        leftover_spoken_markdown,
         stamp_scope,
         _TOPIC_Q_CLAUSE,
         _bare_vo,
@@ -371,6 +373,8 @@ def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
         cited = [by_id[fid] for fid in _cited_ids(window) if fid in by_id]
         fids = [row.id for row in cited]
         if has_tone_chrome(vo) or is_unverified_meta_vo(vo) or is_hanging_clause_vo(vo) or is_print_hole(vo) or is_incomplete_vo(vo) or _TOPIC_Q_CLAUSE.search(_bare_vo(vo) or ""):
+            return True
+        if is_print_only_vo(vo) or leftover_spoken_markdown(vo):
             return True
         if is_action_chrome_vo(vo, _action_line(window)):
             return True

@@ -173,6 +173,15 @@ def is_digit_finding_id(fid: str) -> bool:
     return bool(raw) and raw.isdigit()
 
 
+_SHORT_DIGIT_HYPHEN_FID = re.compile(r"^\d{1,3}(?:-\d{1,3})+$")
+
+
+def is_short_digit_hyphen_finding_id(fid: str) -> bool:
+    """Pack-index token like 11-2. Not a te- slug or series id."""
+    raw = (fid or "").strip()
+    return bool(raw) and bool(_SHORT_DIGIT_HYPHEN_FID.fullmatch(raw))
+
+
 _PACK_INDEX_FID = re.compile(r"\[[0-9]+\]")
 _CLAIM_EX_FID = re.compile(r"^claim_id_ex\S*$", re.I)
 _DOUBLE_BRACKET_VO = re.compile(r"\[\[\d+\]\]")
@@ -1565,6 +1574,27 @@ _UNVERIFIED_META_VO = re.compile(
     r"we (?:could not|cannot) (?:verify|confirm)",
     re.I,
 )
+_PROCESS_CHROME_VO = re.compile(
+    r"the title (?:is|stays|remains) a question|"
+    r"(?:we )?(?:will|does|do) not answer with a forecast|"
+    r"near is not a switch|"
+    r"near is the gap|"
+    r"those are not the same object|"
+    r"when the pack changes|"
+    r"(?:when )?(?:the )?board changes|"
+    r"the pack changes",
+    re.I,
+)
+_CLOSE_CHROME_VO = re.compile(
+    r"near is not a switch|"
+    r"when the pack changes|"
+    r"(?:when )?(?:the )?board changes|"
+    r"the pack changes",
+    re.I,
+)
+_CLOSE_CARD_FRAME = "Board follows the pack."
+_EQUALS_PRINT = re.compile(r"^=\s*")
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _HANGING_CLAUSE = re.compile(
     r"(?:^|(?<=[.!?])\s+)(?:for instance|for example|such as|including|namely|"
     r"specifically|in particular)\s*[.,;:]?\s*$",
@@ -1653,6 +1683,11 @@ def has_tone_chrome(text: str) -> bool:
     return bool(_TONE_CHROME.search(_vo_lines(text) or text or ""))
 
 
+def is_process_chrome_vo(text: str) -> bool:
+    """Pipeline / pack / object-gap chrome. Speak a covering print or drop."""
+    return bool(_PROCESS_CHROME_VO.search(_vo_lines(text) or text or ""))
+
+
 def is_unverified_meta_vo(text: str) -> bool:
     """Research-meta / unverified chrome. Speak a stamp or drop the beat."""
     return bool(_UNVERIFIED_META_VO.search(_vo_lines(text) or text or ""))
@@ -1660,6 +1695,66 @@ def is_unverified_meta_vo(text: str) -> bool:
 
 def strip_unverified_meta_vo(text: str) -> str:
     return _tidy_vo(_UNVERIFIED_META_VO.sub("", text or ""))
+
+
+_PRINT_UNIT_WORDS = frozenset(
+    {
+        "percent",
+        "pct",
+        "million",
+        "billion",
+        "trillion",
+        "thousand",
+        "mn",
+        "bn",
+        "tn",
+        "bcf",
+        "tcf",
+        "mm",
+    }
+)
+
+
+def is_print_only_vo(text: str) -> bool:
+    """Bare / equals-print token. Not a complete cite-faithful sentence."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    body = _EQUALS_PRINT.sub("", body).strip()
+    if not body:
+        return False
+    if _looks_like_prose_claim(body):
+        return False
+    if not is_numeric_print(body):
+        return False
+    words = [w.lower() for w in re.findall(r"[A-Za-z]+", body)]
+    if not words:
+        return True
+    return all(w in _PRINT_UNIT_WORDS for w in words) and len(words) <= 2
+
+
+def strip_spoken_markdown(text: str) -> str:
+    """Drop **bold**, heading #, and backticks from spoken VO. Keep inner text."""
+    body = _MD_BOLD.sub(r"\1", text or "")
+    lines = [_MD_HEADING.sub("", line) for line in body.splitlines()]
+    return "\n".join(lines).replace("`", "")
+
+
+def leftover_spoken_markdown(text: str) -> bool:
+    """True when spoken VO still carries ** / heading # / backticks."""
+    body = re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or "")
+    if "**" in body or "`" in body:
+        return True
+    return any(bool(_MD_HEADING.match(line.lstrip())) for line in body.splitlines())
+
+
+def is_date_print_line(text: str) -> bool:
+    """Month/year plus a magnitude. Not a complete cite-faithful sentence."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    if not body or _looks_like_prose_claim(body):
+        return False
+    if not is_numeric_print(body):
+        return False
+    words = [w.lower() for w in re.findall(r"[A-Za-z]+", body)]
+    return bool(words) and all(w in _MONTH_CANON for w in words) and len(words) <= 3
 
 
 def _topic_qcore(text: str) -> str:
@@ -2157,6 +2252,8 @@ def speak_covering_print_vo(finding) -> str:
         and (not title or _speech_norm(claim) != _speech_norm(title))
         and not is_title_read_vo(claim, [finding])
         and not is_thin_title_read_vo(claim, [finding])
+        and not is_print_only_vo(claim)
+        and not is_date_print_line(claim)
     ):
         if not has_usable_numeric_print(finding) or _vo_covers_attached_print(claim, [finding]):
             return claim
@@ -2186,6 +2283,8 @@ def _recover_print_vo(cited: list, *, prior_prints: list[str] | None = None) -> 
 
 def is_thin_title_read_vo(vo: str, findings: list, *, prior_prints: list[str] | None = None) -> bool:
     """Verbatim stamp title or bare print token. Full claim sentences are weave."""
+    if is_print_only_vo(vo):
+        return True
     if is_title_read_vo(vo, findings):
         return True
     body = _speech_norm(vo)
@@ -2525,12 +2624,26 @@ def _remap_cite_brackets(text: str, remap: dict[str, str]) -> str:
 
 
 def _opaque_finding_id(fid: str) -> bool:
-    return is_digit_finding_id(fid) or is_pack_slot_finding_id(fid)
+    return (
+        is_digit_finding_id(fid)
+        or is_pack_slot_finding_id(fid)
+        or is_short_digit_hyphen_finding_id(fid)
+    )
 
 
 def _resolve_pack_slot_fid(fid: str, findings: list, vo: str = "") -> str:
     if not is_pack_slot_finding_id(fid):
         return fid
+    return _resolve_legal_print_fid(fid, findings, vo)
+
+
+def _resolve_short_digit_hyphen_fid(fid: str, findings: list, vo: str = "") -> str:
+    if not is_short_digit_hyphen_finding_id(fid):
+        return fid
+    return _resolve_legal_print_fid(fid, findings, vo)
+
+
+def _resolve_legal_print_fid(fid: str, findings: list, vo: str = "") -> str:
     legal = [f for f in findings if not _opaque_finding_id(f.id)]
     if vo:
         for finding in legal:
@@ -2562,6 +2675,10 @@ def rewrite_opaque_finding_ids(packet) -> None:
             row.finding_id = remap[fid]
         elif is_digit_finding_id(fid):
             row.finding_id = _resolve_digit_fid(fid, list(receipt.findings))
+        elif is_short_digit_hyphen_finding_id(fid):
+            row.finding_id = remap.get(fid) or _resolve_short_digit_hyphen_fid(
+                fid, list(receipt.findings)
+            )
         elif is_pack_slot_finding_id(fid):
             row.finding_id = remap.get(fid) or _resolve_pack_slot_fid(fid, list(receipt.findings))
     for beat in packet.beats:
@@ -2575,6 +2692,8 @@ def rewrite_opaque_finding_ids(packet) -> None:
                 nxt = remap[fid]
             elif is_digit_finding_id(fid):
                 nxt = _resolve_digit_fid(fid, list(receipt.findings), beat.vo)
+            elif is_short_digit_hyphen_finding_id(fid):
+                nxt = _resolve_short_digit_hyphen_fid(fid, list(receipt.findings), beat.vo)
             elif is_pack_slot_finding_id(fid):
                 nxt = _resolve_pack_slot_fid(fid, list(receipt.findings), beat.vo)
             else:
@@ -2595,8 +2714,12 @@ def rewrite_opaque_finding_ids(packet) -> None:
         for beat in packet.beats
         if (beat.kind or "vo") != "heading"
         for fid in beat.finding_ids
-        if is_digit_finding_id(fid)
-    ] + [f.id for f in receipt.findings if is_digit_finding_id(f.id)]
+        if is_digit_finding_id(fid) or is_short_digit_hyphen_finding_id(fid)
+    ] + [
+        f.id
+        for f in receipt.findings
+        if is_digit_finding_id(f.id) or is_short_digit_hyphen_finding_id(f.id)
+    ]
     leftover_slots = [
         fid
         for beat in packet.beats
@@ -2670,7 +2793,11 @@ def persist_mute_on_screen(packet, shots=None) -> None:
             continue
         beat.on_screen = screen
         shown = (beat.frame or "").strip()
-        if not shown or is_title_chrome_frame(shown, list(beat.finding_ids), rows):
+        close_card = any(
+            key in shown.lower()
+            for key in ("close card", "board follows the pack", "near is not a switch")
+        )
+        if not close_card and (not shown or is_title_chrome_frame(shown, list(beat.finding_ids), rows)):
             beat.frame = screen
         if shot is not None:
             shot.on_screen = screen
@@ -2704,6 +2831,20 @@ def refuse_empty_numeric_mute(packet, shots=None) -> None:
 
 def _refuse_leftover_question_hanging(packet) -> None:
     """Last-pass: leftover topic-Q / hanging opener cannot ship."""
+    if _invents(packet):
+        leftover_q = any(
+            is_topic_question_vo(_vo_lines(b.vo), packet)
+            for b in packet.beats
+            if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
+        )
+        leftover_h = any(
+            is_hanging_clause_vo(_vo_lines(b.vo)) or is_incomplete_vo(_vo_lines(b.vo))
+            for b in packet.beats
+            if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
+        )
+        if leftover_q or leftover_h:
+            _hold_ship(packet, "cite-faithfulness")
+        return
     receipt = packet.receipt
     by_id = {f.id: f for f in (receipt.findings if receipt else [])}
     for beat in packet.beats:
@@ -2752,8 +2893,134 @@ def _refuse_leftover_question_hanging(packet) -> None:
         for b in packet.beats
         if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
     )
-    if leftover_q or leftover_h:
+    leftover_print = any(
+        is_print_only_vo(_vo_lines(b.vo)) or is_date_print_line(_vo_lines(b.vo))
+        for b in packet.beats
+        if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
+    )
+    leftover_meta = any(
+        is_process_chrome_vo(_vo_lines(b.vo))
+        for b in packet.beats
+        if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
+    )
+    leftover_md = any(
+        leftover_spoken_markdown(_vo_lines(b.vo))
+        for b in packet.beats
+        if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
+    )
+    if leftover_q or leftover_h or leftover_print or leftover_meta or leftover_md:
         _hold_ship(packet, "cite-faithfulness")
+
+
+def _usable_covering_speech(finding, seen: set[str]) -> str:
+    spoken = speak_covering_print_vo(finding)
+    key = _speech_norm(spoken)
+    if (
+        spoken
+        and key
+        and key not in seen
+        and not is_print_only_vo(spoken)
+        and not is_date_print_line(spoken)
+        and not is_process_chrome_vo(spoken)
+        and not leftover_spoken_markdown(spoken)
+        and not _is_title_like_text(spoken)
+    ):
+        return spoken
+    return ""
+
+
+def _strip_printonly_meta_markdown_beats(packet) -> None:
+    """Rewrite/drop print-only, process chrome, and leftover markdown before ship."""
+    if _invents(packet):
+        return
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    seen: set[str] = set()
+    used: set[str] = set()
+    drop: list[str] = []
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        raw = beat.vo or ""
+        cleaned = strip_spoken_markdown(_vo_lines(raw))
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        bad = (
+            is_print_only_vo(cleaned)
+            or is_date_print_line(cleaned)
+            or is_process_chrome_vo(cleaned)
+            or is_unverified_meta_vo(cleaned)
+        )
+        src = None
+        if bad and _CLOSE_CHROME_VO.search(cleaned):
+            beat.vo = ""
+            last = packet.beats[-1] if packet.beats else None
+            if beat is last or (beat.id or "") in {"close"} or (beat.id or "").endswith("close"):
+                shown = (beat.frame or "").lower()
+                if not any(key in shown for key in ("close card", "board follows the pack")):
+                    beat.frame = _CLOSE_CARD_FRAME
+            continue
+        if bad:
+            recovered = ""
+            usable = [f for f in cited if _stamp_can_cover(f)]
+            for finding in usable or cited:
+                recovered = _usable_covering_speech(finding, seen)
+                if recovered:
+                    src = finding
+                    break
+            if not recovered:
+                recovered = _recover_print_vo(cited, prior_prints=list(seen))
+                if (
+                    not recovered
+                    or _speech_norm(recovered) in seen
+                    or is_print_only_vo(recovered)
+                    or is_date_print_line(recovered)
+                    or is_process_chrome_vo(recovered)
+                    or leftover_spoken_markdown(recovered)
+                    or _is_title_like_text(recovered)
+                ):
+                    recovered = ""
+            if not recovered:
+                unused = [
+                    f
+                    for f in by_id.values()
+                    if f.id not in used and _stamp_can_cover(f)
+                ]
+                for finding in unused:
+                    recovered = _usable_covering_speech(finding, seen)
+                    if recovered:
+                        src = finding
+                        break
+            if recovered and src is None:
+                for finding in usable or cited:
+                    if _speech_norm(speak_covering_print_vo(finding)) == _speech_norm(recovered):
+                        src = finding
+                        break
+            if recovered:
+                cleaned = recovered
+                if src is not None:
+                    beat.finding_ids = [src.id]
+            else:
+                # Empty speech only. Keep the beat + cites so 8-beat
+                # structure and cite-repair stay intact.
+                beat.vo = ""
+                continue
+        if leftover_spoken_markdown(cleaned):
+            beat.vo = ""
+            beat.finding_ids = []
+            continue
+        if cleaned != _vo_lines(raw):
+            beat.vo = f"NARRATOR\n{cleaned}" if raw.startswith("NARRATOR") else cleaned
+            for fid in beat.finding_ids:
+                if f"[{fid}]" not in beat.vo:
+                    beat.vo = f"{beat.vo} [{fid}]"
+        key = _speech_norm(beat.vo)
+        if key:
+            seen.add(key)
+            used.update(beat.finding_ids)
+    if drop:
+        keep = [b for b in packet.beats if b.id not in drop]
+        if any((b.kind or "vo") != "heading" and _speech_norm(b.vo) for b in keep):
+            packet.beats = keep
 
 
 def _append_stamp_beat(packet, finding: Finding) -> bool:
@@ -2975,6 +3242,10 @@ def sanitize_for_ship(packet):
                 thin = extra
     neutralize_pack_slot_beats(packet)
     _strip_pack_slot_beats(packet)
+    _strip_printonly_meta_markdown_beats(packet)
+    more_dupes_after = _drop_duplicate_vo_beats(packet)
+    if more_dupes_after:
+        dupes = list(dupes) + list(more_dupes_after)
     _refuse_leftover_question_hanging(packet)
     rewrite_opaque_finding_ids(packet)
     persist_mute_on_screen(packet)
@@ -3043,10 +3314,14 @@ def _fill_stamp_print_frames(packet) -> None:
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         screen = mute_print_for_beat(beat, rows)
         shown = (beat.frame or "").strip()
+        close_card = any(
+            key in shown.lower()
+            for key in ("close card", "board follows the pack", "near is not a switch")
+        )
         title_chrome = bool(shown) and is_title_chrome_frame(shown, list(beat.finding_ids), rows)
         if screen:
             beat.on_screen = screen
-            if not shown or title_chrome:
+            if not close_card and (not shown or title_chrome):
                 beat.frame = screen
             continue
         fact = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(
@@ -3056,7 +3331,7 @@ def _fill_stamp_print_frames(packet) -> None:
         if printed:
             beat.on_screen = printed
         if fact and not _is_title_like_text(fact):
-            if not shown or title_chrome:
+            if not close_card and (not shown or title_chrome):
                 beat.frame = printed or fact
             continue
         if cited and not any(_stamp_can_cover(f) for f in cited):

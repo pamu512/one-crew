@@ -90,10 +90,21 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
         pool = list(packet.receipt.findings) or pool
     screen = mute_print_for_beat(beat, pool) or mute_print_for_beat(beat, rows)
     shown = (beat.frame or "").strip()
+    close_card = any(
+        key in shown.lower()
+        for key in ("close card", "board follows the pack", "near is not a switch")
+    )
     topic_frame = bool(packet is not None and is_topic_prompt_frame(shown, packet))
     title_chrome = is_title_chrome_frame(shown, list(beat.finding_ids), rows)
-    headline = bool(shown and not is_numeric_print(shown) and _looks_like_headline(shown))
-    if topic_frame or title_chrome or headline:
+    headline = bool(
+        shown
+        and not close_card
+        and not is_numeric_print(shown)
+        and _looks_like_headline(shown)
+    )
+    if close_card and not screen:
+        return ""
+    if not close_card and (topic_frame or title_chrome or headline):
         shown = ""
     if screen:
         beat.on_screen = screen
@@ -106,11 +117,11 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
     )
     if printed and _is_title_like_text(printed):
         printed = ""
-    if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
+    if printed and not close_card and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
         beat.on_screen = printed
         beat.frame = printed
         return printed
-    if shown and (title_chrome or headline or is_thin_frame(shown, list(beat.finding_ids), rows)):
+    if shown and not close_card and (title_chrome or headline or is_thin_frame(shown, list(beat.finding_ids), rows)):
         beat.frame = ""
         return ""
     return shown
