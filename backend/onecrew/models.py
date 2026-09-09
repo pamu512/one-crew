@@ -280,6 +280,7 @@ class StampedFinding(BaseModel):
     when: str = ""
     claim: str = ""
     url: str = ""
+    note: str = ""
 
     def line(self) -> str:
         cite = f" url={self.url}" if self.url else ""

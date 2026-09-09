@@ -194,7 +194,7 @@ def _link_pack_findings(
 ) -> list[str]:
     """Attach stamped finding ids whose print is spoken. Do not invent a cite."""
     from onecrew.foundry import complete_print, is_pack_slot_id, leftover_slot_ids, official_gdp_url
-    from onecrew.timeline import best_timeline_finding, chain_pairs, cite_host_ok, stamp_covers_vo
+    from onecrew.timeline import chain_pairs, cite_host_ok, stamp_covers_vo, stamps_for_vo
 
     leftover = leftover_slot_ids()
     spoken = {re.sub(r"[^\d.]+", "", n.replace("−", "-")) for n in pack_numbers(vo)}
@@ -222,20 +222,26 @@ def _link_pack_findings(
         want = re.sub(r"[^\d.]+", "", (finding.print or "").replace("−", "-"))
         if want and want in spoken:
             out.append(finding.id)
-    best = best_timeline_finding(vo, findings, pairs) if pairs else None
-    if best is None:
-        best = next((f for f in findings if f.stamp == "timeline_event" and stamp_covers_vo(vo, f)), None)
-    if best is not None and (not pairs or cite_host_ok(vo, best.parallel_url or "", pairs)):
-        if best.id not in out:
-            out.append(best.id)
+    if is_pack_chrome_vo(vo) or not _vo_lines(vo).strip():
+        timeline_ids = {f.id for f in findings if f.stamp == "timeline_event"}
+        return [fid for fid in out if fid not in timeline_ids or fid in fids]
+    chosen = stamps_for_vo(vo, findings, pairs)
+    keep_ids = {f.id for f in chosen}
+    for finding in chosen:
+        if finding.id not in out and (
+            not pairs
+            or cite_host_ok(vo, finding.parallel_url or "", pairs)
+            or stamp_covers_vo(vo, finding)
+        ):
+            out.append(finding.id)
+            keep_ids.add(finding.id)
     timeline_ids = {f.id for f in findings if f.stamp == "timeline_event"}
     by_id = {f.id: f for f in findings}
-    keep = best.id if best is not None else None
     return [
         fid
         for fid in out
         if fid not in timeline_ids
-        or fid == keep
+        or fid in keep_ids
         or (fid in by_id and stamp_covers_vo(vo, by_id[fid]))
     ]
 
@@ -1083,22 +1089,60 @@ def _drop_named_claims(text: str, names: set[str]) -> str:
     return _tidy_vo(" ".join(keep))
 
 
+def speak_stamps(fids: list[str], findings: list[Finding]) -> str:
+    """Speak the attached stamp. Never invent a pack/slot chrome line."""
+    by_id = {f.id: f for f in findings}
+    for fid in fids:
+        finding = by_id.get(fid)
+        if finding is None:
+            continue
+        text = (finding.print or "").strip() or (finding.claim or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def is_pack_chrome_vo(text: str) -> bool:
+    """Pack/slot narrator chrome. Not a stamped claim."""
+    body = _vo_lines(text)
+    if not (body or "").strip():
+        return False
+    if _PACK_CHROME_VO.search(body):
+        stripped = _PACK_CHROME_VO.sub("", body)
+        return not _tidy_vo(stripped)
+    if _VO_CHROME.search(body):
+        stripped, n = _strip_vo_chrome(body)
+        return bool(n) and not _tidy_vo(stripped)
+    return False
+
+
 def _align_vo_to_stamps(
     vo: str,
     fids: list[str],
     findings: list[Finding],
 ) -> tuple[list[str], str]:
-    """Named-entity VO may only keep a timeline stamp that covers it. Else drop the claim."""
-    from onecrew.timeline import stamp_covers_vo, vo_proper_names
+    """Named-entity / print VO may only keep a timeline stamp that covers it. Else drop."""
+    from onecrew.timeline import stamp_covers_vo, stamps_for_vo, vo_proper_names
 
-    names = vo_proper_names(vo)
     by_id = {f.id: f for f in findings}
     timeline = {f.id for f in findings if f.stamp == "timeline_event"}
     grounded = [fid for fid in fids if fid not in timeline]
     tl_fids = [fid for fid in fids if fid in timeline]
+    if is_pack_chrome_vo(vo):
+        keep = [fid for fid in tl_fids if fid in by_id]
+        spoken = speak_stamps(keep, findings)
+        return grounded + keep, spoken or vo
+    names = vo_proper_names(vo)
     if not names:
         return fids, vo
     covered = [fid for fid in tl_fids if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
+    chosen = stamps_for_vo(vo, findings, [])
+    if chosen:
+        cleaned = vo
+        for fid in tl_fids:
+            if fid not in {f.id for f in chosen}:
+                cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
+        return grounded + [f.id for f in chosen], cleaned
     if covered:
         cleaned = vo
         for fid in tl_fids:
@@ -1114,9 +1158,24 @@ def _align_vo_to_stamps(
     if not tl_fids and grounded:
         return grounded, vo
     cleaned = _drop_named_claims(vo, names)
+    cleaned = _strip_unsupported_prints(cleaned, grounded, findings)
     for fid in tl_fids:
         cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
-    return grounded, cleaned or _SPEAKABLE_FALLBACK
+    return grounded, cleaned
+
+
+def _strip_unsupported_prints(text: str, fids: list[str], findings: list[Finding]) -> str:
+    from onecrew.timeline import _event_nums, stamp_text
+
+    blob = " ".join(stamp_text(f) for f in findings if f.id in fids)
+    have = _event_nums(blob)
+    bad = [n for n in pack_numbers(text or "") if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
+    drop = []
+    for tok in bad:
+        want = re.sub(r"[^\d.]+", "", tok.replace("−", "-"))
+        if want and want not in have:
+            drop.append(tok)
+    return _strip_uncited_tokens(text, drop) if drop else (text or "")
 
 
 def _org_span(name: str) -> bool:
@@ -1154,6 +1213,12 @@ _HOLD_META = re.compile(
     re.I,
 )
 _SPEAKABLE_FALLBACK = "The named print stays on the card."
+_PACK_CHROME_VO = re.compile(
+    r"(?:the\s+)?named print stays on the card\.?|"
+    r"(?:the\s+)?cited event stays on the card\.?|"
+    r"(?:the\s+)?official series stay on the cards?\.?",
+    re.I,
+)
 
 
 _VO_CHROME = re.compile(
@@ -1234,7 +1299,7 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
         return text or "", []
     cleaned = _tidy_vo(cleaned)
     if not cleaned:
-        cleaned = _SPEAKABLE_FALLBACK
+        cleaned = "The named print stays on the card."
     # ponytail: hold-meta/chrome is cleaned, not a HOLD nit. Slot/topic nits still warn.
     return cleaned, list(dict.fromkeys(nits))
 
@@ -1456,6 +1521,8 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             fids = _link_pack_findings(vo, fids, rows, packet=packet)
             fids, vo = _align_vo_to_stamps(vo, fids, rows)
             fids, eyes = _align_vo_to_stamps(eyes, fids, rows)
+            if not _vo_lines(vo).strip() and fids:
+                vo = speak_stamps(fids, rows)
         if not fids and not hole:
             spoken_nums = [
                 n

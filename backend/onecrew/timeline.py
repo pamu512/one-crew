@@ -563,21 +563,44 @@ def vo_proper_names(vo: str) -> set[str]:
 
 
 def pair_covers_vo(vo: str, thesis: str, url: str) -> bool:
-    """Named VO tokens must appear on this stamp's URL/title/claim. Else refuse."""
+    """Every named VO token must appear on this stamp's URL/title/claim/note. Else refuse."""
     names = vo_proper_names(vo)
     if not names:
         return True
     labels = {lab.lower() for lab in host_labels(url)}
     blob = f"{thesis or ''} {url or ''}".lower()
-    return any(name in blob or name in labels for name in names)
+    return all(name in blob or name in labels for name in names)
+
+
+def stamp_text(finding: object) -> str:
+    """Host-adjacent blob a named VO may use. Generic titles are not cover."""
+    title = (getattr(finding, "title", None) or "").strip()
+    parts = [
+        getattr(finding, "claim", None) or "",
+        getattr(finding, "print", None) or "",
+        getattr(finding, "note", None) or "",
+        getattr(finding, "when", None) or "",
+    ]
+    if title.lower() not in {"timeline_event", "grounded", "mainstream", "fringe", ""}:
+        parts.append(title)
+    return " ".join(parts)
 
 
 def stamp_covers_vo(vo: str, finding: Finding) -> bool:
-    blob = f"{finding.claim or ''} {finding.print or ''} {finding.title or ''}"
-    title = (finding.title or "").strip().lower()
-    if title in {"timeline_event", "grounded", "mainstream", "fringe"}:
-        blob = f"{finding.claim or ''} {finding.print or ''}"
-    return pair_covers_vo(vo, blob, finding.parallel_url or "")
+    return pair_covers_vo(vo, stamp_text(finding), getattr(finding, "parallel_url", None) or getattr(finding, "url", None) or "")
+
+
+def stamp_supports_prints(vo: str, finding: object) -> bool:
+    """Spoken non-year prints and month-years must sit on this stamp. Else refuse."""
+    blob = stamp_text(finding)
+    nums = _event_nums(vo)
+    if nums and not nums <= _event_nums(blob):
+        return False
+    vo_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(vo or "")}
+    ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob or "")}
+    if vo_months and not (vo_months & ev_months):
+        return False
+    return True
 
 
 def named_basis_urls(vo: str, pairs: Iterable[tuple[str, str]]) -> list[str]:
@@ -592,9 +615,10 @@ def named_basis_urls(vo: str, pairs: Iterable[tuple[str, str]]) -> list[str]:
 def _event_nums(text: str) -> set[str]:
     from onecrew.script import pack_numbers
 
+    cleaned = re.sub(r"\[[^\]]+\]", "", text or "")
     return {
         re.sub(r"[^\d.]+", "", n.replace("−", "-"))
-        for n in pack_numbers(text or "")
+        for n in pack_numbers(cleaned)
         if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
     }
 
@@ -683,8 +707,75 @@ def best_timeline_finding(
         for f in findings or []
         if getattr(f, "stamp", "") == TIMELINE_STAMP and (f.parallel_url or "").strip()
     ]
-    exact = [f for f in tls if url_key(f.parallel_url or "") == url_key(want) and stamp_covers_vo(vo, f)]
+    exact = [
+        f
+        for f in tls
+        if url_key(f.parallel_url or "") == url_key(want) and stamp_covers_vo(vo, f)
+    ]
     return exact[0] if exact else None
+
+
+def _months(text: str) -> set[str]:
+    return {m.group(0).lower() for m in _MONTH_YEAR.finditer(text or "")}
+
+
+def union_supports_prints(vo: str, findings: Iterable[object]) -> bool:
+    """Spoken non-year prints and month-years must sit on the attached set."""
+    rows = list(findings or [])
+    blob = " ".join(stamp_text(f) for f in rows)
+    nums = _event_nums(vo)
+    if nums and not nums <= _event_nums(blob):
+        return False
+    vo_months = _months(vo)
+    if vo_months and not (vo_months & _months(blob)):
+        return False
+    return True
+
+
+def stamps_for_vo(
+    vo: str,
+    findings: Iterable[Finding],
+    pairs: Iterable[tuple[str, str]],
+) -> list[Finding]:
+    """One name-covering stamp, plus rows that supply leftover prints/whens. No invent."""
+    tls = [
+        f
+        for f in findings or []
+        if getattr(f, "stamp", "") == TIMELINE_STAMP and (f.parallel_url or "").strip()
+    ]
+    names = vo_proper_names(vo)
+    if not names and not _event_nums(vo) and not _months(vo):
+        best = best_timeline_finding(vo, tls, pairs)
+        return [best] if best else []
+    best = best_timeline_finding(vo, tls, pairs)
+    if best is None:
+        best = next((f for f in tls if stamp_covers_vo(vo, f)), None)
+    out: list[Finding] = []
+    if best is not None:
+        out.append(best)
+    elif names:
+        return []
+    have_n = _event_nums(" ".join(stamp_text(f) for f in out))
+    have_m = _months(" ".join(stamp_text(f) for f in out))
+    want_n = _event_nums(vo) - have_n
+    want_m = _months(vo) - have_m
+    for finding in tls:
+        if finding.id in {f.id for f in out}:
+            continue
+        blob = stamp_text(finding)
+        give_n = _event_nums(blob) & want_n
+        give_m = _months(blob) & want_m
+        if not give_n and not give_m:
+            continue
+        out.append(finding)
+        want_n -= give_n
+        want_m -= give_m
+    if not _event_nums(vo):
+        return out
+    num_rows = [f for f in out if _event_nums(vo) & _event_nums(stamp_text(f))]
+    month_need = _months(vo) - _months(" ".join(stamp_text(f) for f in num_rows))
+    when_rows = [f for f in out if month_need & _months(stamp_text(f))]
+    return list({f.id: f for f in [*num_rows, *when_rows]}.values()) or out
 
 
 def cap_url_reuse(
