@@ -1190,13 +1190,20 @@ def _strip_unsupported_prints(text: str, fids: list[str], findings: list[Finding
 
     blob = " ".join(stamp_text(f) for f in findings if f.id in fids)
     have = _event_nums(blob)
-    bad = [n for n in pack_numbers(text or "") if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
+    body = re.sub(r"\[[^\]]+\]", "", text or "")
+    bad = [n for n in pack_numbers(body) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
     drop = []
     for tok in bad:
         want = re.sub(r"[^\d.]+", "", tok.replace("−", "-"))
         if want and want not in have:
             drop.append(tok)
-    return _strip_uncited_tokens(text, drop) if drop else (text or "")
+    cleaned = _strip_uncited_tokens(text, drop) if drop else (text or "")
+    have_m = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob)}
+    spoken_m = [m.group(0) for m in _MONTH_YEAR.finditer(re.sub(r"\[[^\]]+\]", "", cleaned))]
+    for tok in spoken_m:
+        if tok.lower() not in have_m:
+            cleaned = re.sub(re.escape(tok), "", cleaned)
+    return _tidy_vo(cleaned) if cleaned != (text or "") else cleaned
 
 
 def _org_span(name: str) -> bool:
