@@ -2582,14 +2582,16 @@ def _fill_stamp_print_frames(packet) -> None:
 
 
 def _drop_duplicate_vo_beats(packet) -> list[str]:
-    """Identical spoken VO ships once."""
+    """Identical cited print VO ships once. Slot placeholders are not a dupe class."""
     seen: set[str] = set()
     drop: list[str] = []
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading":
             continue
         key = _speech_norm(beat.vo)
-        if not key:
+        if not key or not beat.finding_ids:
+            continue
+        if not is_numeric_print(_bare_vo(beat.vo)):
             continue
         if key in seen:
             drop.append(beat.id)
