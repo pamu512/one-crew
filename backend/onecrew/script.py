@@ -312,6 +312,31 @@ def _vo_mixed_smash(packet: Packet, vo: str) -> bool:
     return False
 
 
+def _beat_sahm_month_off(packet: Packet, vo: str) -> bool:
+    """True if this beat cites a Sahm print and speaks a month other than finding.when."""
+    sahm = _by_series(packet, "SAHMREALTIME")
+    if not sahm or not (sahm.when or "").strip():
+        return False
+    if f"[{sahm.id}]" not in (vo or ""):
+        return False
+    printed = _print_of(sahm, "")
+    vo_n = (vo or "").replace("−", "-")
+    p_n = (printed or "").replace("−", "-")
+    if p_n and p_n not in vo_n and p_n.lstrip("+-") not in vo_n:
+        return False
+    stamp = _month_year(sahm.when)
+    if stamp is None:
+        return False
+    return any(
+        (match.group(1).lower(), match.group(2)) != stamp
+        for match in _MONTH_YEAR.finditer(vo or "")
+    )
+
+
+def _units_sahm_month_off(packet: Packet, units: list[dict] | None) -> bool:
+    return any(_beat_sahm_month_off(packet, u.get("vo") or "") for u in (units or []))
+
+
 def _print_has_minus(printed: str) -> bool:
     return bool(re.search(r"[\-−]\s*\d", printed or ""))
 
@@ -415,6 +440,8 @@ def _accept_units(
         return False
     if _vo_mixed_smash(packet, spoken):
         return False
+    if _units_sahm_month_off(packet, units):
+        return False
     # HOLD/mint-hole packets must not require speaking broken minted prints.
     if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
@@ -443,6 +470,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     if unemp and not unemp_print and "4.1" in (unemp.claim or ""):
         unemp_print = "4.1%"
     sahm_print = _print_of(sahm, "")
+    sahm_when = (sahm.when or "").strip() if sahm else ""
     gdp_print = _print_of(gdp, "")
     gdp_vo, gdp_eyes = _gdp_lines(gdp_print)
     gdp_named = bool(gdp and gdp_print)
@@ -532,7 +560,11 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                 "id": "turn",
                 "vo": _voice(
                     (
-                        f"Turn: Sahm {sahm_print} vs the 0.50 trigger.{_cite(sahm)}"
+                        (
+                            f"Turn: Sahm {sahm_print} in {sahm_when} vs the 0.50 trigger.{_cite(sahm)}"
+                            if sahm_when
+                            else f"Turn: Sahm {sahm_print} vs the 0.50 trigger.{_cite(sahm)}"
+                        )
                         if sahm and sahm_print
                         else (
                             f"{(sahm.claim or '').strip()}{_cite(sahm)}"
@@ -543,7 +575,11 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                     packet,
                 ),
                 "eyes": (
-                    f"Sahm {sahm_print} vs 0.50 trigger."
+                    (
+                        f"Sahm {sahm_print} in {sahm_when} vs 0.50 trigger."
+                        if sahm_when
+                        else f"Sahm {sahm_print} vs 0.50 trigger."
+                    )
                     if sahm and sahm_print
                     else "Official series card. Named print only."
                 ),
@@ -964,6 +1000,8 @@ def _vertex_keeps(
         return False
     if _vo_mixed_smash(packet, spoken):
         return False
+    if _units_sahm_month_off(packet, units):
+        return False
     if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
@@ -1017,8 +1055,14 @@ def _voice_stamped_marks(packet: Packet, units: list[dict]) -> list[dict]:
     sahm = _by_series(packet, "SAHMREALTIME")
     if sahm and any(h.startswith("Sahm ") for h in holes):
         printed = _print_of(sahm, "")
+        when = (sahm.when or "").strip()
         if printed:
-            _put("turn", f"Turn: Sahm {printed} vs the 0.50 trigger.", sahm)
+            line = (
+                f"Turn: Sahm {printed} in {when} vs the 0.50 trigger."
+                if when
+                else f"Turn: Sahm {printed} vs the 0.50 trigger."
+            )
+            _put("turn", line, sahm)
     pay = _by_series(packet, "BLS payrolls", "payrolls")
     if pay and any(h.startswith("payrolls ") for h in holes):
         printed = _print_of(pay, "")

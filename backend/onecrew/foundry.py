@@ -1002,7 +1002,7 @@ def _decimal_series_rows(text: str) -> list[tuple[str, str]]:
 
 
 def when_matching_print(text: str, printed: str, when: str = "") -> str:
-    """Align when to the table row that carries this print. Do not invent a minus."""
+    """Align when to the latest table row that carries this print. Do not invent."""
     want = _norm_series_print(printed)
     if not want:
         return when
@@ -1011,10 +1011,8 @@ def when_matching_print(text: str, printed: str, when: str = "") -> str:
     ]
     if not matched:
         return when
-    if when:
-        for stamp in matched:
-            if stamp.lower() == when.strip().lower():
-                return stamp
+    # ponytail: prose may repeat a later cell on an earlier month. Latest matching
+    # row wins. If the table later splits one print across months, rank by date.
     return max(matched, key=_month_key)
 
 
