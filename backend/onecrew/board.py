@@ -79,9 +79,7 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
         is_thin_frame,
         is_title_chrome_frame,
         is_topic_prompt_frame,
-        speak_stamp_fact,
         speak_stamp_print,
-        speak_stamps,
     )
 
     screen = speak_stamp_print(list(beat.finding_ids), rows)
@@ -95,13 +93,11 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
         if not shown:
             beat.frame = screen
         return screen
-    printed = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(
-        list(beat.finding_ids), rows
-    )
-    if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
-        beat.frame = printed
-        return printed
-    if shown and not is_numeric_print(shown) and (title_chrome or headline):
+    # ponytail: empty/non-numeric print stays missing. Title/claim fallback was the #65 hole.
+    if shown and (title_chrome or headline or not is_numeric_print(shown)):
+        beat.frame = ""
+        return ""
+    if shown and is_thin_frame(shown, list(beat.finding_ids), rows):
         beat.frame = ""
         return ""
     return shown

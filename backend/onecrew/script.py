@@ -1192,9 +1192,12 @@ def speak_stamps(fids: list[str], findings: list[Finding]) -> str:
         finding = by_id.get(fid)
         if finding is None:
             continue
-        text = (finding.print or "").strip() or (finding.claim or "").strip()
-        if text:
-            return text
+        printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+        if printed and has_usable_numeric_print(finding):
+            return printed
+        claim = (finding.claim or "").strip()
+        if claim and not is_generic_stamp_title(claim) and not _is_title_like_text(claim):
+            return claim
     return ""
 
 
@@ -1777,15 +1780,40 @@ def _is_headline_shaped_vo(text: str) -> bool:
     return caps >= max(4, len(words) - 2)
 
 
+def _is_title_like_text(text: str) -> bool:
+    """PR/page/hub title, site name, or Title Case headline. Not a spoken print."""
+    raw = _bare_vo(text)
+    if not raw or is_numeric_print(raw):
+        return False
+    return bool(
+        _has_publisher_pipe(raw)
+        or _is_site_name_only(raw)
+        or _is_headline_shaped_vo(raw)
+        or _looks_like_headline(raw)
+        or _is_title_card(raw)
+    )
+
+
+def has_usable_numeric_print(finding) -> bool:
+    """True when stamp.print is a magnitude token, not a title/hub/site string."""
+    printed = "" if getattr(finding, "print", None) in {MISSING, "", None} else (finding.print or "").strip()
+    if not printed or is_generic_stamp_title(printed) or _is_title_like_text(printed):
+        return False
+    title = (getattr(finding, "title", None) or "").strip()
+    if title and title not in _GENERIC_TITLE and _speech_norm(printed) == _speech_norm(title):
+        return False
+    return is_numeric_print(printed)
+
+
 def _vo_covers_attached_print(vo: str, findings: list) -> bool:
     """Spoken line includes a numeric print from an attached stamp."""
     numeric: list[str] = []
     for finding in findings or []:
         printed = "" if getattr(finding, "print", None) in {MISSING, "", None} else (finding.print or "").strip()
-        if printed and is_numeric_print(printed):
+        if printed and is_numeric_print(printed) and has_usable_numeric_print(finding):
             numeric.append(printed)
     if not numeric:
-        return True
+        return False
     body = _speech_norm(vo)
     bare = (_bare_vo(vo) or "").lower()
     for printed in numeric:
@@ -1807,7 +1835,14 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
     core = _headline_core(vo)
     if not body or len(body) < 8:
         return False
-    if any(body == _speech_norm(getattr(f, "claim", None) or "") for f in findings):
+    if any(
+        body == _speech_norm(claim)
+        and claim
+        and not _is_title_like_text(claim)
+        and _speech_norm(claim) != _speech_norm(getattr(f, "title", None) or "")
+        for f in findings
+        for claim in (getattr(f, "claim", None) or "",)
+    ):
         return False
     covered = _vo_covers_attached_print(vo, findings)
     if is_numeric_print(_bare_vo(vo)) and any(
@@ -1832,7 +1867,10 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
         claim = _speech_norm(getattr(finding, "claim", None) or "")
         note = _speech_norm(getattr(finding, "note", None) or "")
         if title in {printed, claim} or (note and title == note):
-            continue
+            if has_usable_numeric_print(finding) or (
+                claim and not _is_title_like_text(claim) and _looks_like_prose_claim(claim)
+            ):
+                continue
         title_hit = (
             body == title
             or core == title
@@ -2093,9 +2131,19 @@ def drop_thin_title_read_beats(packet) -> list[str]:
     for i, beat in enumerate(beats):
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         vo = _vo_lines(beat.vo)
-        if is_thin_title_read_vo(vo, cited, prior_prints=seen):
-            spoken = speak_stamp_fact([f.id for f in cited], list(by_id.values())) if cited else ""
-            if spoken and not is_thin_title_read_vo(spoken, cited, prior_prints=seen):
+        title_only = bool(cited) and not any(has_usable_numeric_print(f) for f in cited)
+        if is_thin_title_read_vo(vo, cited, prior_prints=seen) or (
+            title_only and _is_title_like_text(vo) and not is_numeric_print(_bare_vo(vo))
+        ):
+            usable = [f for f in cited if has_usable_numeric_print(f)]
+            spoken = (
+                speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
+            )
+            if (
+                spoken
+                and is_numeric_print(_bare_vo(spoken))
+                and not is_thin_title_read_vo(spoken, cited, prior_prints=seen)
+            ):
                 beat.vo = f"NARRATOR\n{spoken}" if (beat.vo or "").startswith("NARRATOR") else spoken
                 vo = spoken
             else:
@@ -2177,12 +2225,14 @@ def _hold_ship(packet, reason: str) -> None:
 
 
 def _append_stamp_beat(packet, finding: Finding) -> bool:
+    if not has_usable_numeric_print(finding):
+        return False
     spoken = speak_stamp_fact([finding.id], [finding]) or speak_stamps([finding.id], [finding])
-    if not spoken or is_thin_title_read_vo(spoken, [finding]):
-        spoken = (finding.claim or "").strip() or spoken
+    if not spoken or is_thin_title_read_vo(spoken, [finding]) or is_title_read_vo(spoken, [finding]):
+        return False
     if not spoken:
         return False
-    screen = speak_stamp_print([finding.id], [finding]) or spoken
+    screen = speak_stamp_print([finding.id], [finding])
     n = len([b for b in packet.beats if (b.kind or "vo") != "heading"])
     packet.beats.append(
         ScriptBeat(
@@ -2289,6 +2339,54 @@ def ensure_topic_axes(packet) -> str | None:
     return None
 
 
+def _drop_uncited_ship_claims(packet) -> list[str]:
+    """Drop VO claims with no covering finding_ids / print. HOLD cite-faithfulness if leftover."""
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    drop: list[str] = []
+    leftover = False
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        tokens = [] if _invents(packet) else uncited_claim_tokens(packet, beat.vo)
+        no_cover = not cited or not any(has_usable_numeric_print(f) for f in cited)
+        if tokens and (no_cover or not beat.finding_ids):
+            cleaned = _strip_uncited_tokens(_vo_lines(beat.vo), tokens)
+            still = uncited_claim_tokens(packet, cleaned) if cleaned else tokens
+            if still or is_thin_title_read_vo(cleaned, cited) or is_title_read_vo(cleaned, cited):
+                drop.append(beat.id)
+                leftover = True
+                continue
+            beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
+            leftover = True
+            continue
+        if tokens:
+            cleaned = _strip_uncited_tokens(_vo_lines(beat.vo), tokens)
+            if uncited_claim_tokens(packet, cleaned):
+                drop.append(beat.id)
+                leftover = True
+                continue
+            beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
+            leftover = True
+    if drop:
+        keep = [b for b in packet.beats if b.id not in drop]
+        if any((b.kind or "vo") != "heading" for b in keep):
+            packet.beats = keep
+    if leftover:
+        _hold_ship(packet, "cite-faithfulness")
+        if receipt is not None:
+            prior = (receipt.hold_reason or "").strip()
+            if "uncited claim" in prior.lower() and "cite-faithfulness" in prior.lower():
+                parts = [
+                    p.strip()
+                    for p in prior.replace("\n", ";").split(";")
+                    if p.strip() and p.strip().lower() != "uncited claim"
+                ]
+                receipt.hold_reason = "; ".join(parts) or "cite-faithfulness"
+    return drop
+
+
 def refuse_thin_episode(packet) -> str | None:
     """one_time_short_episode may not ship 1-beat when ≥3 stamps could support ≥3 beats."""
     if (packet.cut or "") != "one_time_short_episode":
@@ -2313,6 +2411,7 @@ def sanitize_for_ship(packet):
     _strip_incomplete_beats(packet)
     _reattach_covering_scope_beats(packet)
     dropped = drop_thin_title_read_beats(packet)
+    uncited = _drop_uncited_ship_claims(packet)
     thin = refuse_thin_episode(packet)
     axis = ensure_topic_axes(packet)
     neutralize_pack_slot_beats(packet)
@@ -2321,7 +2420,7 @@ def sanitize_for_ship(packet):
         _hold_ship(packet, thin)
     if axis:
         _hold_ship(packet, axis)
-    if dropped or packet.beats or thin or axis:
+    if dropped or uncited or packet.beats or thin or axis:
         rebuild_timed_vo(packet)
     return packet
 
@@ -2352,7 +2451,9 @@ def _drop_placeholder_cites(packet) -> None:
         chosen = [
             f
             for f in stamps_for_vo(_vo_lines(beat.vo), rows, [])
-            if not is_placeholder_finding_id(f.id) and _legal_spoken_finding(f)
+            if not is_placeholder_finding_id(f.id)
+            and _legal_spoken_finding(f)
+            and has_usable_numeric_print(f)
         ]
         if not chosen:
             continue
@@ -2373,10 +2474,16 @@ def _strip_incomplete_beats(packet) -> None:
         cleaned = strip_incomplete_vo(vo)
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         if is_incomplete_vo(cleaned) or not _speech_norm(cleaned):
-            cleaned = speak_stamp_fact(list(beat.finding_ids), list(by_id.values())) or speak_stamps(
-                list(beat.finding_ids), list(by_id.values())
+            usable = [f for f in cited if has_usable_numeric_print(f)]
+            cleaned = (
+                speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
             )
-            if not cleaned or is_incomplete_vo(cleaned) or is_thin_title_read_vo(cleaned, cited):
+            if (
+                not cleaned
+                or is_incomplete_vo(cleaned)
+                or is_thin_title_read_vo(cleaned, cited)
+                or is_title_read_vo(cleaned, cited)
+            ):
                 beat.vo = ""
                 beat.finding_ids = []
                 continue
@@ -2449,10 +2556,16 @@ def _strip_meta_hanging_beats(packet) -> None:
         if (
             was_meta or is_hanging_clause_vo(vo) or is_incomplete_vo(vo)
         ) and (not _speech_norm(cleaned) or needs_print):
-            cleaned = speak_stamp_fact(list(beat.finding_ids), list(by_id.values())) or speak_stamps(
-                list(beat.finding_ids), list(by_id.values())
+            usable = [f for f in cited if has_usable_numeric_print(f)]
+            cleaned = (
+                speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
             )
-            if not cleaned or is_thin_title_read_vo(cleaned, cited):
+            if (
+                not cleaned
+                or not is_numeric_print(_bare_vo(cleaned))
+                or is_thin_title_read_vo(cleaned, cited)
+                or is_title_read_vo(cleaned, cited)
+            ):
                 beat.vo = ""
                 beat.finding_ids = []
                 continue
@@ -2587,35 +2700,33 @@ def _looks_like_headline(text: str) -> bool:
 
 
 def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: list | None = None) -> bool:
-    """Article title / hub title / # headline. Not the attached numeric print."""
+    """Article title / hub title / # headline. Never a title fallback when print is empty."""
     raw = (text or "").strip()
     if not raw:
         return False
     if raw.startswith("#") or _TEXT_CHROME.match(raw):
         return True
+    if is_numeric_print(raw) and not _is_title_like_text(raw):
+        return False
     shown = _speech_norm(raw)
     rows = [f for f in (findings or []) if not fids or f.id in set(fids)]
     printed_tok = ""
     for finding in rows:
         title = _speech_norm(getattr(finding, "title", None) or "")
         printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
-        if printed and is_numeric_print(printed):
+        if printed and has_usable_numeric_print(finding):
             printed_tok = printed
+            if _speech_norm(printed) in shown:
+                continue
         if not title or title in _GENERIC_TITLE:
             continue
-        if not is_numeric_print(printed):
-            continue
-        if _speech_norm(printed) in shown:
-            continue
-        if shown == title or title in shown or shown in title or _title_near(raw, getattr(finding, "title", None) or ""):
+        if shown == title or title in shown or shown in title or _title_near(
+            raw, getattr(finding, "title", None) or ""
+        ):
             return True
-    if printed_tok and _speech_norm(printed_tok) not in shown and (
-        _looks_like_headline(raw)
-        or _is_site_name_only(raw)
-        or _is_headline_shaped_vo(raw)
-    ):
-        return True
-    return False
+    if printed_tok and _speech_norm(printed_tok) in shown:
+        return False
+    return _is_title_like_text(raw)
 
 
 def speak_stamp_fact(fids: list[str], findings: list[Finding]) -> str:
@@ -2629,11 +2740,20 @@ def speak_stamp_fact(fids: list[str], findings: list[Finding]) -> str:
         printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
         note = (finding.note or "").strip()
         title = (finding.title or "").strip()
-        if claim and not is_generic_stamp_title(claim) and _speech_norm(claim) != _speech_norm(title):
+        if (
+            claim
+            and not is_generic_stamp_title(claim)
+            and not _is_title_like_text(claim)
+            and _speech_norm(claim) != _speech_norm(title)
+        ):
             return claim
-        if printed:
+        if printed and has_usable_numeric_print(finding):
             return printed
-        if note and not note.lower().startswith("timeline event"):
+        if (
+            note
+            and not note.lower().startswith("timeline event")
+            and has_usable_numeric_print(finding)
+        ):
             return note
     return speak_stamps(fids, findings)
 
