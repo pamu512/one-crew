@@ -19,7 +19,8 @@ from onecrew.foundry import (
     _when,
     clean_cite_url,
     _url_fits_series,
-    when_matching_print,
+    align_sahm_pair,
+    latest_sahm_cell,
 )
 from onecrew.models import MISSING, Finding, Packet
 from onecrew.verify import (
@@ -31,6 +32,7 @@ from onecrew.verify import (
     _year_adjacent_month,
     resolve_missing_cite,
     verify_payrolls_realized_ces,
+    verify_sahm_cell,
     verify_u3_ces,
 )
 from onecrew.vertex_client import VertexDownError, generate_script
@@ -214,12 +216,18 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
                 continue
             claims.append(claim)
             seen.add("U-3")
+        sahm_blob = f"{excerpt.text}\n{bag_blob}"
+        cell = latest_sahm_cell(sahm_blob)
         sahm = _SAHM.search(excerpt.text)
-        if sahm and excerpt.url and "SAHMREALTIME" not in seen:
-            printed = re.sub(r"\s+", "", sahm.group(1))
-            month = _MONTH_YEAR.search(excerpt.text)
-            when = f"{month.group(1).title()} {month.group(2)}" if month else ""
-            when = when_matching_print(f"{excerpt.text}\n{bag_blob}", printed, when) or when
+        if excerpt.url and "SAHMREALTIME" not in seen and (cell or sahm):
+            if sahm and not cell:
+                printed = re.sub(r"\s+", "", sahm.group(1))
+                month = _MONTH_YEAR.search(excerpt.text)
+                when = f"{month.group(1).title()} {month.group(2)}" if month else ""
+                when, printed = align_sahm_pair(when, printed, sahm_blob)
+            else:
+                when, printed = cell
+                when, printed = align_sahm_pair(when, printed, sahm_blob)
             cite = clean_cite_url(excerpt.url)
             if not cite:
                 continue
@@ -309,15 +317,19 @@ def _fill_missing_series(claims: list[Claim], bag: CiteBag) -> list[Claim]:
 
 
 def _align_sahm_when(claims: list[Claim], bag: CiteBag) -> list[Claim]:
-    """when+print must be one FRED/prose row. Remap. Do not invent a minus."""
+    """when+print must be one FRED cell. Remap. Do not invent a minus."""
     blob = "\n".join([*(e.text for e in bag.excerpts), bag.spine or ""])
     out: list[Claim] = []
     for claim in claims:
         if claim.series == "SAHMREALTIME":
-            aligned = when_matching_print(blob, claim.print, claim.when)
-            if aligned and aligned != claim.when:
-                claim.when = aligned
-                claim.id = _slug("SAHMREALTIME", aligned)
+            when, printed = align_sahm_pair(claim.when, claim.print, blob)
+            if when and when != claim.when:
+                claim.when = when
+                claim.id = _slug("SAHMREALTIME", when)
+            if printed:
+                claim.print = printed
+            if when:
+                claim.id = _slug("SAHMREALTIME", when)
         out.append(claim)
     return out
 
@@ -361,6 +373,8 @@ def propose_claims(
         rows = claims_from_cites(bag)
     else:
         rows = [c for c in rows if c.series != "U-3" or verify_u3_ces(c, bag).ok]
+        rows = _align_usrec_smash(_align_sahm_when(rows, bag), bag)
+        rows = [c for c in rows if c.series != "SAHMREALTIME" or verify_sahm_cell(c, bag).ok]
         rows = _fill_missing_series(rows, bag)
     return _align_usrec_smash(_align_sahm_when(rows, bag), bag)
 

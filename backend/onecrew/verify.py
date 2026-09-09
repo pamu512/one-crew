@@ -760,6 +760,30 @@ def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     return VerifyResult(ok=False, reason="u3 year absent from ces")
 
 
+def verify_sahm_cell(claim: Claim, bag: CiteBag) -> VerifyResult:
+    """Sahm when+print must be one dated FRED SAHMREALTIME cell.
+
+    Pipe/ISO rows are the authority. June/−0.03 is a mismatch when the
+    June pipe is 0.07. Topic-agnostic. Do not invent a minus.
+    """
+    if claim.series != "SAHMREALTIME":
+        return VerifyResult(ok=True, reason=None)
+    from onecrew.foundry import _norm_series_print, sahm_fred_cells
+
+    blob = _bag_text(bag)
+    cells = sahm_fred_cells(blob)
+    if not cells:
+        return VerifyResult(ok=True, reason=None)
+    want_w = (claim.when or "").strip().lower()
+    want_p = _norm_series_print(claim.print)
+    if not want_w or not want_p:
+        return VerifyResult(ok=False, reason="sahm when print mismatch")
+    for stamp, value in cells:
+        if stamp.lower() == want_w and _norm_series_print(value) == want_p:
+            return VerifyResult(ok=True, reason=None, matched_in=blob)
+    return VerifyResult(ok=False, reason="sahm when print mismatch")
+
+
 def verify_claim_set(claims: list[Claim], bag: CiteBag) -> ClaimSetResult:
     results: list[VerifyResult] = []
     hold: list[str] = []
@@ -793,6 +817,8 @@ def verify_claim_set(claims: list[Claim], bag: CiteBag) -> ClaimSetResult:
             extra = verify_gdp_bars(claim, bag)
         elif claim.series == "U-3":
             extra = verify_u3_ces(claim, bag)
+        elif claim.series == "SAHMREALTIME":
+            extra = verify_sahm_cell(claim, bag)
         if extra is not None:
             results.append(extra)
     for row in results:

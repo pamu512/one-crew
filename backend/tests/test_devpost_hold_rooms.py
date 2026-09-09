@@ -801,3 +801,276 @@ def test_sahm_stamp_when_print_is_one_fred_row_and_vo_speaks_it() -> None:
     sahm = next(f for f in packet.receipt.findings if f.series == "SAHMREALTIME")
     assert _when_print_on_fred_row(sahm.when, sahm.print, table)
     _assert_sahm_vo_speaks_stamp_when_and_print(packet)
+
+
+# Live READY oc-are-we-near-recession-562aa326: Parallel FRED cells are
+# Jun 0.07 / Jul −0.03 / Aug −0.07. Stamp kept June/−0.03 (July's print
+# on June's when) and id sahm-june-2026. VO said July and cited that id.
+_LIVE_SAHM_562_PIPE = (
+    "2026-06-01 | 0.07\n"
+    "2026-07-01 | -0.03\n"
+    "2026-08-01 | -0.07\n"
+)
+_LIVE_SAHM_562_HTML = (
+    "<table><tr><td>2026-06-01</td><td>0.07</td></tr>"
+    "<tr><td>2026-07-01</td><td>-0.03</td></tr>"
+    "<tr><td>2026-08-01</td><td>-0.07</td></tr></table>"
+)
+_LIVE_SAHM_562_NAMED = "June 2026 0.07\nJuly 2026 −0.03\nAugust 2026 −0.07\n"
+_LIVE_SAHM_562 = (
+    "SAHMREALTIME\n"
+    "Sahm June 2026 = −0.03 vs 0.50 trigger.\n"
+    f"{_LIVE_SAHM_562_PIPE}"
+    f"{_LIVE_SAHM_562_NAMED}"
+)
+_NO_MINUS_003_TABLE = (
+    "SAHMREALTIME\n"
+    "2026-06-01 | 0.07\n"
+    "2026-08-01 | -0.07\n"
+    "June 2026 0.07\n"
+    "August 2026 −0.07\n"
+)
+
+
+def _pipe_sahm_cells(blob: str) -> set[tuple[str, str]]:
+    """ISO/pipe FRED cells only. Prose 'June = −0.03' is not a cell when the pipe exists."""
+    found: set[tuple[str, str]] = set()
+    for match in re.finditer(
+        r"(20\d{2})-(\d{2})-\d{2}\s*[|,]?\s*([+\-−]?\d+\.\d+)",
+        blob or "",
+    ):
+        month = _ISO_MONTH[int(match.group(2))]
+        if month:
+            found.add((f"{month} {match.group(1)}".lower(), _norm_print(match.group(3))))
+    return found
+
+
+def _assert_sahm_one_pipe_cell(sahm, blob: str) -> None:
+    cells = _pipe_sahm_cells(blob)
+    assert cells, "test table must carry dated FRED cells"
+    pair = ((sahm.when or "").strip().lower(), _norm_print(sahm.print))
+    assert pair in cells, f"{sahm.id} {pair} is not a FRED pipe cell {sorted(cells)}"
+    assert pair != ("june 2026", "-0.03")
+    if pair[1] == "-0.03":
+        assert pair[0] == "july 2026"
+        assert sahm.id != "sahm-june-2026"
+
+
+def test_forbidden_wrap_renames_sahm_id_to_june_while_print_is_july_cell() -> None:
+    """Vertex/id rename to june cannot keep July's print. One FRED cell or HOLD."""
+    from onecrew.claimer import findings_from_claims, propose_claims
+    from onecrew.foundry import mint
+    from onecrew.verify import Claim, apply_verify_gate, verify_claim_set
+
+    table = _LIVE_SAHM_562
+    html = f"Sahm June 2026 = −0.03 vs 0.50 trigger. {_LIVE_SAHM_562_HTML}"
+    spine = f"USREC July 2026 = 0. {_CES} {table}"
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-562aa326"
+    packet.task_spine = spine
+    packet.research_pack = spine
+    minted = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [_USREC]),
+            _row(BLS, "BLS", [_CES]),
+            _row(FRED_SAHM, "SAHMREALTIME", [html]),
+        ],
+        _miss(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    bag = _bag(
+        excerpts=[
+            (FRED_SAHM, "SAHMREALTIME", html),
+            (FRED_USREC, "USREC", _USREC),
+            (BLS, "BLS", _CES),
+        ],
+        spine=spine,
+        hit_urls=[FRED_SAHM, FRED_USREC, BLS],
+    )
+
+    def june_july_print(_bag, _packet=None):
+        return [
+            Claim(
+                series="SAHMREALTIME",
+                print="−0.03",
+                when="June 2026",
+                id="sahm-june-2026",
+                cite_url=FRED_SAHM,
+                claim_span=html,
+            )
+        ]
+
+    remapped = propose_claims(bag, proposer=june_july_print)
+    planted = findings_from_claims(june_july_print(bag), bag)
+    mixed = next(c for c in june_july_print(bag) if c.series == "SAHMREALTIME")
+    checked = verify_claim_set([mixed], bag)
+    gated = apply_verify_gate(
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=planted),
+        bag,
+    )
+    assert ledger.parallel_calls == before
+    assert checked.ok is False
+    assert any(
+        "sahm when print mismatch" in r or "smash mixed months" in r
+        for r in checked.hold_reasons
+    )
+    for rows in (minted, remapped):
+        sahm = next(f for f in rows if getattr(f, "series", None) == "SAHMREALTIME")
+        _assert_sahm_one_pipe_cell(sahm, _LIVE_SAHM_562_PIPE)
+        assert sahm.id != "sahm-june-2026" or _norm_print(sahm.print) != "-0.03"
+        cite = _cite_urls(sahm) if hasattr(sahm, "parallel_url") else (sahm.cite_url or "")
+        assert "fred.stlouisfed.org/series/sahmrealtime" in cite.lower()
+    if gated.disposition == "READY":
+        sahm = next(f for f in gated.findings if f.series == "SAHMREALTIME")
+        _assert_sahm_one_pipe_cell(sahm, _LIVE_SAHM_562_PIPE)
+        assert sahm.id != "sahm-june-2026"
+    else:
+        assert gated.disposition == "HOLD"
+        assert gated.findings
+        reason = (gated.hold_reason or "").lower()
+        assert "sahm when print mismatch" in reason or "smash mixed months" in reason
+
+
+def test_forbidden_wrap_vo_july_with_stamp_june(monkeypatch) -> None:
+    """#42 bar: spoken Sahm month must match stamped when. July VO + June stamp dies."""
+    pack = (
+        "USREC July 2026 = 0. "
+        "Nonfarm payrolls fell −23,000 in July 2026. "
+        "Sahm June 2026 = 0.07 vs the 0.50 trigger. "
+        "2026-06-01 | 0.07\n"
+    )
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-562aa326"
+    packet.research_pack = pack
+    packet.task_spine = pack
+    rows = [
+        Finding(
+            id="usrec-july-2026",
+            claim="USREC=0 (July 2026).",
+            stamp="grounded",
+            series="USREC",
+            print="0",
+            when="July 2026",
+            parallel_url=FRED_USREC,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="payrolls-july-2026",
+            claim="Nonfarm payrolls fell −23,000.",
+            stamp="grounded",
+            series="BLS payrolls",
+            print="−23,000",
+            when="July 2026",
+            parallel_url=BLS,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="sahm-june-2026",
+            claim="Sahm June 2026 = 0.07 vs 0.50 trigger.",
+            stamp="grounded",
+            series="SAHMREALTIME",
+            print="0.07",
+            when="June 2026",
+            parallel_url=FRED_SAHM,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="fringe-miss",
+            claim="Hidden treaty already mined the strait.",
+            stamp="fringe",
+            parallel_status="miss",
+            note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+        ),
+    ]
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    mixed = (
+        '[{"id":"cold-open","vo":"USREC=0 (July 2026) smashed into payrolls −23,000. '
+        '[usrec-july-2026] [payrolls-july-2026]",'
+        '"eyes":"cards","finding_ids":["usrec-july-2026","payrolls-july-2026"]},'
+        '{"id":"promise","vo":"Three objects from the pack. [usrec-july-2026]",'
+        '"eyes":"pack","finding_ids":["usrec-july-2026"]},'
+        '{"id":"gdp","vo":"The official series stay on the cards. [usrec-july-2026]",'
+        '"eyes":"gdp","finding_ids":["usrec-july-2026"]},'
+        '{"id":"labor","vo":"Labor: payrolls −23,000. Named BLS. [payrolls-july-2026]",'
+        '"eyes":"ces","finding_ids":["payrolls-july-2026"]},'
+        '{"id":"turn","vo":"Turn: Sahm −0.03 in July 2026 vs the 0.50 trigger. [sahm-june-2026]",'
+        '"eyes":"sahm","finding_ids":["sahm-june-2026"]},'
+        '{"id":"complication","vo":"Sahm −0.03 in July 2026 is not the official call. [sahm-june-2026]",'
+        '"eyes":"gap","finding_ids":["sahm-june-2026"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-july-2026]",'
+        '"eyes":"board","finding_ids":["usrec-july-2026"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-july-2026]",'
+        '"eyes":"close","finding_ids":["usrec-july-2026"]}]'
+    )
+    from onecrew.script import _assemble, _parse_units
+
+    sneak = _assemble(packet.model_copy(deep=True), _parse_units(mixed))
+    assert sneak.status == "hold" or (
+        sneak.receipt is not None and sneak.receipt.disposition == "HOLD"
+    )
+    sneak_spoken = (sneak.script or "") + "\n" + "\n".join(b.vo for b in sneak.beats)
+    assert sneak_spoken.strip() == "" or all(
+        "[sahm-june-2026]" not in (b.vo or "") or "july 2026" not in (b.vo or "").lower()
+        for b in sneak.beats
+    )
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda _p: mixed)
+    before = ledger.parallel_calls
+    write_script(packet)
+    assert ledger.parallel_calls == before
+    sahm = next(f for f in packet.receipt.findings if f.series == "SAHMREALTIME")
+    assert (sahm.when or "").lower() == "june 2026"
+    if packet.status == "hold" or (
+        packet.receipt is not None and packet.receipt.disposition == "HOLD"
+    ):
+        reason = (
+            (packet.receipt.hold_reason or "")
+            + " "
+            + " ".join(row.detail for row in packet.exclusions)
+        ).lower()
+        assert reason
+    else:
+        _assert_sahm_vo_month_matches_stamp(packet)
+        for beat in packet.beats:
+            vo = beat.vo or ""
+            if "[sahm-june-2026]" in vo and "july 2026" in vo.lower():
+                raise AssertionError(f"{beat.id} speaks July with June stamp: {vo!r}")
+
+
+def test_forbidden_wrap_hardcodes_sahm_minus_003() -> None:
+    """Mint must take a dated FRED cell. Do not invent −0.03 when no cell has it."""
+    from onecrew.foundry import mint
+
+    table = _NO_MINUS_003_TABLE
+    spine = f"USREC July 2026 = 0. {_CES} {table}"
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-562aa326"
+    packet.task_spine = spine
+    packet.research_pack = spine
+    minted = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [_USREC]),
+            _row(BLS, "BLS", [_CES]),
+            _row(FRED_SAHM, "SAHMREALTIME", [table]),
+        ],
+        _miss(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    sahm = next(f for f in minted if f.series == "SAHMREALTIME")
+    _assert_sahm_one_pipe_cell(sahm, table)
+    assert _norm_print(sahm.print) != "-0.03"
+    assert "0.03" not in _norm_print(sahm.print)
+    assert "fred.stlouisfed.org/series/sahmrealtime" in _cite_urls(sahm).lower()
