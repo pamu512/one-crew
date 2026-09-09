@@ -752,9 +752,11 @@ def _prefer_unused_host(vo: str, tls: list[Finding]) -> Finding | None:
     covers = [f for f in tls if stamp_covers_vo(vo, f)]
     if not covers:
         return None
+    full = [f for f in covers if stamp_supports_prints(vo, f)]
+    pool = full or covers
     load = host_load(tls)
-    covers.sort(key=lambda f: (load[url_host(f.parallel_url or "")], f.id))
-    return covers[0]
+    pool.sort(key=lambda f: (load[url_host(f.parallel_url or "")], f.id))
+    return pool[0]
 
 
 def stamps_for_vo(
@@ -762,7 +764,7 @@ def stamps_for_vo(
     findings: Iterable[Finding],
     pairs: Iterable[tuple[str, str]],
 ) -> list[Finding]:
-    """One name-covering stamp, plus rows that supply leftover prints/whens. No invent."""
+    """Name-covering stamp(s). Leftover prints/whens only from stamps that also cover names."""
     from onecrew.script import is_comparative_vo
 
     tls = [
@@ -792,6 +794,8 @@ def stamps_for_vo(
     want_m = _months(vo) - have_m
     for finding in tls:
         if finding.id in {f.id for f in out}:
+            continue
+        if names and not stamp_covers_vo(vo, finding):
             continue
         blob = stamp_text(finding)
         give_n = _event_nums(blob) & want_n
