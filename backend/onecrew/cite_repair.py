@@ -1039,6 +1039,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
                 screen = speak_stamp_print(list(beat.finding_ids), list(receipt.findings))
                 if screen:
                     beat.frame = screen
+                    beat.on_screen = screen
                 orig_vo = recovered
                 changed = True
         vo = strip_action_chrome_vo(orig_vo, beat.frame or "")

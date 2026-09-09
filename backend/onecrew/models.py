@@ -198,6 +198,7 @@ class ScriptBeat(BaseModel):
     camera: str = ""
     finding_ids: list[str] = Field(default_factory=list)
     frame: str = ""
+    on_screen: str = ""
     collision: Collision = MISSING
     collision_url: str | None = None
     collision_title: str = MISSING
