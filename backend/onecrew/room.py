@@ -75,6 +75,7 @@ def _stamped_findings(packet: Packet) -> list[StampedFinding]:
                 when=(finding.when or "").strip(),
                 claim=(finding.claim or "").strip(),
                 url=(finding.parallel_url or "").strip(),
+                note=(finding.note or "").strip(),
             )
         )
     return rows
@@ -239,16 +240,110 @@ def _cited_ids(text: str) -> list[str]:
     return re.findall(r"\[([^\[\]]+)\]", text or "")
 
 
-def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
-    """Fail-closed: named-host / chain-basis VO must not cite a different survey host."""
-    from onecrew.timeline import chain_pairs, cite_host_ok
+def _spoken_window(window: str) -> str:
+    """Narrator + ACTION. Drop beat/timecode chrome so those tokens are not names."""
+    keep: list[str] = []
+    for line in (window or "").splitlines():
+        stripped = line.strip()
+        if _TIMECODE_LINE.match(stripped):
+            continue
+        if stripped.startswith(("Timed VO", "BEAT ", "ACT ")):
+            continue
+        if stripped in {"WIDE", "MCU", "NARRATOR"}:
+            continue
+        if stripped.startswith("ACTION:"):
+            keep.append(stripped.split(":", 1)[1].strip())
+            continue
+        keep.append(line)
+    return "\n".join(keep)
 
-    pairs = chain_pairs(artifact.research_pack or "", artifact.timeline_map)
-    if not pairs:
+
+def _row_covers_names(vo: str, rows: list) -> bool:
+    from onecrew.timeline import host_labels, pair_covers_vo, stamp_text, vo_proper_names
+
+    names = vo_proper_names(vo)
+    if not names or not rows:
+        return not names
+    blob = " ".join(stamp_text(row) for row in rows)
+    labels: set[str] = set()
+    for row in rows:
+        url = getattr(row, "url", None) or getattr(row, "parallel_url", None) or ""
+        labels |= {lab.lower() for lab in host_labels(url)}
+        if pair_covers_vo(vo, stamp_text(row), url):
+            return True
+    blob_l = f"{blob} {' '.join(getattr(r, 'url', '') or '' for r in rows)}".lower()
+    return all(name in blob_l or name in labels for name in names)
+
+
+def _row_supports_prints(vo: str, rows: list) -> bool:
+    from onecrew.timeline import _MONTH_YEAR, _event_nums, stamp_text
+
+    nums = _event_nums(vo)
+    blob = " ".join(stamp_text(row) for row in rows)
+    if nums and not nums <= _event_nums(blob):
         return False
+    vo_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(vo or "")}
+    ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob or "")}
+    if vo_months and not (vo_months & ev_months):
+        return False
+    return True
+
+
+def _chrome_cited(artifact: GradeArtifact) -> bool:
+    from onecrew.script import is_pack_chrome_vo
+
     by_id = {row.id: row for row in artifact.stamped_findings}
     map_ids = {row.finding_id for row in artifact.timeline_map}
     for window in _cite_windows(artifact.script):
+        vo = _spoken_window(window)
+        cited = [
+            fid
+            for fid in _cited_ids(window)
+            if fid in by_id
+            and (
+                fid.startswith("te-")
+                or by_id[fid].series == "timeline_event"
+                or fid in map_ids
+            )
+        ]
+        if cited and is_pack_chrome_vo(vo):
+            return True
+    return False
+
+
+def _attached_print_or_name_hole(artifact: GradeArtifact) -> bool:
+    by_id = {row.id: row for row in artifact.stamped_findings}
+    map_ids = {row.finding_id for row in artifact.timeline_map}
+    for window in _cite_windows(artifact.script):
+        vo = _spoken_window(window)
+        rows = []
+        for fid in _cited_ids(window):
+            row = by_id.get(fid)
+            if row is None or not (row.url or "").strip():
+                continue
+            if not (fid.startswith("te-") or row.series == "timeline_event" or fid in map_ids):
+                continue
+            rows.append(row)
+        if not rows:
+            continue
+        if not _row_covers_names(vo, rows):
+            return True
+        if not _row_supports_prints(vo, rows):
+            return True
+    return False
+
+
+def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
+    """Fail-closed: named-host / entity / print must sit on the attached stamp."""
+    from onecrew.timeline import chain_pairs, cite_host_ok, pair_covers_vo, stamp_text
+
+    if _chrome_cited(artifact) or _attached_print_or_name_hole(artifact):
+        return True
+    pairs = chain_pairs(artifact.research_pack or "", artifact.timeline_map)
+    by_id = {row.id: row for row in artifact.stamped_findings}
+    map_ids = {row.finding_id for row in artifact.timeline_map}
+    for window in _cite_windows(artifact.script):
+        vo = _spoken_window(window)
         for fid in _cited_ids(window):
             row = by_id.get(fid)
             if row is None or not (row.url or "").strip():
@@ -256,11 +351,11 @@ def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
             if not (fid.startswith("te-") or row.series == "timeline_event" or fid in map_ids):
                 continue
             url = row.url
-            if not cite_host_ok(window, url, pairs):
-                return True
-            from onecrew.timeline import pair_covers_vo
-
-            if not pair_covers_vo(window, getattr(row, "claim", "") or "", url):
+            blob = stamp_text(row)
+            if pairs and not cite_host_ok(vo, url, pairs):
+                if not pair_covers_vo(vo, blob, url):
+                    return True
+            if not pair_covers_vo(vo, blob, url):
                 return True
     return False
 

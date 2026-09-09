@@ -1023,11 +1023,30 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             prior = (fresh.receipt.hold_reason or "").strip()
             fresh.receipt.hold_reason = f"{prior} {loop.hold_reason or ''}".strip()
         fresh.status = "hold"
-        stamp_collisions(fresh, rails)
-        attach_frames(fresh, [], rails=rails)
-        leftover = _write_closed_pack(fresh, leftover, hit_urls)
-        store.upsert_packet(fresh)
-        return fresh
+        cite_recut = "cite-faithfulness" in (
+            f"{loop.hold_reason or ''} {loop.grade.recut_detail or ''}"
+        ).lower()
+        if cite_recut:
+            if not _cite_repair():
+                stamp_collisions(fresh, rails)
+                attach_frames(fresh, [], rails=rails)
+                leftover = _write_closed_pack(fresh, leftover, hit_urls)
+                store.upsert_packet(fresh)
+                return fresh
+            if fresh.receipt is not None and fresh.receipt.disposition != "HOLD":
+                fresh.status = "ready"
+            else:
+                stamp_collisions(fresh, rails)
+                attach_frames(fresh, [], rails=rails)
+                leftover = _write_closed_pack(fresh, leftover, hit_urls)
+                store.upsert_packet(fresh)
+                return fresh
+        else:
+            stamp_collisions(fresh, rails)
+            attach_frames(fresh, [], rails=rails)
+            leftover = _write_closed_pack(fresh, leftover, hit_urls)
+            store.upsert_packet(fresh)
+            return fresh
 
     if not _cite_repair():
         return fresh
