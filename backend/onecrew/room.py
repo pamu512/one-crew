@@ -359,6 +359,8 @@ def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
         is_title_read_vo,
         is_unverified_meta_vo,
         stamp_scope,
+        _TOPIC_Q_CLAUSE,
+        _bare_vo,
     )
 
     by_id = {row.id: row for row in artifact.stamped_findings}
@@ -368,7 +370,7 @@ def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
         vo = _vo_body(window)
         cited = [by_id[fid] for fid in _cited_ids(window) if fid in by_id]
         fids = [row.id for row in cited]
-        if has_tone_chrome(vo) or is_unverified_meta_vo(vo) or is_hanging_clause_vo(vo) or is_print_hole(vo) or is_incomplete_vo(vo):
+        if has_tone_chrome(vo) or is_unverified_meta_vo(vo) or is_hanging_clause_vo(vo) or is_print_hole(vo) or is_incomplete_vo(vo) or _TOPIC_Q_CLAUSE.search(_bare_vo(vo) or ""):
             return True
         if is_action_chrome_vo(vo, _action_line(window)):
             return True
@@ -529,24 +531,32 @@ def relink_cite_if_supported(claim: Claim, bag: CiteBag) -> Claim:
 
 
 def _sanitize_disposition(packet: Packet, grade: RoomGrade, calls: int, *, ready: bool, hold_reason: str | None = None) -> RoomLoopResult:
-    from onecrew.script import sanitize_for_ship
+    from onecrew.script import refuse_empty_numeric_mute, sanitize_for_ship
 
     sanitize_for_ship(packet)
+    if packet.beats:
+        from onecrew.board import write_shot_list
+
+        shots = write_shot_list(packet)
+        refuse_empty_numeric_mute(packet, shots)
+        if not packet.frames:
+            packet.frames = shots
     reason = ((packet.receipt.hold_reason or "") if packet.receipt else "").lower()
-    ship_gate = any(
-        tok in reason
-        for tok in ("thin_after_repair", "insufficient_cite_beats", "missing topic axis")
+    _SHIP_GATE = (
+        "thin_after_repair",
+        "insufficient_cite_beats",
+        "missing topic axis",
+        "opaque_finding_id",
+        "cite-faithfulness",
     )
+    ship_gate = any(tok in reason for tok in _SHIP_GATE)
     if ship_gate:
         raw = (packet.receipt.hold_reason or "") if packet.receipt else ""
         gate = next(
             (
                 part.strip()
                 for part in raw.replace("\n", ";").split(";")
-                if any(
-                    tok in part.lower()
-                    for tok in ("thin_after_repair", "insufficient_cite_beats", "missing topic axis")
-                )
+                if any(tok in part.lower() for tok in _SHIP_GATE)
             ),
             raw or hold_reason,
         )

@@ -1079,6 +1079,8 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     bus.emit(shift.id, agent="boarder", kind="plan", message=f"Storyboard from script, cut={shift.cut}")
     frames = _board(fresh, rails)
     attach_frames(fresh, frames, rails=rails)
+    if fresh.receipt is not None and fresh.receipt.disposition == "HOLD":
+        fresh.status = "hold"
     leftover = _write_closed_pack(fresh, leftover, hit_urls)
     fresh.grade_artifact = make_grade_artifact(fresh)
     store.upsert_packet(fresh)
