@@ -109,6 +109,12 @@ _CHROME_COVER = re.compile(
     r"\bretrieved(?:[- ]at)?\b|\bte-last-verified-",
     re.I,
 )
+_RSS_HUB_ID = re.compile(
+    r"subscribe[-_]?rss|rss[-_]?feed|log[-_]?feed|(?:^|[-_])rss(?:[-_]|$)|"
+    r"[-_]subscribe(?:[-_]|$)",
+    re.I,
+)
+_RSS_HUB_TITLE = re.compile(r"\b(?:subscribe|rss(?:\s+feed)?)\b", re.I)
 _URL_REUSE_CAP = 2
 URL_REUSE_CAP = _URL_REUSE_CAP
 MAX_CITES_PER_BEAT = 2
@@ -594,8 +600,17 @@ def stamp_text(finding: object) -> str:
     return " ".join(parts)
 
 
+def is_rss_hub_stamp(finding: object) -> bool:
+    """Subscribe / RSS / log-feed hub. Not a covering stamp."""
+    fid = str(getattr(finding, "id", None) or "")
+    title = str(getattr(finding, "title", None) or "")
+    return bool(_RSS_HUB_ID.search(fid) or _RSS_HUB_TITLE.search(title))
+
+
 def is_chrome_cover_stamp(finding: object) -> bool:
-    """Last-verified / retrieved chrome. Not a print-bearing cover."""
+    """Last-verified / retrieved / RSS hub chrome. Not a print-bearing cover."""
+    if is_rss_hub_stamp(finding):
+        return True
     blob = " ".join(
         str(getattr(finding, key, None) or "")
         for key in ("id", "title", "print", "claim", "note")
@@ -871,15 +886,16 @@ def cap_beat_cites(
     """Keep CLOSED_SERIES. Cap other board cites to covering stamps that support the VO."""
     rows = list(findings or [])
     by_id = {f.id: f for f in rows}
-    closed = [
-        fid
-        for fid in fids
-        if fid in by_id and (by_id[fid].series or "").strip() in CLOSED_SERIES
-    ]
-    other = [fid for fid in fids if fid in by_id and fid not in closed]
+    closed = list(
+        dict.fromkeys(
+            fid
+            for fid in fids
+            if fid in by_id and (by_id[fid].series or "").strip() in CLOSED_SERIES
+        )
+    )
+    other = list(dict.fromkeys(fid for fid in fids if fid in by_id and fid not in closed))
     if len(other) <= cap:
-        keep = set(closed) | set(other)
-        return [fid for fid in fids if fid in keep]
+        return list(dict.fromkeys([*closed, *other]))
     load = host_load(rows)
 
     def _score(fid: str) -> tuple:
@@ -898,9 +914,8 @@ def cap_beat_cites(
 
     covering = [fid for fid in other if stamp_covers_vo(vo, by_id[fid])]
     pool = covering or other
-    picked = sorted(pool, key=_score)[:cap]
-    keep = set(closed) | set(picked)
-    return [fid for fid in fids if fid in keep]
+    picked = list(dict.fromkeys(sorted(pool, key=_score)))[:cap]
+    return list(dict.fromkeys([*closed, *picked]))
 
 
 def host_load(findings: Iterable[Finding]) -> Counter[str]:

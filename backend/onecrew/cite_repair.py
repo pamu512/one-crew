@@ -1226,11 +1226,13 @@ def _board_gate_reason(packet: Packet) -> str | None:
     used: Counter[str] = Counter()
     seen: set[str] = set()
     for beat in packet.beats:
-        other = [
-            fid
-            for fid in beat.finding_ids
-            if fid in by_id and (by_id[fid].series or "").strip() not in CLOSED_SERIES
-        ]
+        other = list(
+            dict.fromkeys(
+                fid
+                for fid in beat.finding_ids
+                if fid in by_id and (by_id[fid].series or "").strip() not in CLOSED_SERIES
+            )
+        )
         if len(other) > MAX_CITES_PER_BEAT:
             return "over-cite"
         for fid in other:
