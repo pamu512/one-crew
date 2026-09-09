@@ -538,6 +538,9 @@ def _sanitize_disposition(packet: Packet, grade: RoomGrade, calls: int, *, ready
         from onecrew.board import write_shot_list
 
         shots = write_shot_list(packet)
+        from onecrew.script import persist_mute_on_screen
+
+        persist_mute_on_screen(packet, shots)
         refuse_empty_numeric_mute(packet, shots)
         if not packet.frames:
             packet.frames = shots

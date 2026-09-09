@@ -173,6 +173,23 @@ def is_digit_finding_id(fid: str) -> bool:
     return bool(raw) and raw.isdigit()
 
 
+_PACK_INDEX_FID = re.compile(r"\[[0-9]+\]")
+_CLAIM_EX_FID = re.compile(r"^claim_id_ex\S*$", re.I)
+_DOUBLE_BRACKET_VO = re.compile(r"\[\[\d+\]\]")
+
+
+def is_pack_slot_finding_id(fid: str) -> bool:
+    """Pack schema / excerpt-claim chrome. Not a stable te-/series slug."""
+    from onecrew.foundry import is_pack_slot_id
+
+    raw = (fid or "").strip()
+    if not raw:
+        return False
+    if is_pack_slot_id(raw) or _CLAIM_EX_FID.fullmatch(raw):
+        return True
+    return bool(_PACK_INDEX_FID.search(raw) or "[" in raw)
+
+
 def _legal_spoken_finding(finding: Finding) -> bool:
     """Cite-able row: not excerpts[N] / unofficial GDP / USREC prose. Fringe and fiction frames stay."""
     from onecrew.foundry import complete_print, is_pack_slot_id, official_closed_shape, official_gdp_url
@@ -2340,6 +2357,7 @@ def rewrite_attached_title_vo_beats(packet) -> int:
         screen = speak_stamp_print(list(beat.finding_ids), list(by_id.values()))
         if screen:
             beat.frame = screen
+            beat.on_screen = screen
         n += 1
     return n
 
@@ -2374,6 +2392,7 @@ def drop_thin_title_read_beats(packet) -> list[str]:
                 screen = speak_stamp_print(list(beat.finding_ids), list(by_id.values()))
                 if screen:
                     beat.frame = screen
+                    beat.on_screen = screen
             else:
                 drop.append(beat.id)
                 continue
@@ -2497,30 +2516,54 @@ def _remap_cite_brackets(text: str, remap: dict[str, str]) -> str:
 
     def keep(inner: str) -> str:
         token = (inner or "").strip()
-        return f"[{remap.get(token, token)}]"
+        mapped = remap.get(token, token)
+        if not mapped:
+            return ""
+        return f"[{mapped}]"
 
-    return _map_brackets(text or "", keep)
+    return _DOUBLE_BRACKET_VO.sub("", _map_brackets(text or "", keep))
+
+
+def _opaque_finding_id(fid: str) -> bool:
+    return is_digit_finding_id(fid) or is_pack_slot_finding_id(fid)
+
+
+def _resolve_pack_slot_fid(fid: str, findings: list, vo: str = "") -> str:
+    if not is_pack_slot_finding_id(fid):
+        return fid
+    legal = [f for f in findings if not _opaque_finding_id(f.id)]
+    if vo:
+        for finding in legal:
+            printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+            if printed and has_usable_numeric_print(finding) and _vo_mentions_print(vo, printed):
+                return finding.id
+    if len(legal) == 1:
+        return legal[0].id
+    return fid
 
 
 def rewrite_opaque_finding_ids(packet) -> None:
-    """Map pack-index finding_ids to url-stem/series slugs. HOLD leftover digits."""
+    """Map pack-index / pack-slot finding_ids to url-stem/series slugs. HOLD leftover digits."""
     receipt = packet.receipt
     if receipt is None:
         return
-    used = {f.id for f in receipt.findings if not is_digit_finding_id(f.id)}
+    used = {f.id for f in receipt.findings if not _opaque_finding_id(f.id)}
     remap: dict[str, str] = {}
     for finding in receipt.findings:
-        if not is_digit_finding_id(finding.id):
+        if not _opaque_finding_id(finding.id):
             continue
         new_id = finding_id_slug(finding, used)
         remap[finding.id] = new_id
         finding.id = new_id
+        used.add(new_id)
     for row in receipt.timeline_map or []:
         fid = (row.finding_id or "").strip()
         if fid in remap:
             row.finding_id = remap[fid]
         elif is_digit_finding_id(fid):
             row.finding_id = _resolve_digit_fid(fid, list(receipt.findings))
+        elif is_pack_slot_finding_id(fid):
+            row.finding_id = remap.get(fid) or _resolve_pack_slot_fid(fid, list(receipt.findings))
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading":
             continue
@@ -2532,13 +2575,20 @@ def rewrite_opaque_finding_ids(packet) -> None:
                 nxt = remap[fid]
             elif is_digit_finding_id(fid):
                 nxt = _resolve_digit_fid(fid, list(receipt.findings), beat.vo)
+            elif is_pack_slot_finding_id(fid):
+                nxt = _resolve_pack_slot_fid(fid, list(receipt.findings), beat.vo)
             else:
                 nxt = fid
+            if _opaque_finding_id(nxt):
+                beat_remap[fid] = ""
+                continue
             beat_remap[fid] = nxt
             new_ids.append(nxt)
         new_ids = list(dict.fromkeys(new_ids))
         if new_ids != old or any(k != v for k, v in beat_remap.items()):
             beat.vo = _remap_cite_brackets(beat.vo, beat_remap)
+            beat.finding_ids = new_ids
+        else:
             beat.finding_ids = new_ids
     leftover = [
         fid
@@ -2547,6 +2597,23 @@ def rewrite_opaque_finding_ids(packet) -> None:
         for fid in beat.finding_ids
         if is_digit_finding_id(fid)
     ] + [f.id for f in receipt.findings if is_digit_finding_id(f.id)]
+    leftover_slots = [
+        fid
+        for beat in packet.beats
+        if (beat.kind or "vo") != "heading"
+        for fid in beat.finding_ids
+        if is_pack_slot_finding_id(fid)
+    ] + [f.id for f in receipt.findings if is_pack_slot_finding_id(f.id)]
+    if leftover_slots:
+        for beat in packet.beats:
+            if (beat.kind or "vo") == "heading":
+                continue
+            beat.finding_ids = [fid for fid in beat.finding_ids if not is_pack_slot_finding_id(fid)]
+            beat.vo = _DOUBLE_BRACKET_VO.sub("", beat.vo or "")
+        for finding in list(receipt.findings):
+            if is_pack_slot_finding_id(finding.id):
+                finding.id = finding_id_slug(finding, used)
+                used.add(finding.id)
     if leftover:
         _hold_ship(packet, "opaque_finding_id")
 
@@ -2578,8 +2645,40 @@ def mute_print_for_beat(beat, findings: list) -> str:
     return ""
 
 
+def persist_mute_on_screen(packet, shots=None) -> None:
+    """Covering print must sit on beat.on_screen and the matching frame. Empty is a ship FAIL."""
+    shots = list(shots if shots is not None else (getattr(packet, "frames", None) or []))
+    by_beat = {getattr(s, "beat_id", ""): s for s in shots}
+    receipt = packet.receipt
+    rows = list(receipt.findings if receipt else [])
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        shot = by_beat.get(beat.id)
+        screen = mute_print_for_beat(beat, rows)
+        if not screen:
+            shown = (
+                (getattr(beat, "on_screen", None) or "")
+                or ((getattr(shot, "on_screen", None) or "") if shot is not None else "")
+                or (beat.frame or "")
+            ).strip()
+            if shown and is_numeric_print(shown) and not is_title_chrome_frame(
+                shown, list(beat.finding_ids), rows
+            ):
+                screen = shown
+        if not screen:
+            continue
+        beat.on_screen = screen
+        shown = (beat.frame or "").strip()
+        if not shown or is_title_chrome_frame(shown, list(beat.finding_ids), rows):
+            beat.frame = screen
+        if shot is not None:
+            shot.on_screen = screen
+
+
 def refuse_empty_numeric_mute(packet, shots=None) -> None:
     """Ship FAIL if cited numeric VO still has empty on_screen/frame."""
+    persist_mute_on_screen(packet, shots)
     shots = list(shots if shots is not None else (getattr(packet, "frames", None) or []))
     by_beat = {getattr(s, "beat_id", ""): s for s in shots}
     receipt = packet.receipt
@@ -2594,7 +2693,8 @@ def refuse_empty_numeric_mute(packet, shots=None) -> None:
             continue
         shot = by_beat.get(beat.id)
         shown = (
-            ((getattr(shot, "on_screen", None) or "") if shot is not None else "")
+            (getattr(beat, "on_screen", None) or "")
+            or ((getattr(shot, "on_screen", None) or "") if shot is not None else "")
             or (beat.frame or "")
         ).strip()
         if not shown:
@@ -2682,6 +2782,7 @@ def _append_stamp_beat(packet, finding: Finding) -> bool:
             vo=f"NARRATOR\n{spoken} [{finding.id}]",
             finding_ids=[finding.id],
             frame=screen,
+            on_screen=screen,
         )
     )
     return True
@@ -2876,6 +2977,7 @@ def sanitize_for_ship(packet):
     _strip_pack_slot_beats(packet)
     _refuse_leftover_question_hanging(packet)
     rewrite_opaque_finding_ids(packet)
+    persist_mute_on_screen(packet)
     refuse_empty_numeric_mute(packet)
     if thin:
         _hold_ship(packet, thin)
@@ -2943,15 +3045,19 @@ def _fill_stamp_print_frames(packet) -> None:
         shown = (beat.frame or "").strip()
         title_chrome = bool(shown) and is_title_chrome_frame(shown, list(beat.finding_ids), rows)
         if screen:
+            beat.on_screen = screen
             if not shown or title_chrome:
                 beat.frame = screen
             continue
         fact = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(
             list(beat.finding_ids), rows
         )
+        printed = speak_stamp_print(list(beat.finding_ids), rows)
+        if printed:
+            beat.on_screen = printed
         if fact and not _is_title_like_text(fact):
             if not shown or title_chrome:
-                beat.frame = fact
+                beat.frame = printed or fact
             continue
         if cited and not any(_stamp_can_cover(f) for f in cited):
             drop.append(beat.id)
@@ -3084,12 +3190,18 @@ def _strip_pack_slot_beats(packet) -> None:
         if (beat.kind or "vo") == "heading":
             continue
         vo, _ = _sanitize_vo(_vo_lines(beat.vo), known, pack_blob)
+        vo = _DOUBLE_BRACKET_VO.sub("", vo)
         if vo != _vo_lines(beat.vo):
             beat.vo = f"NARRATOR\n{vo}" if (beat.vo or "").startswith("NARRATOR") else vo
+        elif _DOUBLE_BRACKET_VO.search(beat.vo or ""):
+            beat.vo = _DOUBLE_BRACKET_VO.sub("", beat.vo or "")
         frame, _ = _sanitize_vo(beat.frame or "", known, pack_blob)
+        frame = _DOUBLE_BRACKET_VO.sub("", frame)
         if frame != (beat.frame or ""):
             beat.frame = frame
         for fid in beat.finding_ids:
+            if is_pack_slot_finding_id(fid) or is_digit_finding_id(fid):
+                continue
             if f"[{fid}]" not in beat.vo:
                 beat.vo = f"{beat.vo} [{fid}]"
         if vo_has_pack_slot_token(beat.vo, known) or vo_has_pack_slot_token(beat.frame or "", known):
@@ -3404,6 +3516,9 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
         return f"[{token}]"
 
     cleaned = _map_brackets(text or "", keep_or_drop)
+    if _DOUBLE_BRACKET_VO.search(cleaned):
+        cleaned = _DOUBLE_BRACKET_VO.sub("", cleaned)
+        nits.append(_PACK_SLOT_NIT)
 
     def drop_snake(match: re.Match[str]) -> str:
         word = match.group(0)
@@ -3449,7 +3564,7 @@ def vo_has_pack_slot_token(text: str, known: set[str] | None = None) -> bool:
 
     known = known or set()
     body = text or ""
-    if _EXCERPT_TOKEN.search(body):
+    if _EXCERPT_TOKEN.search(body) or _DOUBLE_BRACKET_VO.search(body):
         return True
 
     def _slot_token(token: str) -> bool:
@@ -3832,6 +3947,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 camera="MCU" if i else "WIDE",
                 finding_ids=fids,
                 frame=eyes,
+                on_screen=eyes if is_numeric_print(eyes or "") else "",
             )
         )
         cursor += dur

@@ -96,6 +96,7 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
     if topic_frame or title_chrome or headline:
         shown = ""
     if screen:
+        beat.on_screen = screen
         if not shown:
             beat.frame = screen
         return screen
@@ -106,6 +107,7 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
     if printed and _is_title_like_text(printed):
         printed = ""
     if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
+        beat.on_screen = printed
         beat.frame = printed
         return printed
     if shown and (title_chrome or headline or is_thin_frame(shown, list(beat.finding_ids), rows)):
@@ -416,10 +418,11 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
 
 def write_board(packet: Packet, rails: Rails) -> list[ShotFrame]:
     """Shot list, then prefer sourced footage, then Imagen only on misses."""
-    from onecrew.script import refuse_empty_numeric_mute, sanitize_for_ship
+    from onecrew.script import persist_mute_on_screen, refuse_empty_numeric_mute, sanitize_for_ship
 
     sanitize_for_ship(packet)
     shots = write_shot_list(packet)
+    persist_mute_on_screen(packet, shots)
     refuse_empty_numeric_mute(packet, shots)
     if not shots:
         return []
