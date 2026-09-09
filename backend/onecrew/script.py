@@ -178,13 +178,26 @@ def _cite(finding: Finding | None) -> str:
     return f" [{finding.id}]" if finding else ""
 
 
-def _link_pack_findings(vo: str, fids: list[str], findings: list[Finding]) -> list[str]:
+def _link_pack_findings(
+    vo: str,
+    fids: list[str],
+    findings: list[Finding],
+    *,
+    packet: Packet | None = None,
+) -> list[str]:
     """Attach stamped finding ids whose print is spoken. Do not invent a cite."""
     from onecrew.foundry import complete_print, is_pack_slot_id, leftover_slot_ids, official_gdp_url
-    from onecrew.timeline import spoken_match
+    from onecrew.timeline import best_timeline_finding, chain_pairs, cite_host_ok
 
     leftover = leftover_slot_ids()
     spoken = {re.sub(r"[^\d.]+", "", n.replace("−", "-")) for n in pack_numbers(vo)}
+    pairs: list[tuple[str, str]] = []
+    if packet is not None:
+        mapping = (packet.receipt.timeline_map if packet.receipt else None) or []
+        pairs = chain_pairs(
+            "\n".join(p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p),
+            mapping,
+        )
     out = [fid for fid in fids if not is_pack_slot_id(fid)]
     for finding in findings:
         if is_pack_slot_id(finding.id) or finding.id in leftover or finding.id in out:
@@ -194,8 +207,6 @@ def _link_pack_findings(vo: str, fids: list[str], findings: list[Finding]) -> li
         ):
             continue
         if finding.stamp == "timeline_event":
-            if spoken_match(vo, finding):
-                out.append(finding.id)
             continue
         if finding.stamp != "grounded":
             continue
@@ -204,7 +215,13 @@ def _link_pack_findings(vo: str, fids: list[str], findings: list[Finding]) -> li
         want = re.sub(r"[^\d.]+", "", (finding.print or "").replace("−", "-"))
         if want and want in spoken:
             out.append(finding.id)
-    return out
+    best = best_timeline_finding(vo, findings, pairs) if pairs else None
+    if best is not None and cite_host_ok(vo, best.parallel_url or "", pairs):
+        if best.id not in out:
+            out.append(best.id)
+    timeline_ids = {f.id for f in findings if f.stamp == "timeline_event"}
+    keep = best.id if best is not None else None
+    return [fid for fid in out if fid not in timeline_ids or fid == keep]
 
 
 def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
@@ -1358,7 +1375,9 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             if f"[{fid}]" in vo and fid not in fids:
                 fids.append(fid)
         if not _invents(packet):
-            fids = _link_pack_findings(vo, fids, packet.receipt.findings if packet.receipt else [])
+            fids = _link_pack_findings(
+                vo, fids, packet.receipt.findings if packet.receipt else [], packet=packet
+            )
         if not fids and not hole:
             spoken_nums = [
                 n
