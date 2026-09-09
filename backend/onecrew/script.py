@@ -216,14 +216,7 @@ def _link_pack_findings(
         if want and want in spoken:
             out.append(finding.id)
     best = best_timeline_finding(vo, findings, pairs) if pairs else None
-    if best is None and not pairs:
-        from onecrew.timeline import spoken_match
-
-        for finding in findings:
-            if finding.stamp == "timeline_event" and spoken_match(vo, finding):
-                best = finding
-                break
-    if best is not None and (not pairs or cite_host_ok(vo, best.parallel_url or "", pairs)):
+    if best is not None and cite_host_ok(vo, best.parallel_url or "", pairs):
         if best.id not in out:
             out.append(best.id)
     timeline_ids = {f.id for f in findings if f.stamp == "timeline_event"}

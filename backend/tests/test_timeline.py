@@ -945,6 +945,53 @@ def _coface_survey_finding(*, fid: str = "te-go-to-content-coface-2022-11") -> F
     )
 
 
+def test_forbidden_wrap_lease_vo_does_not_attach_survey_url_when_basis_exists() -> None:
+    """Forbidden wrap: survey URL on a lease VO when that event's reuters basis exists."""
+    packet = _packet(_CHAIN_FIVE_BASIS)
+    coface = _coface_survey_finding()
+    packet.receipt.findings = [coface]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis="Data centers survey covering leases and campuses.", url=COFACE_SURVEY, finding_id=coface.id)
+    ]
+    vos = dict(_NAMED_HOST_VOS)
+    vos["cold-open"] = "NARRATOR\nA cloud vendor cancelled leases in August 2026."
+    for beat in packet.beats:
+        beat.vo = vos[beat.id]
+        beat.finding_ids = []
+
+    def _no_search(**_k):
+        raise AssertionError("pack already has High-confidence basis URLs")
+
+    run_cite_recheck_loop(packet, search_fn=_no_search)
+    lease = next(b for b in packet.beats if b.id == "cold-open")
+    cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
+    assert cited, "lease VO must cite the chain basis, not stay empty"
+    assert all((f.parallel_url or "") == REUTERS_MSFT for f in cited)
+    assert coface.id not in lease.finding_ids
+
+
+def test_forbidden_wrap_same_host_wrong_path_is_not_a_cover() -> None:
+    """Host match is not enough when the chain has a different basis path for this event."""
+    from onecrew.timeline import best_timeline_finding, chain_pairs, cite_host_ok
+
+    fed = Finding(
+        id="te-policymakers-watched-2026-08",
+        claim="Policymakers watched the same print.",
+        stamp="timeline_event",
+        title="timeline_event",
+        series="timeline_event",
+        print="Policymakers watched the same print.",
+        when="August 2026",
+        parallel_url=FED_WATCH,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    pairs = chain_pairs(_CHAIN_FIVE_BASIS)
+    vo = "A cloud vendor cancelled leases in August 2026."
+    assert cite_host_ok(vo, FED_WATCH, pairs) is False
+    assert best_timeline_finding(vo, [fed], pairs) is None
+
+
 def test_forbidden_wrap_named_host_vo_does_not_attach_survey_url_when_basis_exists() -> None:
     """Forbidden wrap: attaching a generic survey URL to a named-host VO beat when that event's chain basis exists."""
     packet = _packet(_CHAIN_FIVE_BASIS)

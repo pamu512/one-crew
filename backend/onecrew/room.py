@@ -241,7 +241,7 @@ def _cited_ids(text: str) -> list[str]:
 
 def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
     """Fail-closed: named-host / chain-basis VO must not cite a different survey host."""
-    from onecrew.timeline import chain_pairs, cite_host_ok, named_basis_urls, spoken_basis_url, url_host
+    from onecrew.timeline import chain_pairs, cite_host_ok
 
     pairs = chain_pairs(artifact.research_pack or "", artifact.timeline_map)
     if not pairs:
@@ -256,13 +256,7 @@ def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
             if not (fid.startswith("te-") or row.series == "timeline_event" or fid in map_ids):
                 continue
             url = row.url
-            if cite_host_ok(window, url, pairs):
-                continue
-            named = named_basis_urls(window, pairs)
-            want = spoken_basis_url(window, pairs)
-            if named and url_host(url) not in {url_host(u) for u in named}:
-                return True
-            if want and url_host(url) != url_host(want):
+            if not cite_host_ok(window, url, pairs):
                 return True
     return False
 

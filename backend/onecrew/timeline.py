@@ -115,6 +115,17 @@ def url_host(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def url_key(url: str) -> str:
+    """Host + path. Scheme/www stripped; do not invent URLs."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    parts = urlsplit(raw)
+    host = url_host(raw)
+    path = (parts.path or "").rstrip("/")
+    return f"{host}{path}" if host else raw.rstrip("/")
+
+
 def host_labels(url: str) -> set[str]:
     """Registrable labels a VO may speak. Derived from the URL, not a topic list."""
     host = url_host(url)
@@ -449,10 +460,10 @@ def cite_host_ok(vo: str, url: str, pairs: Iterable[tuple[str, str]]) -> bool:
         return False
     want = spoken_basis_url(vo, pairs)
     if want:
-        return url_host(raw) == url_host(want)
+        return url_key(raw) == url_key(want)
     named = named_basis_urls(vo, pairs)
     if named:
-        return url_host(raw) in {url_host(u) for u in named}
+        return url_key(raw) in {url_key(u) for u in named}
     return False
 
 
@@ -470,14 +481,8 @@ def best_timeline_finding(
         for f in findings or []
         if getattr(f, "stamp", "") == TIMELINE_STAMP and (f.parallel_url or "").strip()
     ]
-    exact = [f for f in tls if (f.parallel_url or "").strip() == want]
-    if exact:
-        return exact[0]
-    host = url_host(want)
-    same = [f for f in tls if url_host(f.parallel_url or "") == host]
-    if not same:
-        return None
-    return max(same, key=lambda f: event_score(vo, f"{f.print or ''} {f.claim or ''}"))
+    exact = [f for f in tls if url_key(f.parallel_url or "") == url_key(want)]
+    return exact[0] if exact else None
 
 
 def cap_url_reuse(
