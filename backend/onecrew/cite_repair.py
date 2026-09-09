@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
-from onecrew.foundry import leftover_slot_ids
+from onecrew.foundry import (
+    leftover_slot_ids,
+    complete_print,
+    clean_cite_url,
+    _when,
+    _slug,
+    _unique_id,
+)
 from onecrew.models import MISSING, Finding, Packet, Receipt, ScriptBeat
 from onecrew.parallel_client import ParallelCreditError, ParallelDownError, search
 from onecrew.tell import invents_frame
@@ -125,6 +133,157 @@ def unsupported_cite_beats(packet: Packet, bag: CiteBag | None = None) -> list[S
     return _spoken_beats_for(packet, {f.id for f in unsupported_cite_findings(packet, bag)})
 
 
+def _vo_body(beat: ScriptBeat) -> str:
+    from onecrew.script import _vo_lines
+
+    return _vo_lines(f"{beat.vo} {beat.frame or ''}")
+
+
+def _sourced_claim(beat: ScriptBeat) -> bool:
+    from onecrew.script import pack_numbers
+
+    vo = _vo_body(beat)
+    nums = [n.replace("−", "-") for n in pack_numbers(vo)]
+    if any(not _YEAR_TOK.fullmatch(n) for n in nums):
+        return True
+    return bool(_MONTH_YEAR.search(vo))
+
+
+def _named_empty_cite_ids(packet: Packet) -> set[str]:
+    reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
+    ids: set[str] = set()
+    for match in _BEAT_NIT.finditer(reason):
+        n = int(match.group(1))
+        if 1 <= n <= len(_EIGHT_IDS):
+            ids.add(_EIGHT_IDS[n - 1])
+    for bid in _EIGHT_IDS:
+        if re.search(rf"\b{re.escape(bid)}\s+cites nothing", reason, re.I):
+            ids.add(bid)
+    return ids
+
+
+def empty_cite_beats(packet: Packet) -> list[ScriptBeat]:
+    """Nonfiction VO beats that state a sourced claim but cite no pack finding."""
+    if invents_frame(cut=packet.cut, tell=packet.tell or ""):
+        return []
+    known = {
+        f.id
+        for f in (packet.receipt.findings if packet.receipt else [])
+        if f.id not in _LEFTOVER
+    }
+    named = _named_empty_cite_ids(packet)
+    out: list[ScriptBeat] = []
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading" or _is_hole(beat):
+            continue
+        fids = [fid for fid in beat.finding_ids if fid in known]
+        if fids:
+            continue
+        if beat.id in named or _sourced_claim(beat):
+            out.append(beat)
+    return out
+
+
+def _queries_for_beats(beats: list[ScriptBeat]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for beat in beats:
+        ask = _vo_body(beat).strip()
+        if not ask or ask in seen:
+            continue
+        seen.add(ask)
+        out.append(ask[:240])
+    return out
+
+
+def _repair_queries(findings: list[Finding], beats: list[ScriptBeat]) -> list[str]:
+    queries: list[str] = []
+    if findings:
+        for ask in _queries_for(findings):
+            if ask == "cite support" and beats:
+                continue
+            if ask not in queries:
+                queries.append(ask)
+    for ask in _queries_for_beats(beats):
+        if ask not in queries:
+            queries.append(ask)
+    return queries or ["cite support"]
+
+
+def _print_in_text(printed: str, text: str) -> bool:
+    want = re.sub(r"[^\d.]+", "", (printed or "").replace("−", "-"))
+    if not want:
+        return False
+    blob = (text or "").replace("−", "-").replace(",", "")
+    return want in re.sub(r"[^\d.]+", " ", blob)
+
+
+def _finding_from_beat(beat: ScriptBeat, bag: CiteBag, used: set[str]) -> Finding | None:
+    from onecrew.script import pack_numbers
+
+    vo = _vo_body(beat)
+    nums = [n for n in pack_numbers(vo) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
+    for excerpt in bag.excerpts:
+        url = clean_cite_url(excerpt.url or "")
+        if not url:
+            continue
+        blob = excerpt.text or ""
+        printed = next((n for n in nums if _print_in_text(n, blob)), None)
+        if printed is None and _MONTH_YEAR.search(vo) and _MONTH_YEAR.search(blob):
+            printed = next((n for n in pack_numbers(blob) if complete_print(n)), None)
+        if not printed or not complete_print(printed):
+            continue
+        when = _when(blob) or _when(vo)
+        if not (when or "").strip():
+            continue
+        fid = _unique_id(_slug(beat.id or "event", when), used)
+        return Finding(
+            id=fid,
+            claim=(blob or vo)[:400],
+            stamp="grounded",
+            title=(excerpt.title or beat.id),
+            print=printed,
+            when=when,
+            parallel_url=url,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        )
+    return None
+
+
+def _attach_empty_cite_beats(packet: Packet, bag: CiteBag | None) -> list[str]:
+    if bag is None or not (bag.excerpts or bag.hit_urls):
+        return []
+    receipt = packet.receipt
+    if receipt is None:
+        receipt = Receipt(packet_id=packet.id, written=False, findings=[], disposition="READY")
+        packet.receipt = receipt
+    used = {f.id for f in receipt.findings}
+    attached: list[str] = []
+    for beat in list(empty_cite_beats(packet)):
+        finding = _finding_from_beat(beat, bag, used)
+        if finding is None:
+            continue
+        receipt.findings.append(finding)
+        if finding.id not in beat.finding_ids:
+            beat.finding_ids.append(finding.id)
+        if f"[{finding.id}]" not in beat.vo:
+            beat.vo = f"{beat.vo} [{finding.id}]"
+        attached.append(finding.id)
+    return attached
+
+
+def drop_empty_cite_beats(packet: Packet) -> list[str]:
+    drop_ids = {b.id for b in empty_cite_beats(packet)}
+    if not drop_ids or not _can_drop_cleanly(packet, drop_ids):
+        return []
+    dropped = [b.id for b in packet.beats if b.id in drop_ids]
+    packet.beats = [b for b in packet.beats if b.id not in drop_ids]
+    rebuild_timed_vo(packet)
+    _retire_incomplete_grounded(packet)
+    return dropped
+
+
 def _queries_for(findings: list[Finding]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -164,9 +323,13 @@ def _merge_bags(prior: CiteBag | None, new: CiteBag) -> CiteBag:
     return CiteBag(excerpts=excerpts, spine=new.spine or prior.spine, hit_urls=urls)
 
 
-def _recheck_parallel(findings: list[Finding], search_fn: SearchFn) -> tuple[CiteBag, str]:
+def _recheck_parallel(
+    findings: list[Finding],
+    search_fn: SearchFn,
+    beats: list[ScriptBeat] | None = None,
+) -> tuple[CiteBag, str]:
     """status is ok | empty | down. Down is not a miss — do not drop on rail failure."""
-    queries = _queries_for(findings)
+    queries = _repair_queries(findings, beats or [])
     objective = queries[0]
     try:
         result = search_fn(objective=objective, search_queries=queries)
@@ -272,6 +435,39 @@ def rebuild_timed_vo(packet: Packet) -> None:
     packet.frames = [f for f in packet.frames if f.beat_id in kept]
 
 
+def _retire_incomplete_grounded(packet: Packet) -> None:
+    """Grounded rows need a complete print and a Parallel URL. Junk ISM `4,` is not a finding."""
+    receipt = packet.receipt
+    if receipt is None:
+        return
+    for finding in receipt.findings:
+        if finding.id in _LEFTOVER or finding.stamp != "grounded":
+            continue
+        printed = finding.print or ""
+        official = finding.series in {
+            "USREC",
+            "BLS payrolls",
+            "U-3",
+            "GDP",
+            "LEI",
+            "SAHMREALTIME",
+            "ISM",
+        }
+        incomplete = printed.endswith(",")
+        if official:
+            incomplete = incomplete or (
+                not complete_print(printed) or not (finding.parallel_url or "").strip()
+            )
+        else:
+            incomplete = incomplete or not (finding.parallel_url or "").strip()
+        if not incomplete:
+            continue
+        finding.stamp = "fringe"
+        finding.parallel_status = "miss"
+        finding.parallel_url = None
+        finding.note = "Incomplete stamp. Never sold as fact."
+
+
 def _retire_uncited_grounded(packet: Packet) -> None:
     """Unspoken grounded rows without a URL are not shipped. Tag fringe — do not invent a cite."""
     receipt = packet.receipt
@@ -294,14 +490,34 @@ _CITE_HOLD_MARKERS = (
     "cite_url series mismatch",
     "print not in cite",
     "when not in cite",
+    "cites nothing in the pack",
     _EXHAUST_REASON,
 )
+_EIGHT_IDS = (
+    "cold-open",
+    "promise",
+    "gdp",
+    "labor",
+    "turn",
+    "complication",
+    "receipt",
+    "close",
+)
+_YEAR_TOK = re.compile(r"^20\d{2}$")
+_MONTH_YEAR = re.compile(
+    r"\b(January|February|March|April|May|June|July|August|September|"
+    r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+    r"\s+20\d{2}\b",
+    re.I,
+)
+_BEAT_NIT = re.compile(r"\bbeat(\d+)\s+cites nothing", re.I)
 
 
 def _clear_cite_only_hold(packet: Packet, bag: CiteBag | None = None) -> None:
     """Successful attach/drop must not leave a cite-only HOLD."""
-    if unsupported_cite_beats(packet, bag):
+    if unsupported_cite_beats(packet, bag) or empty_cite_beats(packet):
         return
+    _retire_incomplete_grounded(packet)
     _retire_uncited_grounded(packet)
     receipt = packet.receipt
     if receipt is None:
@@ -388,7 +604,7 @@ def run_cite_recheck_loop(
     search_fn: SearchFn | None = None,
     bag: CiteBag | None = None,
 ) -> CiteRepairResult:
-    """Scan missing URLs and print/when misses. Re-query up to 3 times. Attach or drop. HOLD on 4th."""
+    """Scan missing URLs, print/when misses, and empty-cite sourced beats. Re-query up to 3. Attach or drop. HOLD on 4th."""
     if invents_frame(cut=packet.cut, tell=packet.tell or ""):
         return CiteRepairResult(ok=True, attempts=int(getattr(packet, "cite_recheck_attempts", 0) or 0))
     search_fn = search_fn or search
@@ -398,10 +614,12 @@ def run_cite_recheck_loop(
     hit_urls: list[str] = []
     current_bag = _packet_bag(packet, bag)
     while True:
-        if current_bag and current_bag.hit_urls:
+        if current_bag and (current_bag.hit_urls or current_bag.excerpts):
             attached_all.extend(_attach_from_bag(packet, current_bag))
+            attached_all.extend(_attach_empty_cite_beats(packet, current_bag))
         missing = unsupported_cite_findings(packet, current_bag)
-        if not missing or not unsupported_cite_beats(packet, current_bag):
+        empty = empty_cite_beats(packet)
+        if not empty and (not missing or not unsupported_cite_beats(packet, current_bag)):
             packet.cite_recheck_attempts = attempts
             _clear_cite_only_hold(packet, current_bag)
             return CiteRepairResult(
@@ -419,13 +637,15 @@ def run_cite_recheck_loop(
             return result
         attempts += 1
         packet.cite_recheck_attempts = attempts
-        fresh_bag, status = _recheck_parallel(missing, search_fn)
+        fresh_bag, status = _recheck_parallel(missing, search_fn, empty)
         if fresh_bag.hit_urls or fresh_bag.excerpts:
             current_bag = _merge_bags(current_bag, fresh_bag)
             object.__setattr__(packet, "_cite_bag", current_bag)
         hit_urls.extend(u for u in fresh_bag.hit_urls if u not in hit_urls)
         attached_all.extend(_attach_from_bag(packet, current_bag or fresh_bag))
+        attached_all.extend(_attach_empty_cite_beats(packet, current_bag or fresh_bag))
         still = {f.id for f in unsupported_cite_findings(packet, current_bag)}
         if still and status != "down":
-            dropped = drop_unsupported_beats(packet, still)
-            dropped_all.extend(dropped)
+            dropped_all.extend(drop_unsupported_beats(packet, still))
+        if empty_cite_beats(packet) and status != "down":
+            dropped_all.extend(drop_empty_cite_beats(packet))

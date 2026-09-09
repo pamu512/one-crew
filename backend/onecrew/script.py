@@ -12,7 +12,7 @@ from onecrew.vertex_client import VertexDownError, generate_script
 
 _VERTEX_HOLE = "Vertex script"
 _NUM = re.compile(
-    r"USREC\s*=\s*0|[-−+]?\d+(?:\.\d+)?\s*%|[-−]\d+\s*k|\b[-−]?\d+\.\d+\b|\b\d{1,4}\b",
+    r"USREC\s*=\s*0|\$\d[\d,]*(?:\.\d+)?\s*[BbMmKk]?|[-−+]?\d+(?:\.\d+)?\s*%|[-−]\d+\s*k|\b[-−]?\d+\.\d+\b|\b\d{1,4}\b",
     re.I,
 )
 _DEPTH_TOKEN = re.compile(r"\b\d+(?:-\d+)?y\b", re.I)
@@ -148,6 +148,26 @@ def _live_findings(packet: Packet) -> list[Finding]:
 
 def _cite(finding: Finding | None) -> str:
     return f" [{finding.id}]" if finding else ""
+
+
+def _link_pack_findings(vo: str, fids: list[str], findings: list[Finding]) -> list[str]:
+    """Attach stamped finding ids whose print is spoken. Do not invent a cite."""
+    from onecrew.foundry import complete_print, leftover_slot_ids
+
+    leftover = leftover_slot_ids()
+    spoken = {re.sub(r"[^\d.]+", "", n.replace("−", "-")) for n in pack_numbers(vo)}
+    out = list(fids)
+    for finding in findings:
+        if finding.id in leftover or finding.id in out:
+            continue
+        if finding.stamp != "grounded":
+            continue
+        if not complete_print(finding.print or ""):
+            continue
+        want = re.sub(r"[^\d.]+", "", (finding.print or "").replace("−", "-"))
+        if want and want in spoken:
+            out.append(finding.id)
+    return out
 
 
 def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
@@ -1219,7 +1239,9 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         for fid in known:
             if f"[{fid}]" in vo and fid not in fids:
                 fids.append(fid)
-        if not fids and known and not hole:
+        if not _invents(packet):
+            fids = _link_pack_findings(vo, fids, packet.receipt.findings if packet.receipt else [])
+        if not fids and not hole:
             spoken_nums = [
                 n
                 for n in _numbers_in(_vo_lines(vo))
@@ -1341,6 +1363,7 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
         "LEI and ISM stay off unless a beat cites them. "
         "Uncited LEI/ISM is a warning, not a blank draft.\n"
         "Nonfiction: nothing uncited from Parallel cites. "
+        "Every sourced beat must attach real finding ids or pack cite URLs. "
         "Fiction: research is reference only; no real person names from the cites.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
         "Return 8-beat JSON from the pack.\n"

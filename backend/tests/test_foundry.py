@@ -419,6 +419,99 @@ def test_leftover_three_slot_illegal_when_spine_has_prints() -> None:
         require_minted(renamed, LIVE_SPINE)
 
 
+def test_renamed_leftover_slots_cannot_wrap_datacenter_topic() -> None:
+    """Forbidden wrap: renaming leftover slots to pass a non-recession live cut."""
+    from onecrew.foundry import FoundryHold, leftover_three_slot, require_minted
+
+    notes = (
+        "Data centers are going to cause the next economic bubble. "
+        "OpenAI Stargate $500B. Microsoft cancelled leases. August 2026."
+    )
+    renamed = leftover_three_slot(
+        hit_url="https://www.theguardian.com/technology/data-centres-boom",
+        hit_claim="Grounded event inside 2-3y: Data centers are going to cause the next economic bubble",
+        mainstream_claim="Widely repeated frame about Data centers are going to cause the next economic bubble",
+        miss_claim="Fringe claim about Data centers are going to cause the next economic bubble",
+    )
+    renamed[0].id = "stargate-2025"
+    renamed[1].id = "microsoft-lease"
+    renamed[2].id = "guardian-bubble"
+    with pytest.raises(FoundryHold, match="leftover"):
+        require_minted(renamed, notes)
+
+
+def test_foundry_does_not_invent_ism_for_datacenter_topic() -> None:
+    """Forbidden wrap: inventing ISM print `4,` with a null URL on a datacenter topic."""
+    from onecrew.foundry import mint
+
+    notes = (
+        "Data centers are going to cause the next economic bubble. "
+        "August 2026 journalism. Sidebar print 4, next to an ISM mention. "
+        "Optimism and mechanism pages are not a PMI."
+    )
+    packet = Packet(
+        id="oc-dc-ism-junk",
+        topic="Data centers are going to cause the next economic bubble",
+        hook="Data centers are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell=SEED_TELL,
+        tone=SEED_TONE,
+        task_spine=notes,
+    )
+    try:
+        rows = mint(
+            packet,
+            [
+                _row(
+                    "https://www.theguardian.com/technology/2026/aug/optimism-boom",
+                    "Guardian",
+                    [notes],
+                ),
+                _row("https://example.com/mechanism", "Mechanism", ["August 2026. ISM. 4, "]),
+            ],
+            [_row("https://example.com/miss", "miss", ["A fringe claim about hidden offtake."])],
+            SimpleNamespace(results=[], errors=[]),
+            notes,
+        )
+    except Exception:
+        return
+    junk = [
+        f
+        for f in rows
+        if ((f.series or "").upper() == "ISM" or (f.id or "").startswith("ism-"))
+        and (
+            not (f.parallel_url or "").strip()
+            or (f.print or "").endswith(",")
+            or (f.print or "").strip() in {"4,", "4"}
+        )
+    ]
+    assert junk == []
+
+
+def test_claimer_drops_ism_without_print_when_url() -> None:
+    from onecrew.claimer import findings_from_claims
+    from onecrew.verify import Claim
+
+    rows = findings_from_claims(
+        [
+            Claim(
+                series="ISM",
+                print="4,",
+                when="August 2026",
+                id="ism-august-2026",
+                cite_url="",
+                claim_span="ISM print 4,",
+            )
+        ]
+    )
+    assert not any(f.id == "ism-august-2026" for f in rows)
+    assert not any((f.print or "") in {"4,", "4"} for f in rows)
+
+
 def test_writer_reads_foundry_objects() -> None:
     packet, rows = _mint()
     packet.id = "oc-recession-live-foundry"
