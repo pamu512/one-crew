@@ -31,7 +31,13 @@ from onecrew.receipt import (
     write_receipt,
 )
 from onecrew.claimer import findings_from_claims, frame_findings, propose_claims
-from onecrew.foundry import FoundryHold, leftover_slot_ids, mint, require_minted, sanitize_stamps
+from onecrew.foundry import (
+    FoundryHold,
+    mint,
+    require_minted,
+    sanitize_stamps,
+    is_pack_slot_id,
+)
 from onecrew.cite_repair import run_cite_recheck_loop
 from onecrew.verify import apply_verify_gate, attach_cites_from_hits, cite_bag_from_rows
 from onecrew.pack import (
@@ -392,7 +398,7 @@ def _fringe_from_rows(miss_rows: list, used: set[str]) -> Finding | None:
             fid = "frame-miss" if "frame-cite" in used else "cite-miss"
             n = 2
             base = fid
-            while fid in used or fid in leftover_slot_ids():
+            while fid in used or is_pack_slot_id(fid):
                 fid = f"{base}-{n}"
                 n += 1
             return Finding(
@@ -413,7 +419,7 @@ def _fringe_from_rows(miss_rows: list, used: set[str]) -> Finding | None:
 
 def _named_grounded(findings: list) -> bool:
     rows = findings or []
-    if any(getattr(f, "id", "") in leftover_slot_ids() for f in rows):
+    if any(is_pack_slot_id(getattr(f, "id", "")) for f in rows):
         return False
     return any(
         getattr(f, "stamp", "") == "grounded"
@@ -707,7 +713,7 @@ def _research(
     elif fiction:
         findings = frame_findings(hit_rows, miss_rows, packet)
     elif foundry_rows and not any(
-        f.id in leftover_slot_ids() for f in foundry_rows if f.stamp == "grounded"
+        is_pack_slot_id(f.id) for f in foundry_rows if f.stamp == "grounded"
     ):
         findings = foundry_rows
     elif claimer_rows:
@@ -720,11 +726,11 @@ def _research(
         and not fiction
         and not (
             foundry_rows
-            and not any(f.id in leftover_slot_ids() for f in foundry_rows if f.stamp == "grounded")
+            and not any(is_pack_slot_id(f.id) for f in foundry_rows if f.stamp == "grounded")
         )
         and not claimer_rows
     )
-    findings = [row for row in findings if row.id not in leftover_slot_ids()]
+    findings = [row for row in findings if not is_pack_slot_id(row.id)]
     from onecrew.timeline import apply_timeline, empty_mint_hold_ok_to_clear, plan_timeline
 
     planned_timeline = plan_timeline(

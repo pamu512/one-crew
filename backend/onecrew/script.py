@@ -104,8 +104,10 @@ def _by_series(packet: Packet, *names: str) -> Finding | None:
     ids = set()
     for name in names:
         ids |= _SHORT_IDS.get(name, frozenset())
+    from onecrew.foundry import is_pack_slot_id
+
     for finding in receipt.findings:
-        if finding.id in _LEFTOVER_IDS:
+        if finding.id in _LEFTOVER_IDS or is_pack_slot_id(finding.id):
             continue
         if finding.series in wanted or finding.id in ids:
             return finding
@@ -127,10 +129,13 @@ def _named_prints(packet: Packet) -> list[Finding]:
     receipt = packet.receipt
     if not receipt:
         return []
+    from onecrew.foundry import is_pack_slot_id
+
     rows = [
         f
         for f in receipt.findings
         if f.id not in _LEFTOVER_IDS
+        and not is_pack_slot_id(f.id)
         and f.stamp == "grounded"
         and f.print not in {MISSING, "", None}
     ]
@@ -143,7 +148,9 @@ def _live_findings(packet: Packet) -> list[Finding]:
     receipt = packet.receipt
     if not receipt:
         return []
-    return [f for f in receipt.findings if f.id not in _LEFTOVER_IDS]
+    from onecrew.foundry import is_pack_slot_id
+
+    return [f for f in receipt.findings if f.id not in _LEFTOVER_IDS and not is_pack_slot_id(f.id)]
 
 
 def _cite(finding: Finding | None) -> str:
@@ -152,14 +159,18 @@ def _cite(finding: Finding | None) -> str:
 
 def _link_pack_findings(vo: str, fids: list[str], findings: list[Finding]) -> list[str]:
     """Attach stamped finding ids whose print is spoken. Do not invent a cite."""
-    from onecrew.foundry import complete_print, leftover_slot_ids
+    from onecrew.foundry import complete_print, is_pack_slot_id, leftover_slot_ids, official_gdp_url
     from onecrew.timeline import spoken_match
 
     leftover = leftover_slot_ids()
     spoken = {re.sub(r"[^\d.]+", "", n.replace("−", "-")) for n in pack_numbers(vo)}
-    out = list(fids)
+    out = [fid for fid in fids if not is_pack_slot_id(fid)]
     for finding in findings:
-        if finding.id in leftover or finding.id in out:
+        if is_pack_slot_id(finding.id) or finding.id in leftover or finding.id in out:
+            continue
+        if finding.series == "GDP" and finding.stamp == "grounded" and not official_gdp_url(
+            finding.parallel_url or ""
+        ):
             continue
         if finding.stamp == "timeline_event":
             if spoken_match(vo, finding):
@@ -1054,12 +1065,21 @@ def _strip_vo_chrome(text: str) -> tuple[str, list[str]]:
     return _tidy_vo(cleaned), ["leftover VO chrome stripped"]
 
 
+_EXCERPT_TOKEN = re.compile(r"excerpts\[\d+\]", re.I)
+_GDP_EQ_TRILLION = re.compile(r"\bGDP\s*=\s*\$?[\d,.]+\s*(?:trillion|tn)?", re.I)
+
+
 def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
     """Strip pack schema/slot cites and hold-meta. Keep real finding ids."""
+    from onecrew.foundry import is_pack_slot_id
+
     nits: list[str] = []
 
     def keep_or_drop(inner: str) -> str:
         token = (inner or "").strip()
+        if is_pack_slot_id(token) or _EXCERPT_TOKEN.fullmatch(token):
+            nits.append("pack slot token stripped from VO")
+            return ""
         if token in known:
             return f"[{token}]"
         if _is_schema_slot(token) or _FINDING_LIKE.match(token):
@@ -1087,6 +1107,12 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
         return ""
 
     cleaned = _RISK_TOPIC.sub(drop_topic, cleaned)
+    if _EXCERPT_TOKEN.search(cleaned):
+        cleaned = _EXCERPT_TOKEN.sub("", cleaned)
+        nits.append("pack slot token stripped from VO")
+    if _GDP_EQ_TRILLION.search(cleaned):
+        cleaned = _GDP_EQ_TRILLION.sub("", cleaned)
+        nits.append("junk GDP print stripped from VO")
     cleaned, meta_nits = _strip_hold_meta(cleaned)
     cleaned, chrome_nits = _strip_vo_chrome(cleaned)
     if not nits and not meta_nits and not chrome_nits:
@@ -1130,7 +1156,13 @@ def _vertex_keeps(
         return False
     if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
-    known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
+    from onecrew.foundry import is_pack_slot_id
+
+    known = {
+        f.id
+        for f in (packet.receipt.findings if packet.receipt else [])
+        if not is_pack_slot_id(f.id)
+    }
     cited = any(fid in known for u in units for fid in (u.get("finding_ids") or []))
     if cited or _vo_uses_pack(packet, spoken):
         return True
@@ -1206,14 +1238,24 @@ def _voice_stamped_marks(packet: Packet, units: list[dict]) -> list[dict]:
 
 
 def _stamped_named_series(packet: Packet) -> set[str]:
+    from onecrew.foundry import complete_print, is_pack_slot_id, official_gdp_url
+
     receipt = packet.receipt
     if not receipt:
         return set()
-    return {
-        f.series
-        for f in receipt.findings
-        if f.stamp == "grounded" and (f.print or "").strip() and f.print != MISSING
-    }
+    out: set[str] = set()
+    for finding in receipt.findings:
+        if finding.stamp != "grounded" or is_pack_slot_id(finding.id):
+            continue
+        if not (finding.print or "").strip() or finding.print == MISSING:
+            continue
+        if not complete_print(finding.print or ""):
+            continue
+        if finding.series == "GDP" and not official_gdp_url(finding.parallel_url or ""):
+            continue
+        if finding.series:
+            out.add(finding.series)
+    return out
 
 
 def _strip_unstamped_series_name(text: str, word: str) -> str:
@@ -1236,7 +1278,13 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
     if not held:
         units = _voice_stamped_marks(packet, units)
-    known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
+    from onecrew.foundry import is_pack_slot_id
+
+    known = {
+        f.id
+        for f in (packet.receipt.findings if packet.receipt else [])
+        if not is_pack_slot_id(f.id)
+    }
     spoken_all = _units_spoken(units)
     pack_grounded = _vo_uses_pack(packet, spoken_all) or any(
         fid in known for u in units for fid in (u.get("finding_ids") or [])

@@ -377,6 +377,74 @@ def test_claims_from_cites_fall_ces_not_unsigned_162k_and_gdp_bars() -> None:
     assert "162" not in (pay_f.print or "").replace(",", "")
 
 
+def test_forbidden_wrap_claimer_drops_excerpt_slot_gdp_and_trillion_without_official_cite() -> None:
+    """Claimer stays closed-series. excerpts[N] / $126 trillion without BEA/FRED is not GDP."""
+    from onecrew.claimer import findings_from_claims, propose_claims
+    from onecrew.foundry import is_pack_slot_id
+
+    scrape = "https://www.noahpinion.blog/p/compute-campus-scrape"
+    chrome = "excerpts[18]: GDP=$126 trillion. excerpts[19]: 0.6% of GDP."
+    bag = _bag(
+        excerpts=[(scrape, "scrape title", chrome)],
+        spine=chrome,
+        hit_urls=[scrape],
+    )
+
+    def junk_proposer(_bag, _packet=None):
+        return [
+            Claim(
+                series="GDP",
+                print="$126 trillion",
+                when="2025",
+                id="excerpts[18]",
+                cite_url=scrape,
+                claim_span=chrome,
+            ),
+            Claim(
+                series="GDP",
+                print="0.6%",
+                when="2025",
+                id="excerpts[19]",
+                cite_url=scrape,
+                claim_span=chrome,
+            ),
+        ]
+
+    claims = propose_claims(bag, proposer=junk_proposer)
+    assert not any(c.series == "GDP" for c in claims)
+    assert not any(is_pack_slot_id(c.id) for c in claims)
+    rows = findings_from_claims(
+        [
+            Claim(
+                series="GDP",
+                print="$126 trillion",
+                when="2025",
+                id="excerpts[18]",
+                cite_url=scrape,
+                claim_span=chrome,
+            )
+        ],
+        bag,
+    )
+    assert not any(f.series == "GDP" for f in rows)
+    assert not any(is_pack_slot_id(f.id) for f in rows)
+
+    official = findings_from_claims(
+        [
+            Claim(
+                series="GDP",
+                print="3.4 / 2.8",
+                when="Q2 2025",
+                id="gdp-2025-q2",
+                cite_url=BEA_2025,
+                claim_span=_GDP_34_28,
+            )
+        ],
+        _bag(excerpts=[(BEA_2025, "BEA GDP", _GDP_34_28)], hit_urls=[BEA_2025]),
+    )
+    assert any(f.series == "GDP" and "3.4" in (f.print or "") for f in official)
+
+
 def test_propose_claims_remaps_june_usrec_to_july_pipe_month() -> None:
     """Vertex-style mixed months remap when the payrolls month is 0 on the pipe."""
     from onecrew.claimer import propose_claims

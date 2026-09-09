@@ -156,12 +156,37 @@ def leftover_slot_ids() -> frozenset[str]:
     return _LEFTOVER_SLOT_IDS
 
 
+_EXCERPT_SLOT = re.compile(r"^excerpts\[\d+\]$", re.I)
+_TRILLION_PRINT = re.compile(r"\$?\s*[\d,.]+\s*trillion\b", re.I)
+_FRED_GDP = re.compile(r"(?:fred\.)?stlouisfed\.org/series/gdp", re.I)
+
+
+def is_excerpt_slot_id(fid: str) -> bool:
+    return bool(_EXCERPT_SLOT.fullmatch((fid or "").strip()))
+
+
+def is_pack_slot_id(fid: str) -> bool:
+    """Leftover 3-slot ids or pack excerpts[N] chrome. Not a legal finding id."""
+    raw = (fid or "").strip()
+    return raw in _LEFTOVER_SLOT_IDS or is_excerpt_slot_id(raw)
+
+
+def official_gdp_url(url: str) -> bool:
+    """BEA or FRED GDP series. News scrapes are not a GDP cite."""
+    low = (url or "").lower()
+    if "bea.gov" in low:
+        return True
+    return bool(_FRED_GDP.search(low))
+
+
 def complete_print(printed: str) -> bool:
-    """A series print, not a dangling `4,` fragment."""
+    """A series print, not a dangling `4,` fragment or trillion-scale fantasy."""
     raw = (printed or "").strip()
     if not raw or raw == MISSING:
         return False
     if raw.endswith(","):
+        return False
+    if _TRILLION_PRINT.search(raw):
         return False
     return bool(re.search(r"\d", raw))
 
@@ -211,6 +236,8 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
             finding.who_repeats_url = None
         if finding.vested_interest == MISSING:
             finding.vested_interest_url = None
+        if is_excerpt_slot_id(finding.id):
+            continue
         if finding.stamp == "grounded" and finding.id not in _LEFTOVER_SLOT_IDS:
             printed = finding.print or ""
             official = finding.series in {
@@ -225,6 +252,8 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
             if printed.endswith(","):
                 continue
             if official and (not complete_print(printed) or not (finding.parallel_url or "").strip()):
+                continue
+            if finding.series == "GDP" and not official_gdp_url(finding.parallel_url or ""):
                 continue
             if not official and not (finding.parallel_url or "").strip():
                 continue
@@ -1335,7 +1364,7 @@ def _url_fits_series(url: str, series: str, url_keys: tuple[str, ...]) -> bool:
     if series == "U-3":
         return _ces_capable_url(url)
     if series == "GDP":
-        return "bea.gov" in low
+        return official_gdp_url(url)
     if series == "LEI":
         if "empsit" in low or "bls.gov" in low:
             return False
@@ -1429,13 +1458,8 @@ def _cite_has_bars(cite: _Cite, printed: str) -> bool:
 
 
 def _pick_gdp_cite(table: list[_Cite], when: str, printed: str = "") -> _Cite | None:
-    ok = [row for row in table if "bea.gov" in row.url.lower() and not _broken_href(row.url)]
+    ok = [row for row in table if official_gdp_url(row.url) and not _broken_href(row.url)]
     if not ok:
-        for row in table:
-            if not _broken_href(row.url) and (_cite_has_bars(row, printed) or any(
-                "gdp" in (ex + row.title).lower() for ex in row.excerpts
-            )):
-                return row
         return None
     want = re.search(r"Q([1-4])\s+(\d{4})", when or "", re.I)
     stamped = [row for row in ok if _bea_vintage(row.url)]

@@ -419,6 +419,89 @@ def test_leftover_three_slot_illegal_when_spine_has_prints() -> None:
         require_minted(renamed, LIVE_SPINE)
 
 
+def test_forbidden_wrap_mint_gdp_from_excerpt_slots_or_trillion_without_official_cite() -> None:
+    """Never mint GDP from pack excerpts[N] chrome or $126 trillion without BEA/FRED."""
+    from onecrew.foundry import complete_print, is_pack_slot_id, mint, sanitize_stamps
+
+    assert complete_print("$126 trillion") is False
+    assert complete_print("126 trillion") is False
+    assert complete_print("0.5 / 2.1 / 1.5") is True
+    assert is_pack_slot_id("excerpts[18]")
+    assert is_pack_slot_id("excerpts[19]")
+    assert not is_pack_slot_id("gdp-2026-q2")
+
+    packet = Packet(
+        id="oc-dc-excerpt-gdp",
+        topic="Data centers are going to cause the next economic bubble",
+        hook="Data centers are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+    )
+    chrome = (
+        "excerpts[18]: GDP=$126 trillion. "
+        "excerpts[19]: data-center share 0.6% of GDP. "
+        "Bibliography scrape title: GDP boom."
+    )
+    scrape = "https://www.noahpinion.blog/p/compute-campus-scrape"
+    try:
+        rows = mint(
+            packet,
+            [_row(scrape, "scrape title", [chrome])],
+            [],
+            SimpleNamespace(results=[], errors=[]),
+            chrome,
+        )
+    except Exception:
+        rows = []
+    assert not any(f.series == "GDP" for f in rows)
+    assert not any(is_pack_slot_id(f.id) for f in rows)
+    assert not any("126" in (f.print or "") and "trillion" in (f.print or "").lower() for f in rows)
+
+    junk = [
+        Finding(
+            id="excerpts[18]",
+            claim="GDP=$126 trillion",
+            stamp="grounded",
+            series="GDP",
+            print="$126 trillion",
+            when="2025",
+            parallel_url=scrape,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="excerpts[19]",
+            claim="0.6% of GDP",
+            stamp="grounded",
+            series="GDP",
+            print="0.6%",
+            when="2025",
+            parallel_url=scrape,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="gdp-fantasy",
+            claim="GDP=$126 trillion",
+            stamp="grounded",
+            series="GDP",
+            print="$126 trillion",
+            when="2025",
+            parallel_url=BEA,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+    ]
+    kept = sanitize_stamps(junk)
+    assert not any(f.series == "GDP" for f in kept)
+    assert not any(is_pack_slot_id(f.id) for f in kept)
+
+
 def test_renamed_leftover_slots_cannot_wrap_datacenter_topic() -> None:
     """Forbidden wrap: renaming leftover slots to pass a non-recession live cut."""
     from onecrew.foundry import FoundryHold, leftover_three_slot, require_minted

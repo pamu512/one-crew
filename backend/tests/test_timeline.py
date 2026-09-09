@@ -693,3 +693,187 @@ def test_writer_and_board_strip_leftover_vo_chrome() -> None:
     assert "promise-january-2025" not in spoken
     cold = next(b for b in written.beats if b.id == "cold-open")
     assert "te-consortium-announced-2025-01" in cold.finding_ids
+
+
+INDUSTRIAL = "https://www.industrialinfo.com/cloud-vendor-lease-scrape"
+GUARDIAN_3TN = "https://www.theguardian.com/technology/2026/aug/campus-capex-3tn"
+REUTERS_LEASE = "https://www.reuters.com/technology/cloud-vendor-cancelled-leases-2026"
+OPENAI_GW = "https://openai.com/index/compute-campus-4-5gw"
+
+_CHAIN_VS_SCRAPE = (
+    "## Argument\n"
+    "chronological_event_chain:\n"
+    f"- A newspaper put campus capex at $3tn. High-confidence basis: {GUARDIAN_3TN}\n"
+    f"- A cloud vendor cancelled leases in August 2026. High-confidence basis: {REUTERS_LEASE}\n"
+    f"- A lab and a cloud vendor announced 4.5GW. High-confidence basis: {OPENAI_GW}\n"
+    "\n"
+    "## Sources\n"
+    f"- [gdp-february-2025] $3tn scrape title. source: {PBS}\n"
+    f"- Cloud vendor lease scrape title. source: {INDUSTRIAL}\n"
+    f"- Compute campus scrape title. source: {NOAH}\n"
+)
+
+
+def test_forbidden_wrap_chain_basis_url_wins_for_spoken_event() -> None:
+    """Spoken event stamps the Argument High-confidence basis URL, not a scrape host."""
+    from onecrew.timeline import plan_timeline
+
+    planned = plan_timeline(_CHAIN_VS_SCRAPE)
+    urls = {row.url for row in planned.mapping}
+    assert GUARDIAN_3TN in urls
+    assert REUTERS_LEASE in urls
+    assert OPENAI_GW in urls
+    assert PBS not in urls
+    assert INDUSTRIAL not in urls
+    assert NOAH not in urls
+    three = next(row for row in planned.mapping if "3tn" in row.thesis or "3 tn" in row.thesis.lower())
+    assert three.url == GUARDIAN_3TN
+    lease = next(row for row in planned.mapping if "cancelled leases" in row.thesis)
+    assert lease.url == REUTERS_LEASE
+    gw = next(row for row in planned.mapping if "4.5" in row.thesis)
+    assert gw.url == OPENAI_GW
+
+
+def test_forbidden_wrap_cite_repair_drops_excerpt_gdp_and_does_not_exhaust() -> None:
+    """Beats citing excerpts[N] GDP junk must attach te-* URLs, not burn the repair loop."""
+    from onecrew.foundry import is_pack_slot_id
+
+    packet = _packet(_CHAIN_VS_SCRAPE)
+    packet.receipt.hold_reason = "duplicate series; gdp bars mismatch uncited claim"
+    packet.receipt.findings = [
+        Finding(
+            id="excerpts[18]",
+            claim="GDP=$126 trillion",
+            stamp="grounded",
+            series="GDP",
+            print="$126 trillion",
+            when="2025",
+            parallel_url=NOAH,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="excerpts[19]",
+            claim="0.6% of GDP",
+            stamp="grounded",
+            series="GDP",
+            print="0.6%",
+            when="2025",
+            parallel_url=PBS,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+    ]
+    vos = {
+        "cold-open": "NARRATOR\nGDP=$126 trillion [excerpts[18]] A newspaper put campus capex at $3tn.",
+        "promise": "NARRATOR\nThe title stays a question. [excerpts[19]]",
+        "gdp": "NARRATOR\nA cloud vendor cancelled leases in August 2026.",
+        "labor": "NARRATOR\nA lab and a cloud vendor announced 4.5GW.",
+        "turn": "NARRATOR\n$3tn is the spoken capex print.",
+        "complication": "NARRATOR\nLease cancellations are not the same object as a boom.",
+        "receipt": "NARRATOR\nReceipt: the $3tn capex and the August 2026 cancellations.",
+        "close": "NARRATOR\nNear is not a switch.",
+    }
+    for beat in packet.beats:
+        beat.vo = vos[beat.id]
+        beat.finding_ids = ["excerpts[18]", "excerpts[19]"]
+
+    def _no_search(**_k):
+        raise AssertionError("chain already carries High-confidence basis URLs")
+
+    result = run_cite_recheck_loop(packet, search_fn=_no_search)
+    assert result.ok
+    assert packet.cite_recheck_attempts >= 1
+    assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
+    assert "cite-repair loop exhausted" not in (packet.receipt.hold_reason or "")
+    assert not any(is_pack_slot_id(f.id) for f in packet.receipt.findings)
+    assert not any(f.series == "GDP" for f in packet.receipt.findings)
+    spoken = "".join(b.vo for b in packet.beats)
+    assert "excerpts[18]" not in spoken
+    assert "excerpts[19]" not in spoken
+    assert "GDP=$126 trillion" not in spoken
+    tls = [f for f in packet.receipt.findings if f.stamp == "timeline_event"]
+    assert tls
+    assert {f.parallel_url for f in tls} >= {GUARDIAN_3TN, REUTERS_LEASE, OPENAI_GW}
+    assert PBS not in {f.parallel_url for f in tls}
+    assert INDUSTRIAL not in {f.parallel_url for f in tls}
+    sourced = [b for b in packet.beats if any(ch.isdigit() for ch in b.vo)]
+    for beat in sourced:
+        assert beat.finding_ids, f"{beat.id} shipped untagged factual VO"
+        assert not any(is_pack_slot_id(fid) for fid in beat.finding_ids)
+        assert any(
+            f.stamp == "timeline_event" for f in packet.receipt.findings if f.id in beat.finding_ids
+        )
+    if result.ok:
+        assert packet.receipt.disposition == "READY"
+
+
+def test_forbidden_wrap_writer_strips_excerpt_slot_tokens() -> None:
+    from onecrew.script import _assemble
+
+    finding = Finding(
+        id="te-newspaper-capex-2026-08",
+        claim="A newspaper put campus capex at $3tn.",
+        stamp="timeline_event",
+        title="timeline_event",
+        series="timeline_event",
+        print="A newspaper put campus capex at $3tn.",
+        when="August 2026",
+        parallel_url=GUARDIAN_3TN,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    packet = Packet(
+        id="oc-tl-excerpt-vo",
+        topic="Compute campuses are going to cause the next economic bubble",
+        hook="Compute campuses are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+        research_pack=_CHAIN_VS_SCRAPE,
+        receipt=Receipt(
+            packet_id="oc-tl-excerpt-vo",
+            written=False,
+            disposition="READY",
+            findings=[
+                finding,
+                Finding(
+                    id="excerpts[18]",
+                    claim="GDP=$126 trillion",
+                    stamp="grounded",
+                    series="GDP",
+                    print="$126 trillion",
+                    when="2025",
+                    parallel_url=NOAH,
+                    parallel_status="hit",
+                    note="Parallel URL on this row.",
+                ),
+            ],
+        ),
+    )
+    units = [
+        {
+            "id": "cold-open",
+            "vo": "GDP=$126 trillion [excerpts[18]] A newspaper put campus capex at $3tn.",
+            "eyes": "card",
+            "finding_ids": ["excerpts[18]"],
+        },
+        {"id": "promise", "vo": "The title stays a question.", "eyes": "pack", "finding_ids": []},
+        {"id": "gdp", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "labor", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "turn", "vo": "Hold on the cited print.", "eyes": "hold", "finding_ids": []},
+        {"id": "complication", "vo": "Those are not the same object.", "eyes": "gap", "finding_ids": []},
+        {"id": "receipt", "vo": "Receipt board: named series from the pack.", "eyes": "board", "finding_ids": []},
+        {"id": "close", "vo": "Near is not a switch.", "eyes": "close", "finding_ids": []},
+    ]
+    written = _assemble(packet, units)
+    spoken = written.script + "".join(f"{b.vo} {b.frame}" for b in written.beats)
+    assert "excerpts[18]" not in spoken
+    assert "GDP=$126 trillion" not in spoken
+    cold = next(b for b in written.beats if b.id == "cold-open")
+    assert "te-newspaper-capex-2026-08" in cold.finding_ids
+    assert "excerpts[18]" not in cold.finding_ids
