@@ -74,7 +74,7 @@ def _stamped_findings(packet: Packet) -> list[StampedFinding]:
                 print=_blank_stamp(finding.print),
                 when=(finding.when or "").strip(),
                 claim=(finding.claim or "").strip(),
-                title=(finding.title or "").strip(),
+                title=_blank_stamp(finding.title),
                 url=(finding.parallel_url or "").strip(),
                 note=(finding.note or "").strip(),
             )

@@ -268,7 +268,9 @@ def _apply_extract(findings: list, extracted: Any) -> list[Exclusion]:
         if finding and excerpts:
             # ponytail: first excerpt only. Gemini does not invent extract text.
             finding.note = f"{finding.note} Extract: {excerpts[0][:400]}".strip()
-            if title and (not finding.title or finding.title == MISSING):
+            from onecrew.script import is_generic_stamp_title
+
+            if title and (not finding.title or is_generic_stamp_title(finding.title)):
                 finding.title = title
     for err in getattr(extracted, "errors", None) or []:
         url = getattr(err, "url", None)

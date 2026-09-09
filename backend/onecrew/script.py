@@ -835,11 +835,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                     packet,
                 )
             ),
-            "eyes": (
-                "Dated first-trigger from the pack. Official series stay on later cards."
-                if trigger
-                else (_object_eyes(first) or smash)
-            ),
+            "eyes": trigger if trigger else (_object_eyes(first) or smash),
             "finding_ids": [first.id] if first else [],
         },
         {
@@ -1260,9 +1256,9 @@ _VO_CHROME = re.compile(
     re.I,
 )
 _TONE_CHROME = re.compile(
-    r"from the news desk\.|"
-    r"think past the headline\.|"
-    r"question the decision that put this on the air\.|"
+    r"from the news desk\.?|"
+    r"think past the headline\.?|"
+    r"question the decision that put this on the air\.?|"
     r"personal take:",
     re.I,
 )
@@ -1273,7 +1269,7 @@ _META_FRAME = re.compile(
     r"dated first-trigger from the pack\.?(?:\s+official series stay on later cards\.?)?",
     re.I,
 )
-_GENERIC_TITLE = frozenset({"timeline_event", "grounded", "mainstream", "fringe", ""})
+_GENERIC_TITLE = frozenset({"timeline_event", "grounded", "mainstream", "fringe", "missing", ""})
 
 
 def _strip_hold_meta(text: str) -> tuple[str, list[str]]:
@@ -1324,13 +1320,37 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
         note = _speech_norm(getattr(finding, "note", None) or "")
         if title in {printed, claim} or (note and title == note):
             continue
-        if body == title or (len(title) >= 16 and (title in body or body in title)):
+        if body == title or (len(title) >= 16 and title in body):
             if printed and printed not in title and printed in body:
                 continue
             if claim and claim not in title and claim in body:
                 continue
             return True
     return False
+
+
+def is_generic_stamp_title(title: str) -> bool:
+    return (title or "").strip().lower() in _GENERIC_TITLE
+
+
+def speak_stamp_fact(fids: list[str], findings: list[Finding]) -> str:
+    """Cite-faithful prose. Prefer claim/note over a bare print token."""
+    by_id = {f.id: f for f in findings}
+    for fid in fids:
+        finding = by_id.get(fid)
+        if finding is None:
+            continue
+        claim = (finding.claim or "").strip()
+        printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+        note = (finding.note or "").strip()
+        title = (finding.title or "").strip()
+        if claim and not is_generic_stamp_title(claim) and _speech_norm(claim) != _speech_norm(title):
+            return claim
+        if printed:
+            return printed
+        if note and not note.lower().startswith("timeline event"):
+            return note
+    return speak_stamps(fids, findings)
 
 
 def _strip_vo_chrome(text: str) -> tuple[str, list[str]]:
@@ -1618,17 +1638,16 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             fids, vo = _align_vo_to_stamps(vo, fids, rows)
             fids, eyes = _align_vo_to_stamps(eyes, fids, rows)
             cited = [row for row in rows if row.id in fids]
-            if (
-                is_title_read_vo(vo, cited)
-                or has_tone_chrome(vo)
-                or is_pack_chrome_vo(vo)
-                or not _vo_lines(vo).strip()
-            ):
+            if is_title_read_vo(vo, cited):
+                spoken = speak_stamp_fact(fids, rows)
+                if spoken:
+                    vo = spoken
+            elif has_tone_chrome(vo) or is_pack_chrome_vo(vo) or not _vo_lines(vo).strip():
                 spoken = speak_stamps(fids, rows)
                 if spoken:
                     vo = spoken
             if is_meta_frame(eyes):
-                eyes = speak_stamps(fids, rows) or eyes
+                eyes = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows) or eyes
             if not _vo_lines(vo).strip() and fids:
                 vo = speak_stamps(fids, rows)
         if not fids and not hole:

@@ -216,14 +216,12 @@ def test_title_read_vo_speaks_stamp_print_not_article_title() -> None:
             }
         ),
     )
-    turn = next((b for b in written.beats if b.id == "turn"), None)
+    turn = next(b for b in written.beats if b.id == "turn")
     spoken_all = "".join(f"{b.vo} {b.frame or ''}" for b in written.beats)
     assert HELIOS_TITLE not in spoken_all
-    if turn is None:
-        return
     assert HELIOS_TITLE not in turn.vo
-    if stamp.id in turn.finding_ids:
-        assert re.search(r"helios|paused campus leases|june 2026", turn.vo, re.I)
+    assert stamp.id in turn.finding_ids
+    assert re.search(r"paused campus leases|june 2026", turn.vo, re.I)
 
 
 def test_meta_frame_shows_named_print_not_chrome() -> None:
@@ -299,16 +297,13 @@ def test_repair_strips_tone_title_meta_or_holds() -> None:
     assert packet.cite_recheck_attempts >= 1
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
     spoken = "".join(f"{b.vo} {b.frame or ''}" for b in packet.beats)
-    if packet.receipt and packet.receipt.disposition == "READY":
-        assert not re.search(_TONE_CHROME, spoken, re.I)
-        assert HELIOS_TITLE not in spoken
-        assert not re.search(_META_FRAME, spoken, re.I)
-        assert result.ok
-    else:
-        reason = (packet.receipt.hold_reason or "").lower() if packet.receipt else ""
-        assert packet.status == "hold"
-        assert "cite-faithfulness" in reason or "empty beat" in reason
-        assert "cite-repair loop exhausted" not in reason or packet.cite_recheck_attempts > 3
+    assert result.ok
+    assert packet.receipt is not None
+    assert packet.receipt.disposition == "READY"
+    assert not re.search(_TONE_CHROME, spoken, re.I)
+    assert HELIOS_TITLE not in spoken
+    assert not re.search(_META_FRAME, spoken, re.I)
+    assert re.search(r"paused campus leases|june 2026", spoken, re.I)
 
 
 def test_ready_cannot_keep_recut_cite_faithfulness_smell() -> None:
@@ -335,12 +330,9 @@ def test_ready_cannot_keep_recut_cite_faithfulness_smell() -> None:
         ),
         parallel_already=1,
     )
-    if loop.disposition == "READY":
-        assert loop.grade.vote == "ship"
-        assert "cite-faithfulness" not in (loop.grade.recut_detail or "").lower()
-    else:
-        assert "cite-faithfulness" in (loop.hold_reason or "").lower()
-        assert packet.receipt is None or packet.receipt.disposition == "HOLD"
+    assert loop.disposition == "READY"
+    assert loop.grade.vote == "ship"
+    assert "cite-faithfulness" not in (loop.grade.recut_detail or "").lower()
 
 
 def test_room_loop_holds_unclean_tone_title_meta() -> None:
@@ -367,6 +359,55 @@ def test_room_loop_holds_unclean_tone_title_meta() -> None:
     )
     assert loop.disposition == "HOLD"
     assert "cite-faithfulness" in (loop.hold_reason or "").lower()
+
+
+def test_extract_overwrites_series_token_title() -> None:
+    """Parallel article title must replace the timeline_event series token."""
+    from onecrew.agent.shift import _apply_extract
+
+    stamp = _helios_stamp()
+    stamp.title = "timeline_event"
+    extracted = SimpleNamespace(
+        results=[
+            SimpleNamespace(
+                url=HELIOS_WIRE,
+                title=HELIOS_TITLE,
+                excerpts=["Helios paused campus leases in June 2026."],
+            )
+        ],
+        errors=[],
+    )
+    _apply_extract([stamp], extracted)
+    assert stamp.title == HELIOS_TITLE
+
+
+def test_faithful_claim_is_not_title_read() -> None:
+    from onecrew.script import is_title_read_vo
+
+    stamp = _finding(
+        fid="te-helios-paused-2026-06",
+        claim="Helios paused campus leases in June 2026.",
+        url=HELIOS_WIRE,
+        title="Helios paused campus leases in June 2026 – Outlook 2026 – Analysis",
+    )
+    assert is_title_read_vo(stamp.claim, [stamp]) is False
+    assert is_title_read_vo(stamp.title, [stamp]) is True
+
+
+def test_repair_does_not_undo_named_entity_align() -> None:
+    """Tone strip must not restore a pre-align VO that names an uncovered org."""
+    cover = _meridian_survey()
+    packet = _packet(_pack((cover.claim, MERIDIAN_DESK)), [cover])
+    packet.beats[4].vo = (
+        "NARRATOR\nQuestion the decision that put this on the air. "
+        "Meridian Desk says Helios paused campus leases."
+    )
+    packet.beats[4].finding_ids = [cover.id]
+    run_cite_recheck_loop(packet, search_fn=_no_search)
+    turn = next((b for b in packet.beats if b.id == "turn"), None)
+    spoken = turn.vo if turn is not None else ""
+    assert not re.search(r"helios", spoken, re.I)
+    assert not re.search(_TONE_CHROME, spoken, re.I)
 
 
 def test_production_grep_stays_clear_of_fixtures_and_live_topic() -> None:

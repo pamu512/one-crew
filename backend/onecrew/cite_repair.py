@@ -830,6 +830,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         is_meta_frame,
         is_pack_chrome_vo,
         is_title_read_vo,
+        speak_stamp_fact,
         speak_stamps,
     )
 
@@ -840,23 +841,17 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
-        vo = _vo_body(beat)
+        vo = _vo_lines(beat.vo)
         keep, new_vo = _align_vo_to_stamps(vo, list(beat.finding_ids), list(receipt.findings))
         keep, new_frame = _align_vo_to_stamps(beat.frame or "", keep, list(receipt.findings))
-        raw_vo, _ = _strip_tone_chrome(_vo_lines(beat.vo))
-        if raw_vo:
-            new_vo = raw_vo
+        new_vo, _ = _strip_tone_chrome(new_vo)
         cited = [f for f in receipt.findings if f.id in keep]
-        if (
-            is_title_read_vo(new_vo, cited)
-            or has_tone_chrome(new_vo)
-            or is_pack_chrome_vo(new_vo)
-            or not (new_vo or "").strip()
-        ):
-            spoken = speak_stamps(keep, list(receipt.findings))
-            new_vo = spoken
+        if is_title_read_vo(new_vo, cited):
+            new_vo = speak_stamp_fact(keep, list(receipt.findings))
+        elif has_tone_chrome(new_vo) or is_pack_chrome_vo(new_vo) or not (new_vo or "").strip():
+            new_vo = speak_stamps(keep, list(receipt.findings))
         if is_pack_chrome_vo(new_frame) or is_meta_frame(new_frame):
-            new_frame = speak_stamps(keep, list(receipt.findings)) or ""
+            new_frame = speak_stamp_fact(keep, list(receipt.findings)) or ""
         beat.finding_ids = keep
         if new_vo != vo:
             beat.vo = f"NARRATOR\n{new_vo}" if (beat.vo or "").startswith("NARRATOR") else new_vo
