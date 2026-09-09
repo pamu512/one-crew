@@ -1816,9 +1816,9 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
         for f in findings
     ):
         return False
-    if _is_site_name_only(vo) or _has_publisher_pipe(vo) or _is_headline_shaped_vo(vo):
-        return True
-    if findings and not covered:
+    if not covered and (
+        _is_site_name_only(vo) or _has_publisher_pipe(vo) or _is_headline_shaped_vo(vo)
+    ):
         return True
     if _is_catalog_or_series_name(vo):
         return True
@@ -1839,8 +1839,7 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
             or (title_core and core == title_core)
             or (len(title) >= 16 and title in body)
             or (len(title_core) >= 16 and title_core in core)
-            or _title_near(vo, getattr(finding, "title", None) or "")
-            or (title_core and core and (core in title_core or title_core in core))
+            or (not prose and _title_near(vo, getattr(finding, "title", None) or ""))
         )
         if title_hit:
             if printed and printed not in title and printed in body:
@@ -2610,9 +2609,11 @@ def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: li
             continue
         if shown == title or title in shown or shown in title or _title_near(raw, getattr(finding, "title", None) or ""):
             return True
-    if printed_tok and _speech_norm(printed_tok) not in shown:
-        return True
-    if _looks_like_headline(raw) and not is_numeric_print(raw):
+    if printed_tok and _speech_norm(printed_tok) not in shown and (
+        _looks_like_headline(raw)
+        or _is_site_name_only(raw)
+        or _is_headline_shaped_vo(raw)
+    ):
         return True
     return False
 

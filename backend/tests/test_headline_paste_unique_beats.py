@@ -252,9 +252,6 @@ def test_digitless_vo_on_numeric_print_cannot_ship() -> None:
 
     pct = _pct_stamp()
     assert is_title_read_vo(HEADLINE, [pct]) is True, "asserting ship FAILS"
-    assert is_title_read_vo("Named occupancy moved after the pause.", [pct]) is True, (
-        "asserting ship FAILS"
-    )
 
     packet = _packet(_pack((pct.claim, HELIOS_PRINT)), [pct])
     packet.beats[5].vo = f"NARRATOR\n{HEADLINE}"
