@@ -40,6 +40,7 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
         key = True if short else (last_scene is None or beat.scene != last_scene or shot_no == 1)
         last_scene = beat.scene
         picture = _shot_line(beat, rows, packet)
+        on_screen = _mute_on_screen(beat, rows)
         shots.append(
             ShotFrame(
                 id=f"shot-{shot_no:03d}-{beat.id}",
@@ -57,6 +58,7 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
                 footage_url=None,
                 footage_title=MISSING,
                 kind=_shot_kind(picture),
+                on_screen=on_screen,
             )
         )
     return shots
@@ -67,6 +69,48 @@ def _pack_blob(packet: Packet) -> str:
     if packet.receipt:
         parts.extend(f.claim for f in packet.receipt.findings)
     return " ".join(parts).lower()
+
+
+def _mute_on_screen(beat: ScriptBeat, rows: list[Finding]) -> str:
+    """Stamp print on the frame/on_screen. Shot ACTION chrome is not the mute-test."""
+    from onecrew.script import is_thin_frame, speak_stamp_fact, speak_stamps
+
+    printed = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(list(beat.finding_ids), rows)
+    shown = (beat.frame or "").strip()
+    if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
+        beat.frame = printed
+        return printed
+    return shown
+
+
+def mute_test_shows_stamp(shot: ShotFrame, findings: list[Finding] | None = None, beat: ScriptBeat | None = None) -> bool:
+    """Mute-test: cited print is on on_screen/frame. ACTION shot chrome alone does not pass."""
+    from onecrew.script import _YEAR_TOK, _speech_norm, pack_numbers, speak_stamp_fact, speak_stamps
+
+    rows = list(findings or [])
+    fids = list(beat.finding_ids) if beat is not None else [f.id for f in rows]
+    printed = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
+    if not printed:
+        return False
+    shown = " ".join(
+        part
+        for part in (
+            getattr(shot, "on_screen", None) or "",
+            (beat.frame if beat is not None else "") or "",
+        )
+        if part
+    )
+    if not shown.strip():
+        return False
+    if _speech_norm(printed) in _speech_norm(shown):
+        return True
+    nums = [
+        re.sub(r"[^\d.]+", "", n.replace("−", "-"))
+        for n in pack_numbers(printed)
+        if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
+    ]
+    blob = _speech_norm(shown)
+    return bool(nums) and all(n in blob for n in nums if n)
 
 
 def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
@@ -337,6 +381,9 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
 
 def write_board(packet: Packet, rails: Rails) -> list[ShotFrame]:
     """Shot list, then prefer sourced footage, then Imagen only on misses."""
+    from onecrew.script import sanitize_for_ship
+
+    sanitize_for_ship(packet)
     shots = write_shot_list(packet)
     if not shots:
         return []
