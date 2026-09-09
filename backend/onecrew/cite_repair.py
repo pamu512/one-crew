@@ -397,6 +397,14 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
             if f"[{finding.id}]" not in beat.vo:
                 beat.vo = f"{beat.vo} [{finding.id}]"
             attached.append(finding.id)
+        from onecrew.script import _align_vo_to_stamps
+
+        keep, new_vo = _align_vo_to_stamps(vo, keep, list(receipt.findings))
+        if new_vo != vo:
+            beat.vo = f"NARRATOR\n{new_vo}" if (beat.vo or "").startswith("NARRATOR") else new_vo
+            for fid in list(keep):
+                if f"[{fid}]" not in beat.vo:
+                    beat.vo = f"{beat.vo} [{fid}]"
         beat.finding_ids = keep
     return attached
 

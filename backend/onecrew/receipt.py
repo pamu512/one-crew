@@ -158,9 +158,20 @@ def validate_ready_receipt(
     from onecrew.cut import event_cap
 
     if len(receipt.findings) > event_cap(cut, platform):  # type: ignore[arg-type]
-        raise ReceiptInvalidError(
-            "A Stories board is not a documentary board; a Reels board is not a YouTube long-form board"
-        )
+        surface = (platform or "").strip()
+        short = (cut or "") in {"tiktok-length", "shorts"}
+        stories = surface in {
+            "instagram_stories",
+            "instagram_reels",
+            "facebook_reels",
+            "tiktok",
+            "youtube_shorts",
+            "threads",
+        }
+        if stories or short:
+            raise ReceiptInvalidError(
+                "A Stories board is not a documentary board; a Reels board is not a YouTube long-form board"
+            )
 
 
 def credit_hold_receipt(packet_id: str) -> Receipt:

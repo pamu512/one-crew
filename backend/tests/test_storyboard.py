@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 
 from onecrew.agent.shift import _board
@@ -160,3 +161,76 @@ def test_storyboard_is_cut_from_seed_vo() -> None:
     assert "photoreal" not in board
     assert "tanker-lane" not in {f.id for f in packet.frames}
     assert len(packet.frames) == 8
+    board = " ".join(f"{f.shot} {f.line or ''}" for f in packet.frames)
+    assert not re.search(r"\bStories\b|\bReels\b", board)
+
+
+def test_youtube_episode_board_is_not_stories_reels() -> None:
+    """youtube + one_time_short_episode must not emit Stories/Reels chrome or that ReceiptInvalidError."""
+    import re
+
+    from onecrew.board import write_shot_list
+    from onecrew.models import Finding, Packet, Receipt
+    from onecrew.receipt import write_receipt
+    from onecrew.script import _assemble
+
+    miss = Finding(
+        id="fringe-miss",
+        claim="A fringe claim about hidden offtake contracts.",
+        stamp="fringe",
+        parallel_status="miss",
+        note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+    )
+    stamps = [
+        Finding(
+            id=f"te-campus-event-{i:02d}",
+            claim=f"A cited campus event {i} stayed on the card.",
+            stamp="timeline_event",
+            title="timeline_event",
+            series="timeline_event",
+            print=f"A cited campus event {i} stayed on the card.",
+            when="August 2026",
+            parallel_url=f"https://www.example.com/campus-event-{i:02d}",
+            parallel_status="hit",
+            note="Timeline event. Parallel URL on this row.",
+        )
+        for i in range(17)
+    ]
+    packet = Packet(
+        id="oc-yt-episode-board",
+        topic="Compute campuses are going to cause the next economic bubble",
+        hook="Compute campuses are going to cause the next economic bubble",
+        script="placeholder",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+        research_pack="Cited campus events from Parallel hits.",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="READY",
+        findings=stamps + [miss],
+    )
+    write_receipt(packet, packet.receipt)
+    units = [
+        {"id": "cold-open", "vo": stamps[0].claim, "eyes": "card", "finding_ids": [stamps[0].id]},
+        {"id": "promise", "vo": "The title stays a question.", "eyes": "pack", "finding_ids": []},
+        {"id": "gdp", "vo": stamps[1].claim, "eyes": "card", "finding_ids": [stamps[1].id]},
+        {"id": "labor", "vo": stamps[2].claim, "eyes": "card", "finding_ids": [stamps[2].id]},
+        {"id": "turn", "vo": "Hold on the cited print.", "eyes": "hold", "finding_ids": []},
+        {"id": "complication", "vo": "Those are not the same object.", "eyes": "gap", "finding_ids": []},
+        {"id": "receipt", "vo": "Receipt board: cited events from the pack.", "eyes": "board", "finding_ids": []},
+        {"id": "close", "vo": "Near is not a switch.", "eyes": "close", "finding_ids": []},
+    ]
+    written = _assemble(packet, units)
+    shots = write_shot_list(written)
+    assert shots
+    blob = " ".join(f"{s.shot} {s.line or ''} {s.kind or ''}" for s in shots)
+    assert not re.search(r"\bStories\b|\bReels\b", blob)
+    assert written.cut == "one_time_short_episode"
+    assert written.platform == "youtube"
+    assert len(written.receipt.findings) > 8

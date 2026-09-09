@@ -1607,3 +1607,449 @@ def test_writer_structural_hold_no_blank_shell_when_unstamped() -> None:
         assert phrase not in spoken, phrase
     assert "Go to content" not in spoken
     assert "NARRATOR" not in spoken
+
+
+# Live packet oc-data-centers-are-going-to-cause-the--65e96ad6 after #51:
+# 17 timeline_event hit stamps, Room HOLD cite-faithfulness.
+# Beat5 VO names Microsoft shelving leases but finding_ids → PBS inflation piece.
+# Beat6 OpenAI+Oracle 4.5GW → digital-infrastructure.com survey stamp.
+MSFT_CANCEL = "https://www.microsoft.com/en-us/investor/lease-cancel"
+DIGITAL_INFRA = "https://www.digital-infrastructure.com/insights/campus-survey-2026"
+
+
+def _pbs_inflation_finding() -> Finding:
+    return Finding(
+        id="te-massive-data-center-buildout",
+        claim="A massive data-center buildout is already stoking inflation.",
+        stamp="timeline_event",
+        title="PBS NewsHour inflation piece",
+        series="timeline_event",
+        print="Massive data-center buildout is already stoking inflation.",
+        when="August 2026",
+        parallel_url=PBS,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+
+
+def _msft_cancel_finding() -> Finding:
+    return Finding(
+        id="te-microsoft-cancelled-leases-2026-08",
+        claim="Microsoft cancelled data-center leases in August 2026.",
+        stamp="timeline_event",
+        title="Microsoft cancelled data-center leases",
+        series="timeline_event",
+        print="Microsoft cancelled data-center leases in August 2026.",
+        when="August 2026",
+        parallel_url=REUTERS_MSFT,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+
+
+def _openai_oracle_finding() -> Finding:
+    return Finding(
+        id="te-openai-oracle-4-5gw",
+        claim="OpenAI and Oracle announced a 4.5GW compute campus.",
+        stamp="timeline_event",
+        title="OpenAI and Oracle 4.5GW campus",
+        series="timeline_event",
+        print="OpenAI and Oracle announced a 4.5GW compute campus.",
+        when="January 2025",
+        parallel_url=OPENAI_ORACLE,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+
+
+def _digital_infra_survey_finding() -> Finding:
+    return Finding(
+        id="te-digital-infrastructure-survey",
+        claim="A digital-infrastructure survey tracked campus power demand.",
+        stamp="timeline_event",
+        title="Campus power survey",
+        series="timeline_event",
+        print="A digital-infrastructure survey tracked campus power demand.",
+        when="2026",
+        parallel_url=DIGITAL_INFRA,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+
+
+def _eight_units(overrides: dict[str, dict]) -> list[dict]:
+    units = [
+        {"id": "cold-open", "vo": "The title stays a question.", "eyes": "card", "finding_ids": []},
+        {"id": "promise", "vo": "The title stays a question.", "eyes": "pack", "finding_ids": []},
+        {"id": "gdp", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "labor", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "turn", "vo": "Hold on the cited print.", "eyes": "hold", "finding_ids": []},
+        {"id": "complication", "vo": "Those are not the same object.", "eyes": "gap", "finding_ids": []},
+        {"id": "receipt", "vo": "Receipt board: cited events from the pack.", "eyes": "board", "finding_ids": []},
+        {"id": "close", "vo": "Near is not a switch.", "eyes": "close", "finding_ids": []},
+    ]
+    by_id = {u["id"]: u for u in units}
+    for bid, patch in overrides.items():
+        by_id[bid].update(patch)
+    return units
+
+
+def test_microsoft_lease_vo_cannot_attach_pbs_when_reuters_cancel_exists() -> None:
+    """Microsoft-lease VO attaches reuters/microsoft-cancel, never a PBS inflation stamp."""
+    from onecrew.script import _assemble
+
+    pbs = _pbs_inflation_finding()
+    reuters = _msft_cancel_finding()
+    packet = _packet(
+        "## Argument\n"
+        "Data centers are going to cause the next economic bubble.\n"
+        "\n"
+        "## Sources\n"
+        f"- Microsoft cancelled data-center leases. source: {REUTERS_MSFT}\n"
+        f"- Massive data-center buildout stoking inflation. source: {PBS}\n"
+    )
+    packet.receipt.findings = [pbs, reuters]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=reuters.claim, url=REUTERS_MSFT, finding_id=reuters.id),
+        TimelineMapRow(thesis=pbs.claim, url=PBS, finding_id=pbs.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "turn": {
+                    "vo": "Microsoft is shelving data-center leases after demand slipped.",
+                    "eyes": "lease",
+                    "finding_ids": [pbs.id],
+                }
+            }
+        ),
+    )
+    lease = next(b for b in written.beats if b.id == "turn")
+    cited = [f for f in written.receipt.findings if f.id in lease.finding_ids]
+    assert cited, "Microsoft-lease VO must cite the cancel stamp, not stay empty"
+    assert all((f.parallel_url or "") in {REUTERS_MSFT, MSFT_CANCEL} for f in cited)
+    assert pbs.id not in lease.finding_ids
+    assert PBS not in {(f.parallel_url or "") for f in cited}
+
+
+def test_microsoft_lease_vo_drops_claim_when_no_cancel_hit() -> None:
+    """No reuters/microsoft-cancel stamp: drop the named claim. Do not soft-attach PBS."""
+    from onecrew.script import _assemble
+
+    pbs = _pbs_inflation_finding()
+    packet = _packet(
+        "## Argument\n"
+        "Data centers are going to cause the next economic bubble.\n"
+        "\n"
+        "## Sources\n"
+        f"- Massive data-center buildout stoking inflation. source: {PBS}\n"
+    )
+    packet.receipt.findings = [pbs]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=pbs.claim, url=PBS, finding_id=pbs.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "turn": {
+                    "vo": "Microsoft is shelving data-center leases after demand slipped.",
+                    "eyes": "lease",
+                    "finding_ids": [pbs.id],
+                }
+            }
+        ),
+    )
+    lease = next(b for b in written.beats if b.id == "turn")
+    cited = [f for f in written.receipt.findings if f.id in lease.finding_ids]
+    assert pbs.id not in lease.finding_ids
+    assert all((f.parallel_url or "") != PBS for f in cited)
+    spoken = lease.vo
+    assert not re.search(r"microsoft", spoken, re.I)
+    assert not re.search(r"shelv(?:ing|ed)|cancell?ed leases", spoken, re.I)
+
+
+def test_openai_oracle_vo_cannot_attach_unrelated_survey_url() -> None:
+    """OpenAI+Oracle 4.5GW VO cannot take a digital-infrastructure.com survey as cover."""
+    from onecrew.script import _assemble
+
+    survey = _digital_infra_survey_finding()
+    campus = _openai_oracle_finding()
+    packet = _packet(
+        "## Argument\n"
+        "Data centers are going to cause the next economic bubble.\n"
+        "\n"
+        "## Sources\n"
+        f"- OpenAI and Oracle announced 4.5GW. source: {OPENAI_ORACLE}\n"
+        f"- Campus power survey. source: {DIGITAL_INFRA}\n"
+    )
+    packet.receipt.findings = [survey, campus]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=campus.claim, url=OPENAI_ORACLE, finding_id=campus.id),
+        TimelineMapRow(thesis=survey.claim, url=DIGITAL_INFRA, finding_id=survey.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "labor": {
+                    "vo": "OpenAI and Oracle announced 4.5GW.",
+                    "eyes": "campus",
+                    "finding_ids": [survey.id],
+                }
+            }
+        ),
+    )
+    gw = next(b for b in written.beats if b.id == "labor")
+    cited = [f for f in written.receipt.findings if f.id in gw.finding_ids]
+    assert cited, "OpenAI+Oracle VO must cite the campus stamp, not stay empty"
+    assert all((f.parallel_url or "") == OPENAI_ORACLE for f in cited)
+    assert survey.id not in gw.finding_ids
+    assert DIGITAL_INFRA not in {(f.parallel_url or "") for f in cited}
+
+
+def test_openai_oracle_vo_drops_claim_when_only_survey_exists() -> None:
+    """No openai.com/reuters campus stamp: drop the named claim. Do not attach the survey."""
+    from onecrew.script import _assemble
+
+    survey = _digital_infra_survey_finding()
+    packet = _packet(
+        "## Argument\n"
+        "Data centers are going to cause the next economic bubble.\n"
+        "\n"
+        "## Sources\n"
+        f"- Campus power survey. source: {DIGITAL_INFRA}\n"
+    )
+    packet.receipt.findings = [survey]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=survey.claim, url=DIGITAL_INFRA, finding_id=survey.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "labor": {
+                    "vo": "OpenAI and Oracle announced 4.5GW.",
+                    "eyes": "campus",
+                    "finding_ids": [survey.id],
+                }
+            }
+        ),
+    )
+    gw = next(b for b in written.beats if b.id == "labor")
+    cited = [f for f in written.receipt.findings if f.id in gw.finding_ids]
+    assert survey.id not in gw.finding_ids
+    assert all((f.parallel_url or "") != DIGITAL_INFRA for f in cited)
+    spoken = gw.vo
+    assert not re.search(r"openai", spoken, re.I)
+    assert not re.search(r"oracle", spoken, re.I)
+
+
+def test_named_host_vo_cannot_soft_attach_unrelated_stamp_any_topic() -> None:
+    """Same gate on a non-campus topic: Meridian Bank VO cannot take a CPI survey stamp."""
+    from onecrew.script import _assemble
+    from onecrew.timeline import stamp_covers_vo
+
+    wire = "https://www.bond-wire.test/2026/03/meridian-paused-issuance"
+    survey = "https://www.macro-survey.test/cpi-print-2026"
+    vo = "Meridian Bank paused bond issuance in March 2026."
+    match = Finding(
+        id="te-meridian-paused-2026-03",
+        claim="Meridian Bank paused bond issuance in March 2026.",
+        stamp="timeline_event",
+        title="Meridian Bank paused bond issuance",
+        series="timeline_event",
+        print="Meridian Bank paused bond issuance in March 2026.",
+        when="March 2026",
+        parallel_url=wire,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    cover = Finding(
+        id="te-cpi-survey-2026",
+        claim="A CPI survey printed a hotter core in March 2026.",
+        stamp="timeline_event",
+        title="CPI survey",
+        series="timeline_event",
+        print="A CPI survey printed a hotter core in March 2026.",
+        when="March 2026",
+        parallel_url=survey,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    assert stamp_covers_vo(vo, match) is True
+    assert stamp_covers_vo(vo, cover) is False
+    packet = _packet(
+        "## Argument\n"
+        "Named-host events need matching stamps.\n"
+        "\n"
+        "## Sources\n"
+        f"- Meridian Bank paused issuance. source: {wire}\n"
+        f"- CPI survey. source: {survey}\n"
+    )
+    packet.receipt.findings = [cover, match]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=match.claim, url=wire, finding_id=match.id),
+        TimelineMapRow(thesis=cover.claim, url=survey, finding_id=cover.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    written = _assemble(packet, _eight_units({"turn": {"vo": vo, "eyes": "card", "finding_ids": [cover.id]}}))
+    beat = next(b for b in written.beats if b.id == "turn")
+    cited = [f for f in written.receipt.findings if f.id in beat.finding_ids]
+    assert cited
+    assert all((f.parallel_url or "") == wire for f in cited)
+    assert cover.id not in beat.finding_ids
+
+
+def test_named_entity_vo_cannot_soft_attach_unrelated_stamp() -> None:
+    """Generic fixture: named-entity VO cannot take a weakly overlapping survey stamp."""
+    from onecrew.script import _assemble
+    from onecrew.timeline import stamp_covers_vo, vo_proper_names
+
+    wire = "https://www.wire-desk.test/2026/08/helios-shelved-leases"
+    survey = "https://www.survey-host.test/insights/campus-power-2026"
+    vo = "Helios is shelving campus leases after demand slipped."
+    assert "helios" in vo_proper_names(vo)
+    match = Finding(
+        id="te-helios-shelved-2026-08",
+        claim="Helios shelved campus leases in August 2026.",
+        stamp="timeline_event",
+        title="Helios shelved campus leases",
+        series="timeline_event",
+        print="Helios shelved campus leases in August 2026.",
+        when="August 2026",
+        parallel_url=wire,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    cover = Finding(
+        id="te-survey-campus-power",
+        claim="A campus-power survey tracked buildout and inflation.",
+        stamp="timeline_event",
+        title="Campus power survey",
+        series="timeline_event",
+        print="A campus-power survey tracked buildout and inflation.",
+        when="2026",
+        parallel_url=survey,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    assert stamp_covers_vo(vo, match) is True
+    assert stamp_covers_vo(vo, cover) is False
+    packet = _packet(
+        "## Argument\n"
+        "Named-host events need matching stamps.\n"
+        "\n"
+        "## Sources\n"
+        f"- Helios shelved campus leases. source: {wire}\n"
+        f"- Campus power survey. source: {survey}\n"
+    )
+    packet.receipt.findings = [cover, match]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=match.claim, url=wire, finding_id=match.id),
+        TimelineMapRow(thesis=cover.claim, url=survey, finding_id=cover.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    written = _assemble(packet, _eight_units({"turn": {"vo": vo, "eyes": "card", "finding_ids": [cover.id]}}))
+    beat = next(b for b in written.beats if b.id == "turn")
+    cited = [f for f in written.receipt.findings if f.id in beat.finding_ids]
+    assert cited
+    assert all((f.parallel_url or "") == wire for f in cited)
+    assert cover.id not in beat.finding_ids
+
+
+def test_named_entity_vo_drops_claim_without_matching_stamp() -> None:
+    """Generic fixture: no matching stamp → drop the named claim, do not soft-attach."""
+    from onecrew.script import _assemble
+
+    survey = "https://www.survey-host.test/insights/campus-power-2026"
+    cover = Finding(
+        id="te-survey-campus-power",
+        claim="A campus-power survey tracked buildout and inflation.",
+        stamp="timeline_event",
+        title="Campus power survey",
+        series="timeline_event",
+        print="A campus-power survey tracked buildout and inflation.",
+        when="2026",
+        parallel_url=survey,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    packet = _packet(
+        "## Argument\n"
+        "Named-host events need matching stamps.\n"
+        "\n"
+        "## Sources\n"
+        f"- Campus power survey. source: {survey}\n"
+    )
+    packet.receipt.findings = [cover]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=cover.claim, url=survey, finding_id=cover.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "turn": {
+                    "vo": "Helios is shelving campus leases after demand slipped.",
+                    "eyes": "card",
+                    "finding_ids": [cover.id],
+                }
+            }
+        ),
+    )
+    beat = next(b for b in written.beats if b.id == "turn")
+    assert cover.id not in beat.finding_ids
+    assert not re.search(r"helios", beat.vo, re.I)
+    assert not re.search(r"shelv(?:ing|ed)|cancell?ed leases", beat.vo, re.I)
+
+
+def test_cite_repair_microsoft_lease_cannot_soft_attach_pbs() -> None:
+    """Cite-repair must not cover Microsoft-lease VO with a PBS inflation stamp."""
+    pbs = _pbs_inflation_finding()
+    reuters = _msft_cancel_finding()
+    packet = _packet(
+        "## Argument\n"
+        "Data centers are going to cause the next economic bubble.\n"
+        "\n"
+        "## Sources\n"
+        f"- Microsoft cancelled data-center leases. source: {REUTERS_MSFT}\n"
+        f"- Massive data-center buildout stoking inflation. source: {PBS}\n"
+    )
+    packet.receipt.findings = [pbs, reuters]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis=reuters.claim, url=REUTERS_MSFT, finding_id=reuters.id),
+        TimelineMapRow(thesis=pbs.claim, url=PBS, finding_id=pbs.id),
+    ]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    for beat in packet.beats:
+        beat.vo = "NARRATOR\nThe named print stays on the card."
+        beat.finding_ids = []
+    packet.beats[4].vo = "NARRATOR\nMicrosoft is shelving data-center leases after demand slipped."
+    packet.beats[4].finding_ids = [pbs.id]
+
+    def _no_search(**_k):
+        raise AssertionError("stamps already exist; do not soft-cover with a new survey")
+
+    run_cite_recheck_loop(packet, search_fn=_no_search)
+    lease = next(b for b in packet.beats if b.id == "turn")
+    cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
+    assert pbs.id not in lease.finding_ids
+    if cited:
+        assert all((f.parallel_url or "") in {REUTERS_MSFT, MSFT_CANCEL} for f in cited)
+    else:
+        assert not re.search(r"microsoft", lease.vo, re.I)
