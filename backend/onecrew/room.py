@@ -274,17 +274,9 @@ def _row_covers_names(vo: str, rows: list) -> bool:
 
 
 def _row_supports_prints(vo: str, rows: list) -> bool:
-    from onecrew.timeline import _MONTH_YEAR, _event_nums, stamp_text
+    from onecrew.timeline import union_supports_prints
 
-    nums = _event_nums(vo)
-    blob = " ".join(stamp_text(row) for row in rows)
-    if nums and not nums <= _event_nums(blob):
-        return False
-    vo_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(vo or "")}
-    ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob or "")}
-    if vo_months and not (vo_months & ev_months):
-        return False
-    return True
+    return union_supports_prints(vo, rows)
 
 
 def _chrome_cited(artifact: GradeArtifact) -> bool:
@@ -533,6 +525,44 @@ def relink_cite_if_supported(claim: Claim, bag: CiteBag) -> Claim:
     return claim
 
 
+def _sanitize_disposition(packet: Packet, grade: RoomGrade, calls: int, *, ready: bool, hold_reason: str | None = None) -> RoomLoopResult:
+    from onecrew.script import sanitize_for_ship
+
+    sanitize_for_ship(packet)
+    reason = ((packet.receipt.hold_reason or "") if packet.receipt else "").lower()
+    ship_gate = any(
+        tok in reason
+        for tok in ("thin_after_repair", "insufficient_cite_beats", "missing topic axis")
+    )
+    if ship_gate:
+        raw = (packet.receipt.hold_reason or "") if packet.receipt else ""
+        gate = next(
+            (
+                part.strip()
+                for part in raw.replace("\n", ";").split(";")
+                if any(
+                    tok in part.lower()
+                    for tok in ("thin_after_repair", "insufficient_cite_beats", "missing topic axis")
+                )
+            ),
+            raw or hold_reason,
+        )
+        return RoomLoopResult(
+            grade=grade,
+            parallel_research_calls=calls,
+            disposition="HOLD",
+            hold_reason=gate,
+        )
+    if ready:
+        return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
+    return RoomLoopResult(
+        grade=grade,
+        parallel_research_calls=calls,
+        disposition="HOLD",
+        hold_reason=hold_reason,
+    )
+
+
 def run_room_loop(
     packet: Packet,
     *,
@@ -548,22 +578,16 @@ def run_room_loop(
     packet.room_grade = grade
     calls = max(0, int(parallel_already))
     if grade.vote == "ship":
-        from onecrew.script import sanitize_for_ship
-
-        sanitize_for_ship(packet)
-        return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
+        return _sanitize_disposition(packet, grade, calls, ready=True)
     if grade.vote == "recut" and grade.recut_reason == "not_enough_information":
         if calls >= MAX_PARALLEL_RESEARCH:
-            from onecrew.script import sanitize_for_ship
-
-            sanitize_for_ship(packet)
-            held = RoomLoopResult(
-                grade=grade,
-                parallel_research_calls=calls,
-                disposition="HOLD",
+            return _sanitize_disposition(
+                packet,
+                grade,
+                calls,
+                ready=False,
                 hold_reason="room recut not_enough_information; Parallel already used its extra loop",
             )
-            return held
         research(grade.recut_detail or None)
         calls += 1
         rewrite()
@@ -572,17 +596,12 @@ def run_room_loop(
         grade = grade_room(artifact, grader=grader)
         packet.room_grade = grade
         if grade.vote == "ship":
-            from onecrew.script import sanitize_for_ship
-
-            sanitize_for_ship(packet)
-            return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
-        from onecrew.script import sanitize_for_ship
-
-        sanitize_for_ship(packet)
-        return RoomLoopResult(
-            grade=grade,
-            parallel_research_calls=calls,
-            disposition="HOLD",
+            return _sanitize_disposition(packet, grade, calls, ready=True)
+        return _sanitize_disposition(
+            packet,
+            grade,
+            calls,
+            ready=False,
             hold_reason=(
                 "room recut not_enough_information after one extra Parallel loop; "
                 "no third research call"
@@ -595,16 +614,11 @@ def run_room_loop(
     grade = grade_room(artifact, grader=grader)
     packet.room_grade = grade
     if grade.vote == "ship":
-        from onecrew.script import sanitize_for_ship
-
-        sanitize_for_ship(packet)
-        return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
-    from onecrew.script import sanitize_for_ship
-
-    sanitize_for_ship(packet)
-    return RoomLoopResult(
-        grade=grade,
-        parallel_research_calls=calls,
-        disposition="HOLD",
+        return _sanitize_disposition(packet, grade, calls, ready=True)
+    return _sanitize_disposition(
+        packet,
+        grade,
+        calls,
+        ready=False,
         hold_reason=f"room recut other: {(grade.recut_detail or '').strip() or 'short reason required'}",
     )
