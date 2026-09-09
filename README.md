@@ -1,6 +1,6 @@
 # One Crew
 
-One Crew is a research companion for a one-person shop. Before you record, you see collisions, dirty sources, and holes:
+One Crew is a research companion for a one-person / solo creator shop. Before you record, you see collisions, dirty sources, and holes:
 
 1. a full recordable script with citations (not a 6-beat sketch)
 2. which lines already exist as someone else's media (`collision` yes / no / missing)
@@ -9,7 +9,7 @@ One Crew is a research companion for a one-person shop. Before you record, you s
 
 You leave with a citable thesis plus a script, not a sketch. The research pack is always written: long-form prose plus bibliography, not a stamp list. The thesis lists what was left out and why. We do not post it. We do not clear copyright. We do not give legal advice. We do not license tape. A Parallel miss is not permission. `collision=missing` means we did not get a search, not that you are in the clear. The floor never posts.
 
-**Demo runtime is Gemini 3.5 Flash + ADK + Vertex Imagen. License: Apache-2.0.**
+**Demo runtime is Gemini 2.5 Flash (`gemini-2.5-flash`) + ADK + Vertex Imagen. License: Apache-2.0.**
 
 ## Required picks
 
@@ -17,7 +17,7 @@ Required, in this order, before any Parallel or Imagen spend. No defaults. Any m
 
 1. **Topic** (free text) — e.g. "Are we near recession?". Empty or whitespace = no run.
 2. **Platform** — `tiktok` | `youtube` | `youtube_shorts` | `instagram_reels` | `instagram_stories` | `instagram_feed` | `facebook_reels` | `facebook_feed` | `threads` | `podcast`
-3. **Length / cut** — `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary` | `feature_film`
+3. **Length / cut** — same desk from shorts / YouTube Shorts through long form: `tiktok-length` | `shorts` | `weekly_update` | `one_time_short_episode` | `full_length_documentary` | `feature_film`
 4. **Depth** — `1y` | `2-3y` | `5y` | `decade` | `few_decades` | `pre-1980_pre-internet`
 5. **Script lean** (voice only; does not restamp) — `centered_independent` | `left` | `right` | `far_right` | `far_left` | `unhinged_fringe`
 6. **Tell** (required free text) — how the piece is told. Empty or whitespace = no run. Examples only, not a closed list and not an enum:
@@ -32,14 +32,14 @@ Required, in this order, before any Parallel or Imagen spend. No defaults. Any m
 
 Pairing is the **cut**, not a parse of tell. `full_length_documentary` and `weekly_update` are always nonfiction: host/reporter VO from the receipt, no invented characters, even if tell says "family thriller". `feature_film` is always fiction: may invent a frame labeled `(frame)` from whatever they typed. Shorts / tiktok / `one_time_short_episode`: news tell → no invented people; story tell → invent frame. Do not 400 because tell contains "thriller". On news/doc, subjects come from the receipt — do not invent a mother in Bandar Abbas if Parallel did not name her.
 
-7. **Tone** (required free text unless `feature_film`) — host stance on news/doc. Empty tone on those cuts = no run. Examples only, not a closed list:
+7. **Tone** (required free text unless `feature_film`) — the creator's voice on news/doc. Host stance so the script stays in that voice while remaining cite-faithful. Empty tone on those cuts = no run. Examples only, not a closed list:
    - News desk
    - Make the viewer think
    - Question the decisions
    - Personal take
    - On the cited print
 
-Tone is not `script_lean` and does not restamp sources. A questioning tone still cannot invent a source or hide fringe. Do not name an example "grounded in reality". `feature_film` does not require tone.
+Tone is not `script_lean` and does not restamp sources. A questioning tone still cannot invent a source or hide fringe. Same Parallel cites with a different tone yield a different VO stance (tone A/B); there is no A/B widget on the floor — that is two runs with the same picks and a different tone string. Do not name an example "grounded in reality". `feature_film` does not require tone.
 
 Then a write-once timeline (grounded / mainstream / fringe, house-organ, propaganda, causal links only when Parallel sourced them). Then a **full script you can record from** — scene headings, action/B-roll, host VO or screenplay dialogue — not one block per receipt row. Political `script_lean` changes the spoken argument, not the stamps and not the thickness. Then the collision search on factual VO lines. Then a **frame-by-frame shot list** (shot number, duration, camera, action, line). Each shot is `sourced` | `imagen` | `missing`. Nonfiction uses archive tape for event shots; genAI is for maps and infographics. Never a photoreal fake of a real event. Fiction features may Imagen invented rooms. Sourced is a cited link, not a rip. We do not license the tape we point at and we do not clear rights. Parallel down leaves footage `missing` (no invented URL, no Imagen pretend-source). Lean does not restamp sources or collisions. If the receipt is thin, the script names the hole. It does not invent history to fill pages.
 
@@ -51,8 +51,8 @@ Sample first-open: **oc-recession-july-2026** (youtube · one_time_short_episode
 
 1. First-open shows the required picks, the recession 8-beat VO (USREC=0 smashed into payrolls −23k), source stamps, collision fields (`missing` until a live search), and the shot list. GET never calls Parallel or Imagen.
 2. `POST /api/shifts` needs `SHIFT_TOKEN` + `X-Shift-Token` and the required picks. Unset token → 403. Any missing pick (including empty tell, or empty tone on news/doc) → 400. No spend.
-3. **Google ADK** crew on **Vertex Gemini 3.5 Flash**: picks → Parallel stack → full script → collision search → shot list → archive tape or Imagen graphic.
-4. **Parallel stack:** Search (first pass: first-trigger / recent-news timeline, collision VO, archive footage — this satisfies the Search track) + Extract (quotes / ownership / propaganda / independence from Search URLs) + Task (`pro`, not ultra) for the thesis spine (`result.output.basis`). Parallel does not decide depth and does not write the timed VO. Default horizon is the first event that actually triggered the topic, scoped to recent news; `deeper_history=true` (floor checkbox) is the only user override. The floor depth pick is not forwarded to Task as `inside depth=…`. Vertex writes the script from the pack + picks. A discussant room then votes ship or recut (`not_enough_information` | `other`). Recut for missing cites runs at most one extra Parallel loop, then Vertex rewrites. Search is required at runtime. Extract and Task are why the pack is a thesis. Entity Search only for a verified producer/lobby list. Do not create Monitors (standing watch; burns money; floor never posts).
+3. **Google ADK** crew on **Vertex Gemini 2.5 Flash** (`gemini-2.5-flash`): picks → Parallel stack → full script → collision search → shot list → archive tape or Imagen graphic.
+4. **Parallel stack:** Search (first pass: first-trigger / recent-news timeline, collision VO, archive footage — this satisfies the Search track) + Extract (quotes / ownership / propaganda / independence from Search URLs) + Task (`pro`, not ultra) for the thesis spine (`result.output.basis`). Parallel does not decide depth and does not write the timed VO. Default horizon is the first event that actually triggered the topic, scoped to recent news; `deeper_history=true` (floor checkbox) is the only user override. The floor depth pick is not forwarded to Task as `inside depth=…`. Vertex writes the script from the pack + picks. **Cite-repair:** if the VO or a room rewrite drifts from Parallel cites, re-query Parallel (up to 3 attempts); keep only supported beats or drop the rest. FAIL / HOLD (`cite-repair loop exhausted`) only after the loop exceeds 3. A discussant room then votes ship or recut (`not_enough_information` | `other`). Room recut for `not_enough_information` may run one extra Parallel research + rewrite (not a third). Recut `other` is Vertex rewrite only, no Parallel. Cite-repair runs again after the room, before the board. Search is required at runtime. Extract and Task are why the pack is a thesis. Entity Search only for a verified producer/lobby list. Do not create Monitors (standing watch; burns money; floor never posts).
 5. Parallel down, or a pre-1980 miss → fail-closed HOLD. Collision rail down → every collision field `missing`, never `collision=no`. Unhinged lean still cannot invent a source. Gemini does not invent extract text or Task citations.
 6. The floor has no publish control. Nothing is posted.
 
@@ -93,7 +93,7 @@ source .venv/bin/activate
 PYTHONPATH=backend pytest backend/tests -q
 ```
 
-Locks: required picks or no run; empty tell is 400; empty tone on news/doc is 400; documentary cut never invents a family even if tell says drama; fiction frame stays labeled; lean and tone do not restamp sources or collision URLs; Parallel down leaves collision `missing` (never `no`); a leftover Hormuz doc URL hit stamps `collision=yes` on that leftover beat; nonfiction event shots are archive or missing (Imagen is maps/infographics only); GET never spends; POST without token is 403; floor never posts.
+Locks: required picks or no run; empty tell is 400; empty tone on news/doc is 400; documentary cut never invents a family even if tell says drama; fiction frame stays labeled; lean and tone do not restamp sources or collision URLs; same cites + different tone change VO stance, not stamps; cite-repair HOLDs only after the loop exceeds 3 attempts; Parallel down leaves collision `missing` (never `no`); a leftover Hormuz doc URL hit stamps `collision=yes` on that leftover beat; nonfiction event shots are archive or missing (Imagen is maps/infographics only); GET never spends; POST without token is 403; floor never posts.
 
 ### ADK web (optional)
 
