@@ -982,6 +982,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         _align_vo_to_stamps,
         _bare_vo,
         _drop_extra_cite_brackets,
+        _is_title_like_text,
         _refuse_forecast_theater,
         _speech_norm,
         _strip_tone_chrome,
@@ -1005,6 +1006,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         prefer_covering_print,
         prefer_covering_scope,
         speak_stamp_fact,
+        speak_stamp_print,
         speak_stamps,
         strip_action_chrome_vo,
     )
@@ -1086,7 +1088,11 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
                 keep, list(receipt.findings)
             )
         if is_pack_chrome_vo(new_frame) or is_thin_frame(new_frame, keep, list(receipt.findings)):
-            new_frame = speak_stamp_fact(keep, list(receipt.findings)) or ""
+            screen = speak_stamp_print(keep, list(receipt.findings))
+            spoken = speak_stamp_fact(keep, list(receipt.findings)) or ""
+            if spoken and _is_title_like_text(spoken):
+                spoken = ""
+            new_frame = screen or spoken
         beat.finding_ids = keep
         if new_vo != orig_vo:
             beat.vo = f"NARRATOR\n{new_vo}" if (beat.vo or "").startswith("NARRATOR") else new_vo

@@ -74,6 +74,7 @@ def _pack_blob(packet: Packet) -> str:
 def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None = None) -> str:
     """Stamp print on the frame/on_screen. Shot ACTION chrome is not the mute-test."""
     from onecrew.script import (
+        _is_title_like_text,
         _looks_like_headline,
         is_numeric_print,
         is_thin_frame,
@@ -95,13 +96,16 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
         if not shown:
             beat.frame = screen
         return screen
+    # ponytail: numeric print first. Prose claim may fill. Title/headline never fallback (#65).
     printed = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(
         list(beat.finding_ids), rows
     )
+    if printed and _is_title_like_text(printed):
+        printed = ""
     if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
         beat.frame = printed
         return printed
-    if shown and not is_numeric_print(shown) and (title_chrome or headline):
+    if shown and (title_chrome or headline or is_thin_frame(shown, list(beat.finding_ids), rows)):
         beat.frame = ""
         return ""
     return shown
