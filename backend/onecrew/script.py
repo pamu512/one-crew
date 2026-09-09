@@ -3185,11 +3185,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                         vo = spoken
                 if is_thin_frame(eyes, fids, rows) or not (eyes or "").strip():
                     if fids:
-                        screen = speak_stamp_print(fids, rows)
                         spoken = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
                         if spoken and _is_title_like_text(spoken):
-                            spoken = ""
-                        eyes = screen or spoken or ("" if _is_title_like_text(eyes or "") else eyes)
+                            spoken = speak_stamp_print(fids, rows)
+                        eyes = spoken or ("" if _is_title_like_text(eyes or "") else eyes)
                 if not _vo_lines(vo).strip() and fids:
                     vo = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
                 fids, vo, after_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
