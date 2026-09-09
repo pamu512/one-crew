@@ -421,15 +421,25 @@ def test_leftover_three_slot_illegal_when_spine_has_prints() -> None:
 
 def test_forbidden_wrap_mint_gdp_from_excerpt_slots_or_trillion_without_official_cite() -> None:
     """Never mint GDP from pack excerpts[N] chrome or $126 trillion without BEA/FRED."""
-    from onecrew.foundry import complete_print, is_pack_slot_id, mint, sanitize_stamps
+    from onecrew.foundry import (
+        FoundryHold,
+        complete_print,
+        is_pack_slot_id,
+        keep_official_gdp,
+        mint,
+        official_gdp_url,
+        sanitize_stamps,
+    )
 
-    assert complete_print("$126 trillion") is False
-    assert complete_print("126 trillion") is False
-    assert complete_print("$126tn") is False
+    assert complete_print("$3tn") is True
+    assert complete_print("$28.2 trillion") is True
     assert complete_print("0.5 / 2.1 / 1.5") is True
+    assert complete_print("4,") is False
     assert is_pack_slot_id("excerpts[18]")
     assert is_pack_slot_id("excerpts[19]")
     assert not is_pack_slot_id("gdp-2026-q2")
+    assert not official_gdp_url("https://www.noahpinion.blog/p/compute-campus-scrape")
+    assert official_gdp_url(BEA)
 
     packet = Packet(
         id="oc-dc-excerpt-gdp",
@@ -457,7 +467,7 @@ def test_forbidden_wrap_mint_gdp_from_excerpt_slots_or_trillion_without_official
             SimpleNamespace(results=[], errors=[]),
             chrome,
         )
-    except Exception:
+    except FoundryHold:
         rows = []
     assert not any(f.series == "GDP" for f in rows)
     assert not any(is_pack_slot_id(f.id) for f in rows)
@@ -499,8 +509,14 @@ def test_forbidden_wrap_mint_gdp_from_excerpt_slots_or_trillion_without_official
         ),
     ]
     kept = sanitize_stamps(junk)
-    assert not any(f.series == "GDP" for f in kept)
     assert not any(is_pack_slot_id(f.id) for f in kept)
+    assert not any(f.id.startswith("excerpts[") for f in kept)
+    assert not any(
+        f.series == "GDP" and not official_gdp_url(f.parallel_url or "") for f in kept
+    )
+    official = next(f for f in kept if f.id == "gdp-fantasy")
+    assert keep_official_gdp(official)
+    assert official.series == "GDP"
 
 
 def test_renamed_leftover_slots_cannot_wrap_datacenter_topic() -> None:
@@ -1707,6 +1723,67 @@ def test_gdp_empty_print_holds() -> None:
     reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
     assert "gdp print empty" in reason.lower()
     assert packet.beats == [] or "0.5, then 2.1, then 1.5" not in (packet.script or "")
+
+
+def test_official_empty_gdp_survives_cite_repair_hold() -> None:
+    """write_script → cite-repair must not drop official empty GDP or swallow the HOLD."""
+    from onecrew.cite_repair import run_cite_recheck_loop
+    from onecrew.foundry import keep_official_gdp
+
+    packet = _packet()
+    rows = [
+        Finding(
+            id="usrec-july-2026",
+            claim="USREC July 2026 = 0.",
+            stamp="grounded",
+            series="USREC",
+            print="0",
+            when="July 2026",
+            parallel_url=FRED_USREC,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="payrolls-july-2026",
+            claim="Nonfarm payrolls July 2026 = −23,000.",
+            stamp="grounded",
+            series="BLS payrolls",
+            print="−23,000",
+            when="July 2026",
+            parallel_url=BLS,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="gdp-2026-q2",
+            claim="Real GDP rose.",
+            stamp="grounded",
+            series="GDP",
+            print="",
+            when="Q2 2026",
+            parallel_url=BEA,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        _miss_finding(),
+    ]
+    write_receipt(packet, Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows))
+    packet.task_spine = "USREC July 2026 = 0. Nonfarm payrolls July 2026 = −23,000."
+    write_script(packet)
+    packet.receipt.hold_reason = "duplicate series; gdp bars mismatch; gdp print empty"
+    packet.receipt.disposition = "HOLD"
+
+    def _boom(**_k):
+        raise AssertionError("official empty GDP is not a Parallel miss")
+
+    result = run_cite_recheck_loop(packet, search_fn=_boom)
+    reason = (packet.receipt.hold_reason or "").lower()
+    assert packet.receipt.disposition == "HOLD"
+    assert "gdp print empty" in reason
+    gdp = next(f for f in packet.receipt.findings if f.series == "GDP" and f.stamp == "grounded")
+    assert keep_official_gdp(gdp)
+    assert not (gdp.print or "").strip()
+    assert result.ok is False or packet.receipt.disposition == "HOLD"
 
 
 LIVE_USREC_T10 = (

@@ -13,7 +13,7 @@ from onecrew.foundry import (
     _when,
     is_excerpt_slot_id,
     is_pack_slot_id,
-    official_gdp_url,
+    keep_official_gdp,
 )
 from onecrew.models import MISSING, Finding, Packet, Receipt, ScriptBeat
 from onecrew.parallel_client import ParallelCreditError, ParallelDownError, search
@@ -303,8 +303,7 @@ def drop_excerpt_slot_findings(packet: Packet) -> list[str]:
     for finding in receipt.findings:
         junk = is_excerpt_slot_id(finding.id)
         if finding.series == "GDP" and finding.stamp == "grounded":
-            junk = junk or not official_gdp_url(finding.parallel_url or "")
-            junk = junk or not complete_print(finding.print or "")
+            junk = junk or not keep_official_gdp(finding)
         if junk:
             drop.add(finding.id)
             continue
@@ -581,12 +580,12 @@ def _retire_incomplete_grounded(packet: Packet) -> None:
             "ISM",
         }
         incomplete = printed.endswith(",")
-        if official:
+        if finding.series == "GDP":
+            incomplete = incomplete or not keep_official_gdp(finding)
+        elif official:
             incomplete = incomplete or (
                 not complete_print(printed) or not (finding.parallel_url or "").strip()
             )
-        if finding.series == "GDP" and not official_gdp_url(finding.parallel_url or ""):
-            incomplete = True
         else:
             incomplete = incomplete or not (finding.parallel_url or "").strip()
         if not incomplete:
@@ -610,6 +609,43 @@ def _retire_uncited_grounded(packet: Packet) -> None:
         finding.parallel_status = "miss"
         finding.parallel_url = None
         finding.note = "Parallel miss. Included and tagged fringe. Never sold as fact."
+
+
+_RECEIPT_INVALID = re.compile(r"^receiptinvaliderror:\s*", re.I)
+
+
+def _hold_clauses(reason: str) -> list[str]:
+    return [p.strip() for p in (reason or "").replace("\n", ";").split(";") if p.strip()]
+
+
+_BEAT_CITE_NOTHING = re.compile(
+    r"^(?:beat\d+|[a-z][a-z0-9-]*)\s+cites nothing in the pack$",
+    re.I,
+)
+
+
+def _clause_is_cite_marker(
+    part: str, markers: tuple[str, ...], *, extra: tuple[str, ...] = ()
+) -> bool:
+    """Cite markers are whole clauses. Extra (gone GDP/dupes) may prefix a mashed clause."""
+    raw = (part or "").strip()
+    core = _RECEIPT_INVALID.sub("", raw).strip().lower()
+    if not core:
+        return False
+    prefixed = bool(_RECEIPT_INVALID.match(raw))
+    for marker in markers:
+        ml = marker.lower()
+        if core == ml:
+            return True
+        if ml == "cites nothing in the pack" and _BEAT_CITE_NOTHING.fullmatch(core):
+            return True
+        if prefixed and (core.startswith(ml + " ") or core.startswith(ml + ":") or core.startswith(ml)):
+            return True
+    for marker in extra:
+        ml = marker.lower()
+        if core == ml or core.startswith(ml + " ") or core.startswith(ml + ":"):
+            return True
+    return False
 
 
 _CITE_HOLD_MARKERS = (
@@ -668,7 +704,7 @@ def _clear_cite_only_hold(packet: Packet, bag: CiteBag | None = None) -> None:
     remaining_gdp = [
         f
         for f in receipt.findings
-        if f.series == "GDP" and f.stamp == "grounded" and not is_pack_slot_id(f.id)
+        if f.series == "GDP" and f.stamp == "grounded" and keep_official_gdp(f)
     ]
     series_counts: dict[str, int] = {}
     for finding in receipt.findings:
@@ -682,16 +718,17 @@ def _clear_cite_only_hold(packet: Packet, bag: CiteBag | None = None) -> None:
         extra.append("gdp bars mismatch")
     if not any(n > 1 for n in series_counts.values()):
         extra.append("duplicate series")
-    markers = tuple(markers) + tuple(extra)
+    extra_t = tuple(extra)
     reason = (receipt.hold_reason or "").strip()
     if receipt.disposition == "HOLD" and reason:
         kept = [
-            part.strip()
-            for part in reason.replace("\n", ";").split(";")
-            if part.strip() and not any(m.lower() in part.lower() for m in markers)
+            part
+            for part in _hold_clauses(reason)
+            if not _clause_is_cite_marker(part, markers, extra=extra_t)
         ]
-        # ReceiptInvalidError prefixes a cite-only reason as one clause.
-        if not kept and any(m.lower() in reason.lower() for m in markers):
+        if not kept and any(
+            _clause_is_cite_marker(p, markers, extra=extra_t) for p in _hold_clauses(reason)
+        ):
             receipt.hold_reason = None
             receipt.disposition = "READY"
         elif kept:
@@ -745,7 +782,7 @@ def _hold_exhausted(packet: Packet, attempts: int) -> CiteRepairResult:
         receipt.disposition = "HOLD"
         prior = (receipt.hold_reason or "").strip()
         if _EXHAUST_REASON not in prior:
-            receipt.hold_reason = f"{prior} {_EXHAUST_REASON}".strip() if prior else _EXHAUST_REASON
+            receipt.hold_reason = f"{prior}; {_EXHAUST_REASON}".strip() if prior else _EXHAUST_REASON
     packet.status = "hold"
     return CiteRepairResult(
         ok=False,

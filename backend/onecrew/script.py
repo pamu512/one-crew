@@ -111,14 +111,9 @@ def _legal_spoken_finding(finding: Finding) -> bool:
 
 def _gdp_series_usable(finding: Finding) -> bool:
     """Official GDP cite. Empty print stays visible so write_script can HOLD."""
-    from onecrew.foundry import complete_print, official_gdp_url
+    from onecrew.foundry import keep_official_gdp
 
-    if not official_gdp_url(finding.parallel_url or ""):
-        return False
-    printed = (finding.print or "").strip()
-    if printed and not complete_print(printed):
-        return False
-    return True
+    return keep_official_gdp(finding)
 
 
 def _by_series(packet: Packet, *names: str) -> Finding | None:
@@ -227,7 +222,7 @@ def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
     if receipt is not None:
         receipt.disposition = "HOLD"
         prior = (receipt.hold_reason or "").strip()
-        receipt.hold_reason = f"{prior} {detail}".strip() if prior else detail
+        receipt.hold_reason = f"{prior}; {detail}".strip() if prior else detail
     return packet
 
 
@@ -1203,7 +1198,7 @@ def _warn_mint(packet: Packet, holes: list[str]) -> None:
     receipt.disposition = "HOLD"
     prior = (receipt.hold_reason or "").strip()
     if extra not in prior:
-        receipt.hold_reason = f"{prior} {extra}".strip() if prior else extra
+        receipt.hold_reason = f"{prior}; {extra}".strip() if prior else extra
 
 
 def _pack_source(packet: Packet) -> bool:

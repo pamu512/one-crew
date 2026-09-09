@@ -157,7 +157,6 @@ def leftover_slot_ids() -> frozenset[str]:
 
 
 _EXCERPT_SLOT = re.compile(r"^excerpts\[\d+\]$", re.I)
-_TRILLION_PRINT = re.compile(r"\$?\s*[\d,.]+\s*(?:trillion|tn)\b", re.I)
 _FRED_GDP = re.compile(r"(?:fred\.)?stlouisfed\.org/series/gdp", re.I)
 
 
@@ -180,15 +179,25 @@ def official_gdp_url(url: str) -> bool:
 
 
 def complete_print(printed: str) -> bool:
-    """A series print, not a dangling `4,` fragment or trillion-scale fantasy."""
+    """A series print, not a dangling `4,` fragment or an empty slot."""
     raw = (printed or "").strip()
     if not raw or raw == MISSING:
         return False
     if raw.endswith(","):
         return False
-    if _TRILLION_PRINT.search(raw):
-        return False
     return bool(re.search(r"\d", raw))
+
+
+def keep_official_gdp(finding: Finding) -> bool:
+    """BEA/FRED GDP. Empty print stays for HOLD. Excerpt-slot / unofficial drop."""
+    if is_pack_slot_id(finding.id):
+        return False
+    if not official_gdp_url(finding.parallel_url or ""):
+        return False
+    printed = (finding.print or "").strip()
+    if printed.endswith(","):
+        return False
+    return True
 
 
 _WRAP_CLAIM = re.compile(
@@ -251,9 +260,10 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
             }
             if printed.endswith(","):
                 continue
-            if official and (not complete_print(printed) or not (finding.parallel_url or "").strip()):
-                continue
-            if finding.series == "GDP" and not official_gdp_url(finding.parallel_url or ""):
+            if finding.series == "GDP":
+                if not keep_official_gdp(finding):
+                    continue
+            elif official and (not complete_print(printed) or not (finding.parallel_url or "").strip()):
                 continue
             if not official and not (finding.parallel_url or "").strip():
                 continue
