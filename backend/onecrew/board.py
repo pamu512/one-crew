@@ -76,6 +76,9 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
     from onecrew.script import (
         _is_title_like_text,
         _looks_like_headline,
+        _vo_has_spoken_number,
+        covering_print_spoken_in_vo,
+        has_usable_numeric_print,
         is_numeric_print,
         is_thin_frame,
         is_title_chrome_frame,
@@ -85,7 +88,14 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
         speak_stamps,
     )
 
-    screen = speak_stamp_print(list(beat.finding_ids), rows)
+    screen = speak_stamp_print(list(beat.finding_ids), rows) or covering_print_spoken_in_vo(
+        beat.vo, rows
+    )
+    if not screen and _vo_has_spoken_number(beat.vo):
+        for finding in rows:
+            if has_usable_numeric_print(finding):
+                screen = (finding.print or "").strip()
+                break
     shown = (beat.frame or "").strip()
     topic_frame = bool(packet is not None and is_topic_prompt_frame(shown, packet))
     title_chrome = is_title_chrome_frame(shown, list(beat.finding_ids), rows)

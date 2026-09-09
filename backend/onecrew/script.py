@@ -1853,6 +1853,56 @@ def is_title_only_stamp(finding) -> bool:
     return not _stamp_can_cover(finding)
 
 
+def _vo_mentions_print(vo: str, printed: str) -> bool:
+    """Spoken VO names this print token, including dollar figures or worded dollars."""
+    if not printed or not vo:
+        return False
+    body = _speech_norm(vo)
+    bare = (_bare_vo(vo) or "").lower()
+    if _speech_norm(printed) and _speech_norm(printed) in body:
+        return True
+    nums = [
+        n
+        for n in pack_numbers(printed)
+        if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
+    ]
+    if nums and all(n.lower() in body or n.lower() in bare for n in nums):
+        return True
+    for n in nums:
+        digits = re.sub(r"[^\d.]+", "", n.replace("−", "-"))
+        if digits and (digits in body or digits in bare):
+            return True
+        if digits and re.search(rf"\b{re.escape(digits)}\s+dollars?\b", bare, re.I):
+            return True
+    return False
+
+
+def _vo_has_spoken_number(vo: str) -> bool:
+    """True when VO speaks a non-year magnitude ($ / % / unit)."""
+    body = _bare_vo(vo)
+    if not body:
+        return False
+    if is_numeric_print(body):
+        return True
+    nums = [
+        n
+        for n in pack_numbers(body)
+        if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
+    ]
+    return bool(nums)
+
+
+def covering_print_spoken_in_vo(vo: str, findings: list) -> str:
+    """Attached stamp print covered by spoken VO. Mute-test token. Empty if none."""
+    for finding in findings or []:
+        printed = "" if getattr(finding, "print", None) in {MISSING, "", None} else (finding.print or "").strip()
+        if not printed or not has_usable_numeric_print(finding):
+            continue
+        if _vo_mentions_print(vo, printed):
+            return printed
+    return ""
+
+
 def _vo_covers_attached_print(vo: str, findings: list) -> bool:
     """Spoken line includes a numeric print from an attached stamp."""
     numeric: list[str] = []
@@ -1865,18 +1915,8 @@ def _vo_covers_attached_print(vo: str, findings: list) -> bool:
         if not findings:
             return True
         return any(_stamp_can_cover(f) for f in findings)
-    body = _speech_norm(vo)
-    bare = (_bare_vo(vo) or "").lower()
-    for printed in numeric:
-        if _speech_norm(printed) and _speech_norm(printed) in body:
-            return True
-        nums = [
-            n
-            for n in pack_numbers(printed)
-            if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
-        ]
-        if nums and all(n.lower() in body or n.lower() in bare for n in nums):
-            return True
+    if any(_vo_mentions_print(vo, printed) for printed in numeric):
+        return True
     return False
 
 
@@ -2041,6 +2081,48 @@ def is_action_chrome_vo(vo: str, frame: str = "") -> bool:
     return any(i and _is_title_card(part) for i, part in enumerate(parts))
 
 
+def speak_covering_print_vo(finding) -> str:
+    """Cite-faithful VO that speaks a usable covering print. Empty if none."""
+    if not _stamp_can_cover(finding):
+        return ""
+    printed = "" if getattr(finding, "print", None) in {MISSING, "", None} else (finding.print or "").strip()
+    claim = (getattr(finding, "claim", None) or "").strip()
+    title = (getattr(finding, "title", None) or "").strip()
+    when = (getattr(finding, "when", None) or "").strip()
+    if (
+        claim
+        and not is_generic_stamp_title(claim)
+        and not _is_title_like_text(claim)
+        and (not title or _speech_norm(claim) != _speech_norm(title))
+        and not is_title_read_vo(claim, [finding])
+        and not is_thin_title_read_vo(claim, [finding])
+    ):
+        if not has_usable_numeric_print(finding) or _vo_covers_attached_print(claim, [finding]):
+            return claim
+    if has_usable_numeric_print(finding):
+        # ponytail: title-shaped claims used to yield a bare print token, which
+        # drop_thin then rejected. Speak the print in a cite-faithful line.
+        if when:
+            return f"The cited card printed {printed} in {when}."
+        return f"The cited card printed {printed}."
+    return ""
+
+
+def _recover_print_vo(cited: list, *, prior_prints: list[str] | None = None) -> str:
+    """Rewrite-before-drop: keep a beat by speaking a covering print."""
+    numeric = [f for f in cited if has_usable_numeric_print(f)]
+    usable = numeric or [f for f in cited if _stamp_can_cover(f)]
+    for finding in usable:
+        spoken = speak_covering_print_vo(finding)
+        if (
+            spoken
+            and not _is_title_like_text(spoken)
+            and not is_thin_title_read_vo(spoken, cited, prior_prints=prior_prints)
+        ):
+            return spoken
+    return ""
+
+
 def is_thin_title_read_vo(vo: str, findings: list, *, prior_prints: list[str] | None = None) -> bool:
     """Verbatim stamp title or bare print token. Full claim sentences are weave."""
     if is_title_read_vo(vo, findings):
@@ -2188,6 +2270,36 @@ def neutralize_pack_slot_beats(packet) -> None:
     _rebind(getattr(packet, "collisions", None) or [])
 
 
+def rewrite_attached_title_vo_beats(packet) -> int:
+    """Title-like VO on a usable attached print speaks that print. Do not remap cites."""
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    n = 0
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        vo = _vo_lines(beat.vo)
+        if not cited or not (
+            is_title_read_vo(vo, cited)
+            or is_thin_title_read_vo(vo, cited)
+            or (not _speech_norm(vo) and any(has_usable_numeric_print(f) for f in cited))
+        ):
+            continue
+        spoken = _recover_print_vo(cited)
+        if not spoken:
+            continue
+        beat.vo = f"NARRATOR\n{spoken}" if (beat.vo or "").startswith("NARRATOR") else spoken
+        for fid in beat.finding_ids:
+            if f"[{fid}]" not in beat.vo:
+                beat.vo = f"{beat.vo} [{fid}]"
+        screen = speak_stamp_print(list(beat.finding_ids), list(by_id.values()))
+        if screen:
+            beat.frame = screen
+        n += 1
+    return n
+
+
 def drop_thin_title_read_beats(packet) -> list[str]:
     """Drop mid beats that only reread a prior stamp title/print."""
     receipt = packet.receipt
@@ -2203,9 +2315,11 @@ def drop_thin_title_read_beats(packet) -> list[str]:
             title_only and _is_title_like_text(vo) and not is_numeric_print(_bare_vo(vo))
         ):
             usable = [f for f in cited if _stamp_can_cover(f)]
-            spoken = (
-                speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
-            )
+            spoken = _recover_print_vo(usable or cited, prior_prints=seen)
+            if not spoken:
+                spoken = (
+                    speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
+                )
             if (
                 spoken
                 and not _is_title_like_text(spoken)
@@ -2213,6 +2327,9 @@ def drop_thin_title_read_beats(packet) -> list[str]:
             ):
                 beat.vo = f"NARRATOR\n{spoken}" if (beat.vo or "").startswith("NARRATOR") else spoken
                 vo = spoken
+                screen = speak_stamp_print(list(beat.finding_ids), list(by_id.values()))
+                if screen:
+                    beat.frame = screen
             else:
                 drop.append(beat.id)
                 continue
@@ -2294,7 +2411,11 @@ def _hold_ship(packet, reason: str) -> None:
 def _append_stamp_beat(packet, finding: Finding) -> bool:
     if is_title_only_stamp(finding):
         return False
-    spoken = speak_stamp_fact([finding.id], [finding]) or speak_stamps([finding.id], [finding])
+    spoken = (
+        speak_covering_print_vo(finding)
+        or speak_stamp_fact([finding.id], [finding])
+        or speak_stamps([finding.id], [finding])
+    )
     if (
         not spoken
         or _is_title_like_text(spoken)
@@ -2457,11 +2578,17 @@ def _drop_uncited_ship_claims(packet) -> list[str]:
     return drop
 
 
+def _usable_covering_stamps(packet) -> list:
+    """URL-backed stamps that can support cite-faithful print/claim VO."""
+    return [f for f in _speakable_grounded_stamps(packet) if _stamp_can_cover(f)]
+
+
 def refuse_thin_episode(packet) -> str | None:
     """one_time_short_episode may not ship 1-beat when ≥3 stamps could support ≥3 beats."""
     if (packet.cut or "") != "one_time_short_episode":
         return None
-    if _stamp_capacity(packet) < 3:
+    usable_n = len(_usable_covering_stamps(packet))
+    if _stamp_capacity(packet) < 3 and usable_n < 3:
         return None
     if len(_cite_faithful_beats(packet)) >= 3:
         return None
@@ -2477,17 +2604,25 @@ def sanitize_for_ship(packet):
 
     _drop_placeholder_cites(packet)
     _dedupe_cap_finding_ids(packet)
+    rewrite_attached_title_vo_beats(packet)
     _strip_action_chrome_beats(packet)
     _strip_meta_hanging_beats(packet)
     _strip_incomplete_beats(packet)
     _reattach_covering_scope_beats(packet)
     dropped = drop_thin_title_read_beats(packet)
     uncited = _drop_uncited_ship_claims(packet)
+    dupes = _drop_duplicate_vo_beats(packet)
     thin = refuse_thin_episode(packet)
     axis = ensure_topic_axes(packet)
     _dedupe_cap_finding_ids(packet)
     _fill_stamp_print_frames(packet)
-    dupes = _drop_duplicate_vo_beats(packet)
+    more_dupes = _drop_duplicate_vo_beats(packet)
+    if more_dupes:
+        dupes = list(dupes) + list(more_dupes)
+        if len(_cite_faithful_beats(packet)) < 3:
+            extra = refuse_thin_episode(packet)
+            if extra:
+                thin = extra
     neutralize_pack_slot_beats(packet)
     _strip_pack_slot_beats(packet)
     if thin:
@@ -2552,7 +2687,14 @@ def _fill_stamp_print_frames(packet) -> None:
         if not beat.finding_ids:
             continue
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
-        screen = speak_stamp_print(list(beat.finding_ids), rows)
+        screen = speak_stamp_print(list(beat.finding_ids), rows) or covering_print_spoken_in_vo(
+            beat.vo, cited
+        )
+        if not screen and _vo_has_spoken_number(beat.vo):
+            for finding in cited:
+                if has_usable_numeric_print(finding):
+                    screen = (finding.print or "").strip()
+                    break
         shown = (beat.frame or "").strip()
         title_chrome = bool(shown) and is_title_chrome_frame(shown, list(beat.finding_ids), rows)
         if screen:
@@ -2662,9 +2804,11 @@ def _strip_incomplete_beats(packet) -> None:
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         if is_incomplete_vo(cleaned) or not _speech_norm(cleaned):
             usable = [f for f in cited if _stamp_can_cover(f)]
-            cleaned = (
-                speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
-            )
+            cleaned = _recover_print_vo(usable or cited)
+            if not cleaned:
+                cleaned = (
+                    speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
+                )
             if (
                 not cleaned
                 or is_incomplete_vo(cleaned)
@@ -2745,9 +2889,11 @@ def _strip_meta_hanging_beats(packet) -> None:
             was_meta or is_hanging_clause_vo(vo) or is_incomplete_vo(vo)
         ) and (not _speech_norm(cleaned) or needs_print):
             usable = [f for f in cited if _stamp_can_cover(f)]
-            cleaned = (
-                speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
-            )
+            cleaned = _recover_print_vo(usable or cited)
+            if not cleaned:
+                cleaned = (
+                    speak_stamp_fact([f.id for f in usable], list(by_id.values())) if usable else ""
+                )
             if (
                 not cleaned
                 or _is_title_like_text(cleaned)
