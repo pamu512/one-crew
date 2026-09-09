@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -1074,6 +1075,42 @@ def test_invented_tariffs_cleaned_without_wiping_script(monkeypatch) -> None:
     reason = (written.receipt.hold_reason or "") if written.receipt else ""
     reason += " ".join(row.detail for row in written.exclusions)
     assert "tariff" in reason.lower() or "invented" in reason.lower() or written.status == "hold"
+
+
+def _hold_meta_beats() -> str:
+    """ADK leftover: production/hold notes spoken into NARRATOR."""
+    return (
+        '[{"id":"cold-open","vo":"USREC=0 smashed into payrolls −41,000. [usrec-march-2025] [payrolls-march-2025]",'
+        '"eyes":"March CES","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"promise","vo":"Three objects from the pack. [payrolls-march-2025]","eyes":"pack","finding_ids":["payrolls-march-2025"]},'
+        '{"id":"gdp","vo":"GDP hole named. No matching URL. Hold. [usrec-march-2025]","eyes":"hole","finding_ids":["usrec-march-2025"]},'
+        '{"id":"labor","vo":"Nonfarm payrolls fell −41,000. [payrolls-march-2025]","eyes":"ces","finding_ids":["payrolls-march-2025"]},'
+        '{"id":"turn","vo":"Hold. The spine chart stays. [usrec-march-2025]","eyes":"hold","finding_ids":["usrec-march-2025"]},'
+        '{"id":"complication","vo":"Those are not the same object. [usrec-march-2025]","eyes":"gap","finding_ids":["usrec-march-2025"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-march-2025] [payrolls-march-2025]","eyes":"board","finding_ids":["usrec-march-2025","payrolls-march-2025"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-march-2025]","eyes":"close","finding_ids":["usrec-march-2025"]}]'
+    )
+
+
+def test_narrator_hold_meta_stripped_script_stays_nonempty(monkeypatch) -> None:
+    packet = _hold_packet(disposition="READY")
+
+    def fake_vertex(_prompt: str) -> str:
+        return _hold_meta_beats()
+
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", fake_vertex)
+    written = write_vo_from_pack(packet)
+    assert written.script, "hold-meta strip must not blank a leftover-free 8-beat draft"
+    assert written.script.strip()
+    assert len(written.beats) == 8
+    spoken = (written.script + "".join(b.vo for b in written.beats)).lower()
+    assert "gdp hole named" not in spoken
+    assert "no matching url" not in spoken
+    assert "spine chart stays" not in spoken
+    assert re.search(r"\bhold\.", spoken) is None
+    assert "[payrolls-march-2025]" in written.script + "".join(b.vo for b in written.beats)
+    assert "41,000" in (written.script + "".join(b.vo for b in written.beats)) or "41k" in spoken
 
 
 def test_real_payrolls_finding_cite_kept_after_slot_sanitize(monkeypatch) -> None:

@@ -263,9 +263,17 @@ def _strip_forecast(text: str) -> str:
     return " ".join(keep)
 
 
+_CONSENSUS = re.compile(r"\bconsensus\b|economists?\s+expect|expected\s+to\b", re.I)
+
+
 def _bad_window(text: str) -> bool:
     low = (text or "").lower()
-    return "suppose" in low or "confidence interval" in low or bool(_REV.search(low))
+    return (
+        "suppose" in low
+        or "confidence interval" in low
+        or bool(_REV.search(low))
+        or bool(_CONSENSUS.search(low))
+    )
 
 
 def _clean_ces_chunk(chunk: str) -> str:
