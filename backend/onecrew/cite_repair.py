@@ -1002,6 +1002,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         is_topic_question_vo,
         is_unverified_meta_vo,
         strip_hanging_clause_vo,
+        strip_topic_question_vo,
         strip_unverified_meta_vo,
         prefer_covering_print,
         prefer_covering_scope,
@@ -1062,7 +1063,9 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         was_meta = is_unverified_meta_vo(new_vo) or is_topic_question_vo(new_vo, packet)
         if is_unverified_meta_vo(new_vo):
             new_vo = strip_unverified_meta_vo(new_vo)
-        if is_topic_question_vo(new_vo, packet) and not is_numeric_print(_bare_vo(new_vo)):
+        if is_topic_question_vo(new_vo, packet):
+            new_vo = strip_topic_question_vo(new_vo, packet)
+        if is_topic_question_vo(new_vo, packet):
             new_vo = ""
         cited = [f for f in receipt.findings if f.id in keep]
         if was_meta and not is_numeric_print(_bare_vo(new_vo)):

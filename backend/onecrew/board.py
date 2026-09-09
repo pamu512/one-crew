@@ -76,26 +76,19 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
     from onecrew.script import (
         _is_title_like_text,
         _looks_like_headline,
-        _vo_has_spoken_number,
-        covering_print_spoken_in_vo,
-        has_usable_numeric_print,
         is_numeric_print,
         is_thin_frame,
         is_title_chrome_frame,
         is_topic_prompt_frame,
+        mute_print_for_beat,
         speak_stamp_fact,
-        speak_stamp_print,
         speak_stamps,
     )
 
-    screen = speak_stamp_print(list(beat.finding_ids), rows) or covering_print_spoken_in_vo(
-        beat.vo, rows
-    )
-    if not screen and _vo_has_spoken_number(beat.vo):
-        for finding in rows:
-            if has_usable_numeric_print(finding):
-                screen = (finding.print or "").strip()
-                break
+    pool = list(rows)
+    if packet is not None and packet.receipt:
+        pool = list(packet.receipt.findings) or pool
+    screen = mute_print_for_beat(beat, pool) or mute_print_for_beat(beat, rows)
     shown = (beat.frame or "").strip()
     topic_frame = bool(packet is not None and is_topic_prompt_frame(shown, packet))
     title_chrome = is_title_chrome_frame(shown, list(beat.finding_ids), rows)
@@ -423,10 +416,11 @@ def apply_imagen(shots: list[ShotFrame], packet: Packet, *, rails: Rails) -> lis
 
 def write_board(packet: Packet, rails: Rails) -> list[ShotFrame]:
     """Shot list, then prefer sourced footage, then Imagen only on misses."""
-    from onecrew.script import sanitize_for_ship
+    from onecrew.script import refuse_empty_numeric_mute, sanitize_for_ship
 
     sanitize_for_ship(packet)
     shots = write_shot_list(packet)
+    refuse_empty_numeric_mute(packet, shots)
     if not shots:
         return []
     searched = prefer_footage(shots, rails, packet)

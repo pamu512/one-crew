@@ -167,6 +167,12 @@ def is_placeholder_finding_id(fid: str) -> bool:
     return low in {"missing", "miss"}
 
 
+def is_digit_finding_id(fid: str) -> bool:
+    """Bare integer index. Not a stable slug/series id."""
+    raw = (fid or "").strip()
+    return bool(raw) and raw.isdigit()
+
+
 def _legal_spoken_finding(finding: Finding) -> bool:
     """Cite-able row: not excerpts[N] / unofficial GDP / USREC prose. Fringe and fiction frames stay."""
     from onecrew.foundry import complete_print, is_pack_slot_id, official_closed_shape, official_gdp_url
@@ -1551,6 +1557,11 @@ _HANGING_CONJ = re.compile(
     r"(?:^|(?<=[.!?])\s+).+\s+(?:and|or|but|with)\s*$",
     re.I,
 )
+_HANGING_OPENER = re.compile(r"^(?:with|and|but|or)\b", re.I)
+_TOPIC_Q_CLAUSE = re.compile(
+    r"(?:^|(?<=[.!?]\s)|(?<=\n))(?:did|do|does|is|are|was|were|have|has)\b[^?\n]*\?\s*",
+    re.I,
+)
 _SERIES_PAGE_CHROME = re.compile(
     r"historical data(?:\s*(?:&|and)\s*trends)?",
     re.I,
@@ -1644,15 +1655,16 @@ def _bare_vo(text: str) -> str:
 
 
 def is_topic_question_vo(text: str, packet) -> bool:
-    """Restates the user topic as a question. Not a stamped print."""
+    """Restates the user topic as a question, even when an answer clause follows."""
     raw = _bare_vo(text)
     body = _speech_norm(raw)
-    if not body or is_numeric_print(raw):
+    if not body:
         return False
     asked = (
         "?" in raw
         or "whether" in body
         or bool(_TOPIC_Q_LEAD.match(body))
+        or bool(_TOPIC_Q_CLAUSE.search(raw))
         or bool(_UNVERIFIED_META_VO.search(raw))
         or "this cut asks" in body
         or "the question was whether" in body
@@ -1660,21 +1672,49 @@ def is_topic_question_vo(text: str, packet) -> bool:
     if not asked:
         return False
     vo_core = _topic_qcore(body)
+    clause = _TOPIC_Q_CLAUSE.search(raw)
+    clause_norm = _speech_norm(clause.group(0)) if clause else ""
+    clause_core = _topic_qcore(clause_norm) if clause_norm else ""
     for cand in (getattr(packet, "topic", ""), getattr(packet, "hook", "")):
         core = _topic_qcore(cand or "")
-        if core and len(core) >= 12 and (core in body or vo_core in core or core == vo_core):
+        if not core or len(core) < 12:
+            continue
+        if core in body or vo_core in core or core == vo_core:
             return True
+        if clause_norm and (core in clause_norm or clause_core == core):
+            return True
+        probe = clause_core or vo_core
+        wa, wb = set(core.split()), set(probe.split())
+        if wa and wb:
+            shared = wa & wb
+            if len(shared) >= 3 and len(shared) / min(len(wa), len(wb)) >= 0.5:
+                return True
     return False
 
 
+def strip_topic_question_vo(text: str, packet=None) -> str:
+    """Drop Did/Have topic-question clauses. Keep a following print answer."""
+    raw = text or ""
+    stripped = _TOPIC_Q_CLAUSE.sub("", raw)
+    if packet is not None and is_topic_question_vo(stripped, packet):
+        stripped = _UNVERIFIED_META_VO.sub("", stripped)
+        for cand in (getattr(packet, "topic", ""), getattr(packet, "hook", "")):
+            core = _topic_qcore(cand or "")
+            if core and len(core) >= 12:
+                stripped = re.sub(re.escape(cand or ""), "", stripped, flags=re.I)
+    return _tidy_vo(stripped)
+
+
 def is_hanging_clause_vo(text: str) -> bool:
-    """Incomplete trailing clause. Not a cite-faithful sentence."""
+    """Incomplete trailing clause or dangling with/and/but opener. Not a full claim."""
     body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
-    return bool(body) and bool(_HANGING_CLAUSE.search(body))
+    if not body:
+        return False
+    return bool(_HANGING_CLAUSE.search(body) or _HANGING_OPENER.match(body))
 
 
 def strip_hanging_clause_vo(text: str) -> str:
-    return _tidy_vo(
+    body = _tidy_vo(
         re.sub(
             r"(?:[.!?]\s+)?(?:for instance|for example|such as|including|namely|"
             r"specifically|in particular)\s*[.,;:]?\s*$",
@@ -1683,6 +1723,10 @@ def strip_hanging_clause_vo(text: str) -> str:
             flags=re.I,
         )
     )
+    bare = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(body) or body))
+    if _HANGING_OPENER.match(bare):
+        return ""
+    return body
 
 
 def is_topic_prompt_frame(text: str, packet) -> bool:
@@ -2408,6 +2452,210 @@ def _hold_ship(packet, reason: str) -> None:
     packet.status = "hold"
 
 
+def _url_stem_slug(url: str) -> str:
+    path = (url or "").split("?", 1)[0].rstrip("/")
+    stem = path.rsplit("/", 1)[-1] if path else ""
+    return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-")
+
+
+def finding_id_slug(finding, used: set[str]) -> str:
+    """Stable slug from url-stem / series / thesis. Never a bare digit index."""
+    from onecrew.foundry import _unique_id
+    from onecrew.timeline import _tl_id
+
+    url = (getattr(finding, "parallel_url", None) or "").strip()
+    stem = _url_stem_slug(url)
+    if stem and not stem.isdigit():
+        return _unique_id(f"te-{stem}"[:80], used)
+    series = (getattr(finding, "series", None) or "").strip()
+    if series and series.lower() not in {"timeline_event", "missing", ""}:
+        from onecrew.foundry import _slug
+
+        return _unique_id(_slug(series, getattr(finding, "when", "") or ""), used)
+    return _tl_id(getattr(finding, "claim", None) or "stamp", url, used)
+
+
+def _resolve_digit_fid(fid: str, findings: list, vo: str = "") -> str:
+    if not is_digit_finding_id(fid):
+        return fid
+    idx = int(fid)
+    if 1 <= idx <= len(findings):
+        return findings[idx - 1].id
+    if vo:
+        for finding in findings:
+            printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+            if printed and has_usable_numeric_print(finding) and _vo_mentions_print(vo, printed):
+                return finding.id
+    if len(findings) == 1 and not is_digit_finding_id(findings[0].id):
+        return findings[0].id
+    return fid
+
+
+def _remap_cite_brackets(text: str, remap: dict[str, str]) -> str:
+    if not remap:
+        return text or ""
+
+    def keep(inner: str) -> str:
+        token = (inner or "").strip()
+        return f"[{remap.get(token, token)}]"
+
+    return _map_brackets(text or "", keep)
+
+
+def rewrite_opaque_finding_ids(packet) -> None:
+    """Map pack-index finding_ids to url-stem/series slugs. HOLD leftover digits."""
+    receipt = packet.receipt
+    if receipt is None:
+        return
+    used = {f.id for f in receipt.findings if not is_digit_finding_id(f.id)}
+    remap: dict[str, str] = {}
+    for finding in receipt.findings:
+        if not is_digit_finding_id(finding.id):
+            continue
+        new_id = finding_id_slug(finding, used)
+        remap[finding.id] = new_id
+        finding.id = new_id
+    for row in receipt.timeline_map or []:
+        fid = (row.finding_id or "").strip()
+        if fid in remap:
+            row.finding_id = remap[fid]
+        elif is_digit_finding_id(fid):
+            row.finding_id = _resolve_digit_fid(fid, list(receipt.findings))
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        old = list(beat.finding_ids)
+        new_ids: list[str] = []
+        beat_remap = dict(remap)
+        for fid in old:
+            if fid in remap:
+                nxt = remap[fid]
+            elif is_digit_finding_id(fid):
+                nxt = _resolve_digit_fid(fid, list(receipt.findings), beat.vo)
+            else:
+                nxt = fid
+            beat_remap[fid] = nxt
+            new_ids.append(nxt)
+        new_ids = list(dict.fromkeys(new_ids))
+        if new_ids != old or any(k != v for k, v in beat_remap.items()):
+            beat.vo = _remap_cite_brackets(beat.vo, beat_remap)
+            beat.finding_ids = new_ids
+    leftover = [
+        fid
+        for beat in packet.beats
+        if (beat.kind or "vo") != "heading"
+        for fid in beat.finding_ids
+        if is_digit_finding_id(fid)
+    ] + [f.id for f in receipt.findings if is_digit_finding_id(f.id)]
+    if leftover:
+        _hold_ship(packet, "opaque_finding_id")
+
+
+def mute_print_for_beat(beat, findings: list) -> str:
+    """Covering stamp print for mute-test on_screen/frame. Empty if none."""
+    rows = list(findings or [])
+    fids = list(getattr(beat, "finding_ids", None) or [])
+    cited = [f for f in rows if f.id in fids]
+    pool = cited or rows
+    screen = speak_stamp_print(fids, rows) or covering_print_spoken_in_vo(
+        getattr(beat, "vo", "") or "", pool
+    )
+    if screen:
+        return screen
+    vo = getattr(beat, "vo", "") or ""
+    if _vo_has_spoken_number(vo) or any(has_usable_numeric_print(f) for f in cited):
+        for finding in cited or pool:
+            printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+            if not printed or not has_usable_numeric_print(finding):
+                continue
+            if cited or _vo_mentions_print(vo, printed):
+                return printed
+        for finding in cited:
+            if has_usable_numeric_print(finding):
+                printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+                if printed:
+                    return printed
+    return ""
+
+
+def refuse_empty_numeric_mute(packet, shots=None) -> None:
+    """Ship FAIL if cited numeric VO still has empty on_screen/frame."""
+    shots = list(shots if shots is not None else (getattr(packet, "frames", None) or []))
+    by_beat = {getattr(s, "beat_id", ""): s for s in shots}
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        if not beat.finding_ids or not _speech_norm(beat.vo):
+            continue
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        if not (_vo_has_spoken_number(beat.vo) or any(has_usable_numeric_print(f) for f in cited)):
+            continue
+        shot = by_beat.get(beat.id)
+        shown = (
+            ((getattr(shot, "on_screen", None) or "") if shot is not None else "")
+            or (beat.frame or "")
+        ).strip()
+        if not shown:
+            _hold_ship(packet, "thin_after_repair")
+            return
+
+
+def _refuse_leftover_question_hanging(packet) -> None:
+    """Last-pass: leftover topic-Q / hanging opener cannot ship."""
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        vo = _vo_lines(beat.vo)
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        if is_topic_question_vo(vo, packet):
+            cleaned = strip_topic_question_vo(vo, packet)
+            if is_topic_question_vo(cleaned, packet) or not _speech_norm(cleaned):
+                cleaned = _recover_print_vo(cited) or speak_stamp_fact(
+                    [f.id for f in cited], list(by_id.values())
+                )
+            if is_topic_question_vo(cleaned or "", packet) or not _speech_norm(cleaned or ""):
+                beat.vo = ""
+                beat.finding_ids = []
+                continue
+            beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
+            for fid in beat.finding_ids:
+                if f"[{fid}]" not in beat.vo:
+                    beat.vo = f"{beat.vo} [{fid}]"
+        vo = _vo_lines(beat.vo)
+        if is_hanging_clause_vo(vo) or is_incomplete_vo(vo):
+            cleaned = strip_incomplete_vo(vo)
+            if is_hanging_clause_vo(cleaned) or is_incomplete_vo(cleaned) or not _speech_norm(cleaned):
+                cleaned = _recover_print_vo(cited) or speak_stamp_fact(
+                    [f.id for f in cited], list(by_id.values())
+                )
+            if is_hanging_clause_vo(cleaned or "") or is_incomplete_vo(cleaned or "") or not _speech_norm(
+                cleaned or ""
+            ):
+                beat.vo = ""
+                beat.finding_ids = []
+                continue
+            beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
+            for fid in beat.finding_ids:
+                if f"[{fid}]" not in beat.vo:
+                    beat.vo = f"{beat.vo} [{fid}]"
+    leftover_q = any(
+        is_topic_question_vo(_vo_lines(b.vo), packet)
+        for b in packet.beats
+        if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
+    )
+    leftover_h = any(
+        is_hanging_clause_vo(_vo_lines(b.vo)) or is_incomplete_vo(_vo_lines(b.vo))
+        for b in packet.beats
+        if (b.kind or "vo") != "heading" and _speech_norm(b.vo)
+    )
+    if leftover_q or leftover_h:
+        _hold_ship(packet, "cite-faithfulness")
+
+
 def _append_stamp_beat(packet, finding: Finding) -> bool:
     if is_title_only_stamp(finding):
         return False
@@ -2602,6 +2850,7 @@ def sanitize_for_ship(packet):
     """Ship-facing: neutralize leftover slot ids, chrome VO, thin reads, scope cites."""
     from onecrew.cite_repair import rebuild_timed_vo
 
+    rewrite_opaque_finding_ids(packet)
     _drop_placeholder_cites(packet)
     _dedupe_cap_finding_ids(packet)
     rewrite_attached_title_vo_beats(packet)
@@ -2625,6 +2874,9 @@ def sanitize_for_ship(packet):
                 thin = extra
     neutralize_pack_slot_beats(packet)
     _strip_pack_slot_beats(packet)
+    _refuse_leftover_question_hanging(packet)
+    rewrite_opaque_finding_ids(packet)
+    refuse_empty_numeric_mute(packet)
     if thin:
         _hold_ship(packet, thin)
     if axis:
@@ -2687,14 +2939,7 @@ def _fill_stamp_print_frames(packet) -> None:
         if not beat.finding_ids:
             continue
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
-        screen = speak_stamp_print(list(beat.finding_ids), rows) or covering_print_spoken_in_vo(
-            beat.vo, cited
-        )
-        if not screen and _vo_has_spoken_number(beat.vo):
-            for finding in cited:
-                if has_usable_numeric_print(finding):
-                    screen = (finding.print or "").strip()
-                    break
+        screen = mute_print_for_beat(beat, rows)
         shown = (beat.frame or "").strip()
         title_chrome = bool(shown) and is_title_chrome_frame(shown, list(beat.finding_ids), rows)
         if screen:
@@ -2721,6 +2966,7 @@ def _fill_stamp_print_frames(packet) -> None:
     ]
     if cited_beats and all(not (b.frame or "").strip() for b in cited_beats):
         _hold_ship(packet, "thin_after_repair")
+    refuse_empty_numeric_mute(packet)
 
 
 def _drop_duplicate_vo_beats(packet) -> list[str]:
@@ -2880,7 +3126,9 @@ def _strip_meta_hanging_beats(packet) -> None:
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         was_meta = is_unverified_meta_vo(vo) or is_topic_question_vo(vo, packet)
         cleaned = strip_unverified_meta_vo(vo) if is_unverified_meta_vo(vo) else vo
-        if is_topic_question_vo(cleaned, packet) and not is_numeric_print(_bare_vo(cleaned)):
+        if is_topic_question_vo(cleaned, packet):
+            cleaned = strip_topic_question_vo(cleaned, packet)
+        if is_topic_question_vo(cleaned, packet):
             cleaned = ""
         if is_hanging_clause_vo(cleaned) or is_incomplete_vo(cleaned):
             cleaned = strip_incomplete_vo(cleaned)
@@ -2928,7 +3176,9 @@ def _strip_action_chrome_beats(packet) -> None:
             beat.vo = "\n".join(kept)
         vo = _vo_lines(beat.vo)
         cleaned = strip_action_chrome_vo(vo, beat.frame or "")
-        if is_topic_question_vo(cleaned, packet) and not is_numeric_print(_bare_vo(cleaned)):
+        if is_topic_question_vo(cleaned, packet):
+            cleaned = strip_topic_question_vo(cleaned, packet)
+        if is_topic_question_vo(cleaned, packet):
             cleaned = ""
         if cleaned != vo:
             beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
@@ -3495,7 +3745,9 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 cited = [row for row in rows if row.id in fids]
                 if is_unverified_meta_vo(vo):
                     vo = strip_unverified_meta_vo(vo)
-                if is_topic_question_vo(vo, packet) and not is_numeric_print(_bare_vo(vo)):
+                if is_topic_question_vo(vo, packet):
+                    vo = strip_topic_question_vo(vo, packet)
+                if is_topic_question_vo(vo, packet):
                     vo = ""
                 if is_hanging_clause_vo(vo) or is_incomplete_vo(vo):
                     vo = strip_incomplete_vo(vo)

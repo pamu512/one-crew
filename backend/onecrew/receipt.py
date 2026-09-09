@@ -256,4 +256,7 @@ def attach_frames(packet: Packet, frames: list[ShotFrame], *, rails: Rails) -> P
             copied.imagen = False
         out.append(copied)
     packet.frames = out
+    from onecrew.script import refuse_empty_numeric_mute
+
+    refuse_empty_numeric_mute(packet, out)
     return packet
