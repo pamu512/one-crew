@@ -134,6 +134,11 @@ def _by_series(packet: Packet, *names: str) -> Finding | None:
         if finding.series == "GDP" or finding.id in _SHORT_IDS.get("GDP", frozenset()):
             if not _gdp_series_usable(finding):
                 continue
+        if finding.series == "USREC" or finding.id in _SHORT_IDS.get("USREC", frozenset()):
+            from onecrew.foundry import official_closed_shape
+
+            if not official_closed_shape("USREC", finding.print or "", finding.parallel_url or ""):
+                continue
         if finding.series in wanted or finding.id in ids:
             return finding
         if "SAHMREALTIME" in wanted and (finding.id or "").startswith("sahm-"):
@@ -743,10 +748,26 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     else:
         findings = _live_findings(packet)
         named = _named_prints(packet)
-        first = named[0] if named else (findings[0] if findings else None)
+        speakable = [
+            f
+            for f in findings
+            if _legal_spoken_finding(f)
+            and (f.id or "") not in {"cite-miss", "frame-miss"}
+            and f.stamp != "fringe"
+        ]
+        from onecrew.foundry import leftover_wrap
+
+        if leftover_wrap(findings) and not _invents(packet):
+            return []
+        first = named[0] if named else next(
+            (f for f in speakable if (f.stamp or "") == "timeline_event"),
+            None,
+        )
+        if first is None:
+            first = next((f for f in speakable if f.stamp == "grounded"), None)
         second = named[1] if len(named) > 1 else None
         if second is None and first is not None:
-            second = next((f for f in findings if f is not first), None)
+            second = next((f for f in speakable if f is not first), None)
         third = named[2] if len(named) > 2 else first
         leftover_costume = {((first.series or "").lower() if first else ""), ((second.series or "").lower() if second else "")}
         smash_ok = (
@@ -758,13 +779,6 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         )
         timeline_row = first is not None and (first.stamp or "") == "timeline_event"
         has_timeline = any((f.stamp or "") == "timeline_event" for f in findings)
-        speakable = [
-            f
-            for f in findings
-            if _legal_spoken_finding(f)
-            and (f.id or "") not in {"cite-miss", "frame-miss"}
-            and f.stamp != "fringe"
-        ]
         # Empty timeline + no official/event object: HOLD. Fiction and leftover Hormuz still write.
         if not has_timeline and not named and not speakable and not _invents(packet):
             return []
@@ -803,7 +817,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             "eyes": (
                 "Dated first-trigger from the pack. Official series stay on later cards."
                 if trigger
-                else ("Cited events on later cards." if timeline_row else "Three objects labeled from the pack.")
+                else "Cited events on later cards."
             ),
             "finding_ids": [first.id] if first else [],
         },

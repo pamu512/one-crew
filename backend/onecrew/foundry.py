@@ -184,13 +184,16 @@ def official_usrec_url(url: str) -> bool:
     return "stlouisfed.org" in low and "usrec" in low
 
 
-def official_closed_shape(series: str, printed: str, url: str = "") -> bool:
+def official_closed_shape(
+    series: str, printed: str, url: str = "", *, require_cite: bool = True
+) -> bool:
     """Closed-series prints stay official shapes. USREC is 0/1 on the FRED pipe."""
     raw = (printed or "").strip()
     if series == "USREC":
         if raw not in {"0", "1"}:
             return False
-        # Empty cite is ok at claim-scan; findings still need a FRED URL.
+        if require_cite:
+            return official_usrec_url(url)
         return not (url or "").strip() or official_usrec_url(url)
     if series == "GDP":
         return official_gdp_url(url) and complete_print(raw)

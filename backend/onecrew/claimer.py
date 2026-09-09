@@ -77,7 +77,9 @@ def _keep_closed_claim(claim: Claim) -> bool:
     if is_pack_slot_id(claim.id or ""):
         return False
     if claim.series in CLOSED_SERIES:
-        return official_closed_shape(claim.series, claim.print or "", claim.cite_url or "")
+        return official_closed_shape(
+            claim.series, claim.print or "", claim.cite_url or "", require_cite=False
+        )
     if not complete_print(claim.print or ""):
         return False
     return True

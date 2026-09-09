@@ -1282,6 +1282,44 @@ def test_empty_timeline_holds_instead_of_leftover_chrome_vo() -> None:
     assert not any(f.stamp == "timeline_event" for f in packet.receipt.findings)
 
 
+def test_forbidden_wrap_usrec_prose_plus_payrolls_does_not_smash() -> None:
+    """Leftover USREC prose must not smash into a real CES payrolls row."""
+    from onecrew.script import write_script
+
+    packet = _packet("Data centers are going to cause the next economic bubble.")
+    packet.tone = "On the cited print"
+    packet.receipt.findings = [
+        Finding(
+            id="3",
+            claim="The economic recession in 2001 followed the bust.",
+            stamp="grounded",
+            series="USREC",
+            print="economic recession in 2001",
+            when="2001",
+            parallel_url="https://truthout.org/articles/economic-recession-in-2001/",
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="payrolls-july-2026",
+            claim="Nonfarm payrolls fell −23,000 in July 2026.",
+            stamp="grounded",
+            series="BLS payrolls",
+            print="−23,000",
+            when="July 2026",
+            parallel_url="https://www.bls.gov/news.release/empsit.nr0.htm",
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+    ]
+    packet.receipt.timeline_map = []
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(f"{b.vo} {b.frame}" for b in packet.beats)
+    assert "economic recession in 2001" not in spoken
+    assert "USREC=economic" not in spoken
+    assert "smashed into" not in spoken.lower()
+
+
 def test_microsoft_lease_vo_cannot_take_coface_without_chain_heading() -> None:
     """#49 host+path match stays. Lease VO cannot soft-cover coface when basis URLs exist."""
     packet = _packet(_ARG_NO_CHAIN_HEAD)
