@@ -1211,9 +1211,12 @@ def _align_vo_to_stamps(
 ) -> tuple[list[str], str]:
     """Named-entity / print VO may only keep a timeline stamp that covers it. Else drop."""
     from onecrew.timeline import (
+        _MONTH_YEAR,
         _event_nums,
+        _years,
         cap_beat_cites,
         stamp_covers_vo,
+        stamp_supports_prints,
         stamp_text,
         stamps_for_vo,
         vo_proper_names,
@@ -1223,6 +1226,11 @@ def _align_vo_to_stamps(
     timeline = {f.id for f in findings if f.stamp == "timeline_event"}
     grounded = [fid for fid in fids if fid not in timeline]
     tl_fids = [fid for fid in fids if fid in timeline]
+
+    def _when_print_ok(finding) -> bool:
+        dated = bool(_event_nums(vo) or _years(vo) or _MONTH_YEAR.search(vo or ""))
+        return (not dated) or stamp_supports_prints(vo, finding)
+
     if is_pack_chrome_vo(vo):
         keep = [fid for fid in tl_fids if fid in by_id]
         spoken = speak_stamps(keep, findings)
@@ -1244,8 +1252,12 @@ def _align_vo_to_stamps(
             keep_ids = cap_beat_cites(vo, grounded + print_keep, findings)
             return keep_ids, _strip_unsupported_prints(vo, keep_ids, findings)
         return cap_beat_cites(vo, grounded + print_keep, findings), vo
-    covered = [fid for fid in tl_fids if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
-    chosen = stamps_for_vo(vo, findings, [])
+    covered = [
+        fid
+        for fid in tl_fids
+        if fid in by_id and stamp_covers_vo(vo, by_id[fid]) and _when_print_ok(by_id[fid])
+    ]
+    chosen = [f for f in stamps_for_vo(vo, findings, []) if _when_print_ok(f)]
     if chosen:
         cleaned = vo
         for fid in tl_fids:
@@ -1267,13 +1279,17 @@ def _align_vo_to_stamps(
         keep_ids = cap_beat_cites(cleaned, grounded + covered, findings)
         return keep_ids, _strip_unsupported_prints(cleaned, keep_ids, findings)
     for finding in findings:
-        if finding.stamp == "timeline_event" and stamp_covers_vo(vo, finding):
+        if finding.stamp == "timeline_event" and stamp_covers_vo(vo, finding) and _when_print_ok(finding):
             cleaned = vo
             for fid in tl_fids:
                 cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
             return cap_beat_cites(cleaned, grounded + [finding.id], findings), cleaned
     if not tl_fids and grounded:
-        covering = [fid for fid in grounded if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
+        covering = [
+            fid
+            for fid in grounded
+            if fid in by_id and stamp_covers_vo(vo, by_id[fid]) and _when_print_ok(by_id[fid])
+        ]
         if covering:
             from onecrew.verify import CLOSED_SERIES
 
@@ -1316,8 +1332,10 @@ def is_thin_frame(text: str, fids: list[str] | None = None, findings: list | Non
     body = _tidy_vo(text or "")
     if not body:
         return False
+    if fids and findings and is_title_chrome_frame(body, fids, findings):
+        return True
     if fids and findings:
-        printed = speak_stamp_fact(fids, findings) or speak_stamps(fids, findings)
+        printed = speak_stamp_print(fids, findings) or speak_stamp_fact(fids, findings) or speak_stamps(fids, findings)
         if printed and _speech_norm(printed) in _speech_norm(body):
             return False
     if body.count("'") % 2 != 0 or body.count('"') % 2 != 0:
@@ -1733,6 +1751,14 @@ def prefer_covering_print(vo: str, fids: list[str], findings: list) -> tuple[lis
         return useful, False
     if any(is_chrome_cover_stamp(by_id[fid]) for fid in fids if fid in by_id):
         return [], True
+    from onecrew.timeline import _years
+
+    dated = bool(nums or _years(vo) or _MONTH_YEAR.search(vo or ""))
+    if dated:
+        supported = [fid for fid in keep if fid in by_id and stamp_supports_prints(vo, by_id[fid])]
+        if supported and union_supports_prints(vo, [by_id[fid] for fid in supported]):
+            return supported, False
+        return [], True
     return keep, False
 
 
@@ -1815,6 +1841,190 @@ def drop_thin_title_read_beats(packet) -> list[str]:
     return drop
 
 
+def _speakable_grounded_stamps(packet) -> list[Finding]:
+    from onecrew.timeline import is_chrome_cover_stamp
+
+    receipt = packet.receipt
+    out: list[Finding] = []
+    for finding in receipt.findings if receipt else []:
+        if not (finding.parallel_url or "").strip():
+            continue
+        if (finding.stamp or "") == "fringe":
+            continue
+        if is_chrome_cover_stamp(finding):
+            continue
+        printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+        if not (printed or (finding.claim or "").strip()):
+            continue
+        out.append(finding)
+    return out
+
+
+def _stamp_capacity(packet) -> int:
+    """URL-backed stamps that could support cite-faithful beats, including map rows host-cap dropped."""
+    from onecrew.timeline import is_chrome_cover_stamp
+
+    seen: set[str] = {f.id for f in _speakable_grounded_stamps(packet)}
+    receipt = packet.receipt
+    if receipt is None:
+        return len(seen)
+    by_id = {f.id: f for f in receipt.findings}
+    for row in receipt.timeline_map or []:
+        fid = (row.finding_id or "").strip()
+        if not fid or not (row.url or "").strip():
+            continue
+        finding = by_id.get(fid)
+        if finding is not None and (
+            finding.stamp == "fringe" or is_chrome_cover_stamp(finding)
+        ):
+            continue
+        seen.add(fid)
+    return len(seen)
+
+
+def _cite_faithful_beats(packet) -> list:
+    beats = [b for b in packet.beats if (b.kind or "vo") != "heading"]
+    return [b for b in beats if b.finding_ids and _speech_norm(b.vo)]
+
+
+def _hold_ship(packet, reason: str) -> None:
+    receipt = packet.receipt
+    if receipt is None:
+        return
+    receipt.disposition = "HOLD"
+    prior = (receipt.hold_reason or "").strip()
+    if reason.lower() not in prior.lower():
+        receipt.hold_reason = f"{prior}; {reason}".strip() if prior else reason
+    packet.status = "hold"
+
+
+def _append_stamp_beat(packet, finding: Finding) -> bool:
+    spoken = speak_stamp_fact([finding.id], [finding]) or speak_stamps([finding.id], [finding])
+    if not spoken or is_thin_title_read_vo(spoken, [finding]):
+        spoken = (finding.claim or "").strip() or spoken
+    if not spoken:
+        return False
+    screen = speak_stamp_print([finding.id], [finding]) or spoken
+    n = len([b for b in packet.beats if (b.kind or "vo") != "heading"])
+    packet.beats.append(
+        ScriptBeat(
+            id=f"beat{n + 1}",
+            start="00:00",
+            duration_s=20,
+            scene=f"BEAT {n + 1}",
+            vo=f"NARRATOR\n{spoken} [{finding.id}]",
+            finding_ids=[finding.id],
+            frame=screen,
+        )
+    )
+    return True
+
+
+def restore_unused_stamp_beats(packet) -> int:
+    """Keep multi-beat structure from leftover stamps. Do not invent."""
+    used = {fid for beat in packet.beats for fid in beat.finding_ids}
+    added = 0
+    for finding in _speakable_grounded_stamps(packet):
+        if finding.id in used:
+            continue
+        if _append_stamp_beat(packet, finding):
+            used.add(finding.id)
+            added += 1
+    return added
+
+
+def topic_cited_axes(topic: str) -> list[str]:
+    """Two cited axes from an AND/vs question. No topic nouns hardcoded."""
+    match = _AXIS_PAIR.search((topic or "").strip())
+    if not match:
+        return []
+    left = _tidy_vo(match.group(1) or "")
+    right = _tidy_vo(match.group(2) or "")
+    if not left or not right:
+        return []
+    return [left, right]
+
+
+def _axis_tokens(axis: str) -> set[str]:
+    return {
+        w.lower()
+        for w in re.findall(r"[A-Za-z]{3,}", axis or "")
+        if w.lower() not in _AXIS_STOP
+    }
+
+
+def _stamp_matches_axis(finding: Finding, axis: str) -> bool:
+    from onecrew.timeline import stamp_text
+
+    toks = _axis_tokens(axis)
+    if not toks:
+        return False
+    blob = (stamp_text(finding) or "").lower()
+    return any(tok in blob for tok in toks)
+
+
+def _axis_spoken(packet, axis: str, matching: list[Finding]) -> bool:
+    ids = {f.id for f in matching}
+    toks = _axis_tokens(axis)
+    prints = []
+    for finding in matching:
+        printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+        if printed:
+            prints.append(_speech_norm(printed))
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        if not (ids & set(beat.finding_ids)):
+            continue
+        body = _speech_norm(f"{beat.vo} {beat.frame or ''}")
+        if any(tok in body for tok in toks) or any(p and p in body for p in prints):
+            return True
+    return False
+
+
+def ensure_topic_axes(packet) -> str | None:
+    """Speak both cited axes from covering stamps, or name the missing axis."""
+    axes = topic_cited_axes(getattr(packet, "topic", "") or "")
+    if len(axes) < 2:
+        return None
+    stamps = _speakable_grounded_stamps(packet)
+    missing: list[str] = []
+    covered = 0
+    for axis in axes:
+        matching = [f for f in stamps if _stamp_matches_axis(f, axis)]
+        if not matching:
+            missing.append(axis)
+            continue
+        if _axis_spoken(packet, axis, matching):
+            covered += 1
+            continue
+        if _append_stamp_beat(packet, matching[0]) and _axis_spoken(packet, axis, matching):
+            covered += 1
+            continue
+        missing.append(axis)
+    if missing and (covered or len(missing) < len(axes)):
+        return f"{_MISSING_AXIS}: {missing[0]}"
+    if missing and covered == 0 and all(
+        any(_stamp_matches_axis(f, axis) for f in stamps) for axis in axes
+    ):
+        return f"{_MISSING_AXIS}: {missing[0]}"
+    return None
+
+
+def refuse_thin_episode(packet) -> str | None:
+    """one_time_short_episode may not ship 1-beat when ≥3 stamps could support ≥3 beats."""
+    if (packet.cut or "") != "one_time_short_episode":
+        return None
+    if _stamp_capacity(packet) < 3:
+        return None
+    if len(_cite_faithful_beats(packet)) >= 3:
+        return None
+    restore_unused_stamp_beats(packet)
+    if len(_cite_faithful_beats(packet)) >= 3:
+        return None
+    return f"{_THIN_AFTER_REPAIR} / {_INSUFFICIENT_CITE_BEATS}"
+
+
 def sanitize_for_ship(packet):
     """Ship-facing: neutralize leftover slot ids, chrome VO, thin reads, scope cites."""
     from onecrew.cite_repair import rebuild_timed_vo
@@ -1823,8 +2033,14 @@ def sanitize_for_ship(packet):
     _strip_meta_hanging_beats(packet)
     _reattach_covering_scope_beats(packet)
     dropped = drop_thin_title_read_beats(packet)
+    thin = refuse_thin_episode(packet)
+    axis = ensure_topic_axes(packet)
     neutralize_pack_slot_beats(packet)
-    if dropped or packet.beats:
+    if thin:
+        _hold_ship(packet, thin)
+    if axis:
+        _hold_ship(packet, axis)
+    if dropped or packet.beats or thin or axis:
         rebuild_timed_vo(packet)
     return packet
 
@@ -1894,6 +2110,83 @@ def _reattach_covering_scope_beats(packet) -> None:
 
 def is_generic_stamp_title(title: str) -> bool:
     return (title or "").strip().lower() in _GENERIC_TITLE
+
+
+_NUMERIC_PRINT = re.compile(r"\$\s*\d|\d\s*\$|[/]t\b|\d(?:\.\d+)?\s*%|[-−]\d")
+_THIN_AFTER_REPAIR = "thin_after_repair"
+_INSUFFICIENT_CITE_BEATS = "insufficient_cite_beats"
+_MISSING_AXIS = "missing topic axis"
+_AXIS_PAIR = re.compile(
+    r"\b(?:did|have|has|were|was|do|does|are|is)\s+"
+    r"(.+?)\s+(?:and|versus|vs\.?)\s+(.+?)(?:\s+both\b|\s*\?|\s*$)",
+    re.I,
+)
+_AXIS_STOP = frozenset(
+    {
+        "the",
+        "and",
+        "both",
+        "hold",
+        "held",
+        "cited",
+        "prints",
+        "print",
+        "after",
+        "from",
+        "with",
+        "that",
+        "this",
+        "have",
+        "has",
+        "did",
+        "does",
+        "were",
+        "was",
+        "are",
+        "for",
+    }
+)
+
+
+def is_numeric_print(text: str) -> bool:
+    """Magnitude token ($ / % / /t). Not an article title."""
+    return bool(_NUMERIC_PRINT.search(text or ""))
+
+
+def speak_stamp_print(fids: list[str], findings: list[Finding]) -> str:
+    """Mute-test print token. Title chrome is not the on_screen."""
+    by_id = {f.id: f for f in findings}
+    for fid in fids:
+        finding = by_id.get(fid)
+        if finding is None:
+            continue
+        printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+        if printed and is_numeric_print(printed) and not is_generic_stamp_title(printed):
+            return printed
+    return ""
+
+
+def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: list | None = None) -> bool:
+    """Article title / # headline. Not the attached numeric print."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if raw.startswith("#") or _is_title_card(raw):
+        return True
+    shown = _speech_norm(raw)
+    rows = [f for f in (findings or []) if not fids or f.id in set(fids)]
+    for finding in rows:
+        title = _speech_norm(getattr(finding, "title", None) or "")
+        printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+        if not title or title in _GENERIC_TITLE:
+            continue
+        if not is_numeric_print(printed):
+            continue
+        if _speech_norm(printed) in shown:
+            continue
+        if shown == title or title in shown or shown in title:
+            return True
+    return False
 
 
 def speak_stamp_fact(fids: list[str], findings: list[Finding]) -> str:

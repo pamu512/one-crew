@@ -1198,6 +1198,13 @@ def _board_gate_reason(packet: Packet) -> str | None:
             cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
             if is_broad_scope_vo(beat.vo) and cited and all(stamp_scope(f) == "narrow" for f in cited):
                 return "cite-faithfulness"
+    from onecrew.script import ensure_topic_axes, refuse_thin_episode
+
+    thin = refuse_thin_episode(packet)
+    axis = ensure_topic_axes(packet)
+    if thin or axis:
+        rebuild_timed_vo(packet)
+        return thin or axis
     return None
 
 

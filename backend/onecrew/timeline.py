@@ -609,8 +609,12 @@ def stamp_covers_vo(vo: str, finding: Finding) -> bool:
     return pair_covers_vo(vo, stamp_text(finding), getattr(finding, "parallel_url", None) or getattr(finding, "url", None) or "")
 
 
+def _years(text: str) -> set[str]:
+    return set(re.findall(r"\b20\d{2}\b", text or ""))
+
+
 def stamp_supports_prints(vo: str, finding: object) -> bool:
-    """Spoken non-year prints and month-years must sit on this stamp. Else refuse."""
+    """Spoken non-year prints and dated when must sit on this stamp. Else refuse."""
     blob = stamp_text(finding)
     nums = _event_nums(vo)
     if nums and not nums <= _event_nums(blob):
@@ -618,6 +622,12 @@ def stamp_supports_prints(vo: str, finding: object) -> bool:
     vo_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(vo or "")}
     ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob or "")}
     if vo_months and not (vo_months & ev_months):
+        return False
+    vo_years = _years(vo)
+    ev_years = _years(blob)
+    if vo_years and ev_years and not (vo_years & ev_years):
+        return False
+    if vo_years and not ev_years:
         return False
     return True
 
@@ -739,7 +749,7 @@ def _months(text: str) -> set[str]:
 
 
 def union_supports_prints(vo: str, findings: Iterable[object]) -> bool:
-    """Spoken non-year prints and month-years must sit on the attached set."""
+    """Spoken non-year prints and dated when must sit on the attached set."""
     rows = list(findings or [])
     blob = " ".join(stamp_text(f) for f in rows)
     nums = _event_nums(vo)
@@ -747,6 +757,12 @@ def union_supports_prints(vo: str, findings: Iterable[object]) -> bool:
         return False
     vo_months = _months(vo)
     if vo_months and not (vo_months & _months(blob)):
+        return False
+    vo_years = _years(vo)
+    ev_years = _years(blob)
+    if vo_years and ev_years and not (vo_years & ev_years):
+        return False
+    if vo_years and not ev_years:
         return False
     return True
 
