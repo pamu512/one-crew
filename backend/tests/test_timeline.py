@@ -1348,3 +1348,262 @@ def test_microsoft_lease_vo_cannot_take_coface_without_chain_heading() -> None:
     assert all((f.parallel_url or "") == REUTERS_MSFT for f in cited)
     assert coface.id not in lease.finding_ids
     assert all((f.parallel_url or "") != COFACE_SURVEY for f in cited)
+
+
+# Live packet oc-data-centers-are-going-to-cause-the--cadabc66 after #50:
+# Parallel returned PBS/Noahpinion/Guardian hits, no chronological_event_chain
+# or High-confidence basis list, timeline_map=0, Foundry minted nothing,
+# cite-repair burned to 3 with blank NARRATOR VO.
+INGAGE = "https://www.ingagepartners.com/insights/data-center-power-demand-2026"
+_HITS_NO_CHAIN = (
+    "## Argument\n"
+    "No Parallel rows. The thesis names that gap instead of inventing a source to fatten the page.\n"
+    "\n"
+    "## Sources\n"
+    "No findings. The thesis names the gap instead of inventing a source.\n"
+    "\n"
+    "## Left out / not included\n"
+    f"Left out: Cloud vendor scaled back leases. URL: {PBS}. reason=other. foundry minted nothing\n"
+    f"Left out: A newspaper asked whether the boom is already a bubble. URL: {GUARDIAN_DC}. "
+    "reason=other. foundry minted nothing\n"
+    f"Left out: Campus power demand. URL: {INGAGE}. reason=other. foundry minted nothing\n"
+    f"Left out: Go to content. URL: {COFACE_SURVEY}. reason=other. foundry minted nothing\n"
+    f"Left out: Compute campus scrape title. URL: {NOAH}. reason=other. foundry minted nothing\n"
+)
+_BLANK_VOS = {bid: "NARRATOR\n" for bid in (
+    "cold-open", "promise", "gdp", "labor", "turn", "complication", "receipt", "close"
+)}
+
+
+def test_parallel_hits_without_chain_stamp_timeline_event() -> None:
+    """Forbidden wrap: Parallel hits exist only as Left out, timeline stamps nothing."""
+    from onecrew.timeline import plan_timeline
+
+    planned = plan_timeline(_HITS_NO_CHAIN)
+    assert planned.findings, "hits without a chain must still stamp timeline_event"
+    assert all(f.stamp == "timeline_event" for f in planned.findings)
+    assert all((f.parallel_url or "").startswith("http") for f in planned.findings)
+    assert all(f.id.startswith("te-") for f in planned.findings)
+    assert not any((f.series or "") in CLOSED_SERIES for f in planned.findings)
+    urls = {f.parallel_url for f in planned.findings}
+    assert PBS in urls
+    assert GUARDIAN_DC in urls
+    assert INGAGE in urls
+    assert COFACE_SURVEY not in urls
+    assert NOAH not in urls
+    claims = " ".join(f.claim or "" for f in planned.findings).lower()
+    assert "go to content" not in claims
+    assert "scrape title" not in claims
+
+
+def test_plan_timeline_from_parallel_hit_rows() -> None:
+    from types import SimpleNamespace
+
+    from onecrew.timeline import plan_timeline
+
+    rows = [
+        SimpleNamespace(
+            url=PBS,
+            title="Cloud vendor scaled back leases",
+            excerpts=["A cloud vendor scaled back leases in August 2026."],
+        ),
+        SimpleNamespace(url=GUARDIAN_DC, title="Is the boom already a bubble?", excerpts=[]),
+        SimpleNamespace(url="https://example.com/", title="Home", excerpts=["Skip to main content"]),
+        SimpleNamespace(url=COFACE_SURVEY, title="Go to content", excerpts=["Cookie banner"]),
+    ]
+    planned = plan_timeline(
+        "## Argument\nData centers are going to cause the next economic bubble.\n",
+        hit_rows=rows,
+    )
+    assert len(planned.findings) >= 1
+    urls = {f.parallel_url for f in planned.findings}
+    assert PBS in urls
+    assert GUARDIAN_DC in urls
+    assert "https://example.com/" not in urls
+    assert COFACE_SURVEY not in urls
+    assert all((f.series or "") == "timeline_event" for f in planned.findings)
+    assert not any((f.series or "") == "USREC" for f in planned.findings)
+
+
+def test_hit_stamp_does_not_mint_usrec_prose() -> None:
+    from types import SimpleNamespace
+
+    from onecrew.timeline import plan_timeline
+
+    rows = [
+        SimpleNamespace(
+            url="https://truthout.org/articles/economic-recession-in-2001/",
+            title="Economic recession in 2001",
+            excerpts=["The economic recession in 2001 followed the bust."],
+        )
+    ]
+    planned = plan_timeline("## Argument\nAre we near recession?\n", hit_rows=rows)
+    assert planned.findings
+    assert not any((f.series or "") == "USREC" for f in planned.findings)
+    assert not any((f.series or "") in CLOSED_SERIES for f in planned.findings)
+
+
+def test_research_hits_without_chain_stamp_timeline(monkeypatch) -> None:
+    """_research must stamp Parallel hits when Task omits the event chain."""
+    from types import SimpleNamespace
+
+    from onecrew.agent.shift import _research
+    from onecrew.foundry import FoundryHold
+    from onecrew.models import Rails
+
+    packet = Packet(
+        id="oc-research-hits-no-chain",
+        topic="Compute campuses are going to cause the next economic bubble",
+        hook="Compute campuses are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+    )
+
+    def search(*, objective, search_queries):
+        blob = f"{objective} {' '.join(search_queries)}".lower()
+        if "hidden" in blob or "fringe" in blob:
+            return SimpleNamespace(
+                results=[SimpleNamespace(url="https://example.com/fringe", title="miss", excerpts=["fringe offtake"])]
+            )
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url=PBS,
+                    title="Cloud vendor scaled back leases",
+                    excerpts=["A cloud vendor scaled back leases in August 2026."],
+                ),
+                SimpleNamespace(
+                    url=GUARDIAN_DC,
+                    title="Is the boom already a bubble?",
+                    excerpts=["A newspaper asked whether the boom is already a bubble."],
+                ),
+            ]
+        )
+
+    def extract(*, urls, objective):
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(url=PBS, title="leases", excerpts=["A cloud vendor scaled back leases in August 2026."]),
+            ],
+            errors=[],
+        )
+
+    def task(*, prompt, processor="pro", task_spec=None):
+        return SimpleNamespace(
+            output=SimpleNamespace(
+                content="Data centers are going to cause the next economic bubble.",
+                basis=[],
+            )
+        )
+
+    def boom_mint(*_a, **_k):
+        raise FoundryHold("foundry minted nothing")
+
+    monkeypatch.setattr("onecrew.agent.shift.search", search)
+    monkeypatch.setattr("onecrew.agent.shift.extract", extract)
+    monkeypatch.setattr("onecrew.agent.shift.run_task", task)
+    monkeypatch.setattr("onecrew.agent.shift.mint", boom_mint)
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: False)
+    receipt, leftover, _urls, spine = _research(
+        packet, Rails(parallel=True, vertex=False, imagen=False), "2-3y"
+    )
+    tls = [f for f in receipt.findings if f.stamp == "timeline_event"]
+    assert tls, "Parallel hits without a chain must become timeline_event"
+    assert all((f.parallel_url or "").startswith("http") for f in tls)
+    assert {f.parallel_url for f in tls} >= {PBS, GUARDIAN_DC}
+    assert not any((f.series or "") in CLOSED_SERIES for f in tls)
+    assert receipt.disposition == "READY"
+    assert "foundry minted nothing" not in (receipt.hold_reason or "").lower()
+    assert "cite-repair loop exhausted" not in (receipt.hold_reason or "").lower()
+    left_urls = {row.url for row in leftover if row.url}
+    assert COFACE_SURVEY not in {f.parallel_url for f in tls} or COFACE_SURVEY in left_urls
+
+
+def test_cite_repair_does_not_exhaust_blank_vo_when_hits_exist() -> None:
+    """Forbidden wrap: blank 8-beat shell burns cite-repair to 3 while Left out has hits."""
+    packet = _packet(_HITS_NO_CHAIN)
+    packet.receipt.hold_reason = "foundry minted nothing"
+    packet.receipt.findings = []
+    packet.receipt.timeline_map = []
+    for beat in packet.beats:
+        beat.vo = _BLANK_VOS[beat.id]
+        beat.finding_ids = []
+
+    def boom(**_k):
+        raise AssertionError("unstamped hits must not re-query Parallel three times")
+
+    result = run_cite_recheck_loop(packet, search_fn=boom)
+    assert packet.cite_recheck_attempts < MAX_CITE_RECHECKS
+    assert "cite-repair loop exhausted" not in (packet.receipt.hold_reason or "")
+    tls = [f for f in packet.receipt.findings if f.stamp == "timeline_event"]
+    if tls:
+        assert all((f.parallel_url or "").startswith("http") for f in tls)
+        assert {f.parallel_url for f in tls} >= {PBS, GUARDIAN_DC}
+        assert result.ok or "timeline empty" not in (packet.receipt.hold_reason or "").lower()
+    else:
+        reason = (packet.receipt.hold_reason or "").lower()
+        assert "unstamped" in reason or "timeline empty" in reason
+        assert result.ok is False
+
+
+def test_writer_speaks_hit_stamps_not_chrome_or_blank_shell() -> None:
+    from onecrew.script import write_script
+    from onecrew.timeline import apply_timeline, plan_timeline
+
+    planned = plan_timeline(_HITS_NO_CHAIN)
+    packet = _packet(_HITS_NO_CHAIN)
+    packet.receipt.findings = []
+    apply_timeline(packet.receipt.findings, planned)
+    packet.receipt.timeline_map = list(planned.mapping)
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(f"{b.vo} {b.frame}" for b in packet.beats)
+    assert packet.beats, "hit stamps must write cite-faithful VO"
+    assert any(b.finding_ids for b in packet.beats)
+    assert "Official series cards only" not in spoken
+    assert "Three pack objects" not in spoken
+    assert "leftover map" not in spoken.lower()
+    assert "Go to content" not in spoken
+    assert "Skip to main content" not in spoken
+    assert "economic recession in 2001" not in spoken
+    tls = [f for f in packet.receipt.findings if f.stamp == "timeline_event"]
+    assert tls
+    spoken_ids = {fid for b in packet.beats for fid in b.finding_ids}
+    assert spoken_ids & {f.id for f in tls}
+
+
+def test_writer_structural_hold_no_blank_shell_when_unstamped() -> None:
+    """Forbidden wrap: empty findings still emit a blank 8-beat NARRATOR shell."""
+    from onecrew.script import write_script
+
+    pack = (
+        "## Argument\n"
+        "Data centers are going to cause the next economic bubble.\n"
+        "\n"
+        "## Sources\n"
+        "No findings.\n"
+        "\n"
+        "## Left out / not included\n"
+        f"Left out: Go to content. URL: {COFACE_SURVEY}. reason=other. foundry minted nothing\n"
+    )
+    packet = _packet(pack)
+    packet.receipt.findings = []
+    packet.receipt.timeline_map = []
+    packet.receipt.hold_reason = "foundry minted nothing"
+    write_script(packet)
+    spoken = (packet.script or "") + "".join(f"{b.vo} {b.frame}" for b in packet.beats)
+    assert packet.receipt.disposition == "HOLD"
+    assert packet.beats == []
+    reason = (packet.receipt.hold_reason or "").lower()
+    assert "unstamped" in reason or "timeline" in reason or "chrome" in reason
+    assert "cite-repair loop exhausted" not in reason
+    for phrase in _CHROME_PHRASES:
+        assert phrase not in spoken, phrase
+    assert "Go to content" not in spoken
+    assert "NARRATOR" not in spoken

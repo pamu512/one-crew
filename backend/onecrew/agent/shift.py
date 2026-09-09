@@ -737,13 +737,21 @@ def _research(
         packet.research_pack or spine,
         used={f.id for f in findings},
         seen_urls={(f.parallel_url or "").strip() for f in findings if (f.parallel_url or "").strip()},
+        hit_rows=hit_rows if not findings else None,
     )
     apply_timeline(findings, planned_timeline)
+    stamped = {(f.parallel_url or "").strip() for f in findings if (f.parallel_url or "").strip()}
+    leftover = [row for row in leftover if not row.url or row.url not in stamped]
     if empty_foundry_path and not empty_mint_hold_ok_to_clear(
         str(foundry_exc),
         findings,
         spine or packet.research_pack or "",
     ):
+        from onecrew.timeline import UNSTAMPED_HITS
+
+        reason = str(foundry_exc)
+        if hit_urls and UNSTAMPED_HITS not in reason:
+            foundry_exc = FoundryHold(f"{reason}; {UNSTAMPED_HITS}")
         return _foundry_outcome(packet, rails, leftover, hit_urls, spine, foundry_exc, foundry_rows)
     if any(row.stamp == "timeline_event" for row in findings) and not any(
         row.parallel_status == "miss" for row in findings
