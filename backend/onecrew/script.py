@@ -91,7 +91,7 @@ _SHORT_IDS = {
     "BLS payrolls": frozenset({"payrolls", "payrolls-july-2026"}),
     "payrolls": frozenset({"payrolls", "payrolls-july-2026"}),
     "GDP": frozenset({"gdp", "gdp-2026-q2"}),
-    "SAHMREALTIME": frozenset({"sahm", "sahm-july-2026"}),
+    "SAHMREALTIME": frozenset({"sahm", "sahm-june-2026", "sahm-july-2026", "sahm-august-2026"}),
     "U-3": frozenset({"unemployment", "unemployment-july-2026"}),
 }
 
@@ -108,6 +108,8 @@ def _by_series(packet: Packet, *names: str) -> Finding | None:
         if finding.id in _LEFTOVER_IDS:
             continue
         if finding.series in wanted or finding.id in ids:
+            return finding
+        if "SAHMREALTIME" in wanted and (finding.id or "").startswith("sahm-"):
             return finding
     return None
 
@@ -218,7 +220,8 @@ def _payroll_print_ok(printed: str) -> bool:
 
 
 _MONTH_YEAR = re.compile(
-    r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})",
+    r"(January|February|March|April|May|June|July|August|September|October|November|December|"
+    r"Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)\s+(\d{4})",
     re.I,
 )
 _TRIGGER_LABEL = re.compile(
@@ -241,11 +244,42 @@ _TRIGGER_MONTH = re.compile(
 )
 
 
+_MONTH_CANON = {
+    "jan": "january",
+    "january": "january",
+    "feb": "february",
+    "february": "february",
+    "mar": "march",
+    "march": "march",
+    "apr": "april",
+    "april": "april",
+    "may": "may",
+    "jun": "june",
+    "june": "june",
+    "jul": "july",
+    "july": "july",
+    "aug": "august",
+    "august": "august",
+    "sep": "september",
+    "sept": "september",
+    "september": "september",
+    "oct": "october",
+    "october": "october",
+    "nov": "november",
+    "november": "november",
+    "dec": "december",
+    "december": "december",
+}
+
+
 def _month_year(when: str) -> tuple[str, str] | None:
     match = _MONTH_YEAR.search(when or "")
     if not match:
         return None
-    return (match.group(1).lower(), match.group(2))
+    name = _MONTH_CANON.get(match.group(1).lower())
+    if not name:
+        return None
+    return (name, match.group(2))
 
 
 def _first_trigger_text(packet: Packet) -> str:
@@ -313,22 +347,17 @@ def _vo_mixed_smash(packet: Packet, vo: str) -> bool:
 
 
 def _beat_sahm_month_off(packet: Packet, vo: str) -> bool:
-    """True if this beat cites a Sahm print and speaks a month other than finding.when."""
+    """True if this beat cites a Sahm id and speaks a month other than finding.when."""
     sahm = _by_series(packet, "SAHMREALTIME")
     if not sahm or not (sahm.when or "").strip():
         return False
-    if f"[{sahm.id}]" not in (vo or ""):
-        return False
-    printed = _print_of(sahm, "")
-    vo_n = (vo or "").replace("−", "-")
-    p_n = (printed or "").replace("−", "-")
-    if p_n and p_n not in vo_n and p_n.lstrip("+-") not in vo_n:
+    if f"[{sahm.id}]" not in (vo or "") and not re.search(r"\[sahm-[^\]]+\]", vo or ""):
         return False
     stamp = _month_year(sahm.when)
     if stamp is None:
         return False
     return any(
-        (match.group(1).lower(), match.group(2)) != stamp
+        _month_year(match.group(0)) != stamp
         for match in _MONTH_YEAR.finditer(vo or "")
     )
 
@@ -1129,6 +1158,8 @@ def _strip_unstamped_series_name(text: str, word: str) -> str:
 def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if len(units) != 8:
         return _fail_closed(packet, ["writer must emit 8 beats"])
+    if _units_sahm_month_off(packet, units) or _units_sahm_id_off(packet, units):
+        return _fail_closed(packet, ["sahm when print mismatch"])
     held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
     if not held:
         units = _voice_stamped_marks(packet, units)

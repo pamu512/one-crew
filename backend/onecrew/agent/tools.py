@@ -121,6 +121,12 @@ def verify_u3_ces_tool(claim: dict, bag: dict) -> dict[str, Any]:
     return verify_u3_ces(Claim(**claim), CiteBag(**bag)).model_dump()
 
 
+def verify_sahm_cell_tool(claim: dict, bag: dict) -> dict[str, Any]:
+    from onecrew.verify import Claim, CiteBag, verify_sahm_cell
+
+    return verify_sahm_cell(Claim(**claim), CiteBag(**bag)).model_dump()
+
+
 def verify_claim_set_tool(claims: list[dict], bag: dict) -> dict[str, Any]:
     from onecrew.verify import Claim, CiteBag, verify_claim_set
 
@@ -135,6 +141,7 @@ CRITIC_TOOLS = [
     verify_usrec_smash_tool,
     verify_gdp_bars_tool,
     verify_u3_ces_tool,
+    verify_sahm_cell_tool,
     verify_claim_set_tool,
 ]
 

@@ -103,7 +103,7 @@ CRITIC_INSTRUCTION = """You are One Crew's critic.
 
 Call the deterministic verify tools. Never override ok: false with prose.
 verify_print_in_cite, verify_payrolls_realized_ces, verify_usrec_smash,
-verify_gdp_bars, verify_u3_ces, verify_claim_set are the authority.
+verify_gdp_bars, verify_u3_ces, verify_sahm_cell, verify_claim_set are the authority.
 READY only if verify_claim_set is ok. Else HOLD, keep findings, and still run the writer.
 HOLD annotates the receipt. It must not blank the script.
 LEI/ISM spoken without a cited beat is a warning. It must not blank the script.

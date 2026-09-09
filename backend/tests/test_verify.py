@@ -1212,3 +1212,36 @@ def test_lei_conference_board_july_turn_still_prints_in_cite() -> None:
     assert got.ok is True, got.reason
 
 
+def test_sahm_when_print_mismatch_holds_june_with_july_cell() -> None:
+    """June/−0.03 is not a FRED cell when the pipe says June 0.07 / July −0.03."""
+    from onecrew.verify import verify_sahm_cell
+
+    table = (
+        "Sahm June 2026 = −0.03 vs 0.50 trigger. "
+        "2026-06-01 | 0.07\n2026-07-01 | -0.03\n2026-08-01 | -0.07\n"
+        "June 2026 0.07\nJuly 2026 −0.03\nAugust 2026 −0.07\n"
+    )
+    bag = _bag(
+        excerpts=[(FRED_SAHM, "SAHMREALTIME", table)],
+        spine=table,
+        hit_urls=[FRED_SAHM],
+    )
+    mixed = Claim(
+        series="SAHMREALTIME",
+        print="−0.03",
+        when="June 2026",
+        id="sahm-june-2026",
+        cite_url=FRED_SAHM,
+        claim_span=table,
+    )
+    got = verify_sahm_cell(mixed, bag)
+    assert got.ok is False
+    assert got.reason == "sahm when print mismatch"
+    checked = verify_claim_set([mixed], bag)
+    assert checked.ok is False
+    assert "sahm when print mismatch" in checked.hold_reasons
+    july = mixed.model_copy(update={"when": "July 2026", "id": "sahm-july-2026"})
+    ok = verify_sahm_cell(july, bag)
+    assert ok.ok is True, ok.reason
+
+

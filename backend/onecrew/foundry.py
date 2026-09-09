@@ -115,7 +115,9 @@ _GDP_PROJ = re.compile(
     r"\b(spf|fomc|philadelphia fed|survey of professional forecasters)\b",
     re.I,
 )
-_SAHM_PRINT = re.compile(r"([\-−])\s*0\.03")
+_SAHM_DECIMAL = re.compile(r"\bsahm\b.{0,48}?([+\-−]?\s*\d+\.\d+)", re.I)
+_SAHM_SIGNED = re.compile(r"([+\-−]\s*\d+\.\d+)")
+_SAHM_ISO = re.compile(r"(20\d{2})-(\d{2})-\d{2}\s*[|,]?\s*([+\-−]?\d+\.\d+)")
 _U3_HEDGE = re.compile(
     r"\bcould\b|\bforecast|\basked whether\b|\bprojects?\b|\boutlook\b|\bexpected\b",
     re.I,
@@ -990,21 +992,71 @@ def _norm_series_print(printed: str) -> str:
     return re.sub(r"\s+", "", (printed or "").replace("−", "-").replace("+", ""))
 
 
+def _strip_markup(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", text or "")
+
+
 def _decimal_series_rows(text: str) -> list[tuple[str, str]]:
     """FRED/prose cells: Month Year value or ISO date value. No series literals."""
     hits: list[tuple[str, str]] = []
-    blob = text or ""
+    blob = _strip_markup(text)
     for match in _MONTH.finditer(blob):
         after = blob[match.end() : match.end() + 16]
         val = re.match(r"\s*[=:]?\s*([+\-−]?\d+\.\d+)", after)
         if not val:
             continue
         hits.append((_month_stamp(match), val.group(1)))
-    for match in re.finditer(r"(20\d{2})-(\d{2})-\d{2}\s*[|,]?\s*([+\-−]?\d+\.\d+)", blob):
+    for match in _SAHM_ISO.finditer(blob):
         stamp = _iso_month_stamp(match.group(1), match.group(2))
         if stamp:
             hits.append((stamp, match.group(3)))
     return hits
+
+
+def sahm_fred_cells(text: str) -> list[tuple[str, str]]:
+    """Dated FRED SAHMREALTIME cells. Pipe/ISO wins over smashed prose."""
+    blob = _strip_markup(text)
+    pipe: list[tuple[str, str]] = []
+    seen: dict[str, str] = {}
+    for match in _SAHM_ISO.finditer(blob):
+        stamp = _iso_month_stamp(match.group(1), match.group(2))
+        if stamp:
+            pipe.append((stamp, match.group(3)))
+            seen[stamp.lower()] = match.group(3)
+    if pipe:
+        return pipe
+    named: list[tuple[str, str]] = []
+    for match in _MONTH.finditer(blob):
+        after = blob[match.end() : match.end() + 16]
+        val = re.match(r"\s*[=:]?\s*([+\-−]?\d+\.\d+)", after)
+        if not val:
+            continue
+        named.append((_month_stamp(match), val.group(1)))
+    return named
+
+
+def latest_sahm_cell(text: str) -> tuple[str, str] | None:
+    cells = sahm_fred_cells(text)
+    if not cells:
+        return None
+    return max(cells, key=lambda row: _month_key(row[0]))
+
+
+def align_sahm_pair(when: str, printed: str, blob: str) -> tuple[str, str]:
+    """when+print from one FRED cell. Remap. Do not keep June with July's print."""
+    cells = sahm_fred_cells(blob)
+    want_p = _norm_series_print(printed)
+    want_w = (when or "").strip().lower()
+    if cells:
+        for stamp, value in cells:
+            if stamp.lower() == want_w and _norm_series_print(value) == want_p:
+                return stamp, value
+        matched = [(stamp, value) for stamp, value in cells if _norm_series_print(value) == want_p]
+        if matched:
+            return max(matched, key=lambda row: _month_key(row[0]))
+        return latest_sahm_cell(blob) or (when, printed)
+    aligned = when_matching_print(blob, printed, when)
+    return (aligned or when, printed)
 
 
 def when_matching_print(text: str, printed: str, when: str = "") -> str:
@@ -1012,6 +1064,10 @@ def when_matching_print(text: str, printed: str, when: str = "") -> str:
     want = _norm_series_print(printed)
     if not want:
         return when
+    cells = sahm_fred_cells(text)
+    matched = [stamp for stamp, value in cells if _norm_series_print(value) == want]
+    if matched:
+        return max(matched, key=_month_key)
     matched = [
         stamp for stamp, value in _decimal_series_rows(text) if _norm_series_print(value) == want
     ]
@@ -1023,13 +1079,17 @@ def when_matching_print(text: str, printed: str, when: str = "") -> str:
 
 
 def align_sahm_finding(finding: Finding, blob: str) -> Finding:
-    """Stamp when+print+id from one table row. Latest row that carries the print wins."""
+    """Stamp when+print+id from one FRED cell. Mixed June/−0.03 cannot stay."""
     if (finding.series or "") != "SAHMREALTIME":
         return finding
-    aligned = when_matching_print(blob, finding.print or "", finding.when or "")
-    if aligned and aligned != (finding.when or ""):
-        finding.when = aligned
-        finding.id = _slug("SAHMREALTIME", aligned)
+    when, printed = align_sahm_pair(finding.when or "", finding.print or "", blob)
+    if when and when != (finding.when or ""):
+        finding.when = when
+        finding.id = _slug("SAHMREALTIME", when)
+    if printed and printed != (finding.print or ""):
+        finding.print = printed
+    if when and finding.id != _slug("SAHMREALTIME", when):
+        finding.id = _slug("SAHMREALTIME", when)
     return finding
 
 
@@ -1042,12 +1102,20 @@ def _dated_in(text: str, series: str, printed: str = "", years_from: str = "") -
         return _gdp_when(years_from or text, printed) or _gdp_when(text, printed)
     if series == "USREC":
         return _usrec_latest_when(text)
-    if series == "SAHMREALTIME" and printed:
-        aligned = when_matching_print(years_from or text, printed) or when_matching_print(
-            text, printed
-        )
-        if aligned:
-            return aligned
+    if series == "SAHMREALTIME":
+        cell = latest_sahm_cell(years_from or text) or latest_sahm_cell(text)
+        if cell and printed:
+            when, _val = align_sahm_pair(cell[0], printed, years_from or text)
+            if when:
+                return when
+        if cell:
+            return cell[0]
+        if printed:
+            aligned = when_matching_print(years_from or text, printed) or when_matching_print(
+                text, printed
+            )
+            if aligned:
+                return aligned
     if series in {"BLS payrolls", "U-3"} and printed:
         ces = _ces_when(text, printed, years_from)
         if ces:
@@ -1580,8 +1648,17 @@ def _legal_print(series: str, text: str) -> str | None:
             return None
         return raw
     if series == "SAHMREALTIME":
-        match = _SAHM_PRINT.search(text)
-        return re.sub(r"\s+", "", match.group(0)) if match else None
+        cell = latest_sahm_cell(text)
+        if cell:
+            return re.sub(r"\s+", "", cell[1])
+        match = _SAHM_DECIMAL.search(text) or _SAHM_SIGNED.search(text)
+        if not match:
+            return None
+        raw = re.sub(r"\s+", "", match.group(1))
+        tail = text[match.end() : match.end() + 16].lower()
+        if _norm_series_print(raw) in {"0.50", "0.5"} and "trigger" in tail:
+            return None
+        return raw
     if series == "LEI":
         if re.search(r"\bgdp\b", text, re.I) and not re.search(r"\blei\b|conference board", text, re.I):
             return None
@@ -1815,7 +1892,7 @@ _CUES: tuple[tuple[str, tuple[str, ...], tuple[str, ...], re.Pattern[str] | None
         "SAHMREALTIME",
         ("sahmrealtime", "sahm", "0.50 trigger"),
         ("sahmrealtime", "fred.stlouisfed.org/series/sahm"),
-        _SAHM_PRINT,
+        _SAHM_DECIMAL,
     ),
     (
         "LEI",
@@ -1868,7 +1945,7 @@ def _mint_from_notes(
             printed, claim = hit
             when = _when(claim, series, notes, printed)
             if series == "SAHMREALTIME":
-                when = when_matching_print(f"{claim} {notes}", printed, when) or when
+                when, printed = align_sahm_pair(when, printed or "", f"{claim} {notes}")
             cite = _pick_cite(table, url_keys, tokens + (series.lower(),), series)
             if series == "BLS payrolls":
                 cite = _pick_bls_cite(table, when) or cite
