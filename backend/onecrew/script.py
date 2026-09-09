@@ -1542,6 +1542,27 @@ _TOPIC_Q_LEAD = re.compile(
     re.I,
 )
 _HEADLINE_SUFFIX = re.compile(r"\s+[-–—]\s+[A-Z][A-Za-z.]{0,24}\s*$")
+_PUBLISHER_PIPE = re.compile(r"\s+\|\s+.+$")
+_NEWS_TAIL = frozenset(
+    {
+        "news",
+        "hub",
+        "desk",
+        "wire",
+        "times",
+        "post",
+        "journal",
+        "gazette",
+        "tribune",
+        "herald",
+        "report",
+        "review",
+        "observer",
+        "press",
+        "daily",
+        "source",
+    }
+)
 _META_FRAME = re.compile(
     r"cited events? on (?:screen|later cards)\.?|"
     r"cited print on screen\.?|"
@@ -1665,12 +1686,13 @@ def _speech_norm(text: str) -> str:
 
 
 def _headline_core(text: str) -> str:
-    return _speech_norm(_HEADLINE_SUFFIX.sub("", text or ""))
+    body = _PUBLISHER_PIPE.sub("", text or "")
+    return _speech_norm(_HEADLINE_SUFFIX.sub("", body))
 
 
 def _catalog_core(text: str) -> str:
     """Strip page/source tails so series names compare as stems."""
-    body = _speech_norm(text)
+    body = _speech_norm(_PUBLISHER_PIPE.sub("", text or ""))
     body = re.sub(
         r"\s+[-–—]?\s*historical data(?:\s*(?:&|and)\s*trends)?\s*$",
         "",
@@ -1723,20 +1745,81 @@ def _looks_like_prose_claim(text: str) -> bool:
     return bool(re.search(r"\b(?:is|are|was|were|has|have|had|will|after|because)\b", body, re.I))
 
 
+def _has_publisher_pipe(text: str) -> bool:
+    return bool(_PUBLISHER_PIPE.search(_bare_vo(text) or text or ""))
+
+
+def _is_site_name_only(text: str) -> bool:
+    """Publisher / desk / hub name. Not a spoken print."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    if not body or is_numeric_print(body) or _TITLE_CARD_VERB.search(body) or _has_publisher_pipe(body):
+        return False
+    words = re.findall(r"[A-Za-z0-9.&'-]+", body)
+    if not (2 <= len(words) <= 5):
+        return False
+    caps = sum(1 for w in words if w[:1].isupper())
+    if caps < max(2, len(words) - 1):
+        return False
+    return words[-1].lower().rstrip(".,") in _NEWS_TAIL
+
+
+def _is_headline_shaped_vo(text: str) -> bool:
+    """Title Case headline, no spoken number, no claim verb+print."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    if not body or is_numeric_print(body) or re.search(r"\d|%", body):
+        return False
+    if _TITLE_CARD_VERB.search(body):
+        return False
+    words = re.findall(r"[A-Za-z0-9]+", body)
+    if len(words) < 6:
+        return False
+    caps = sum(1 for w in words if w[:1].isupper() or w.lower() in {"vs", "versus"})
+    return caps >= max(4, len(words) - 2)
+
+
+def _vo_covers_attached_print(vo: str, findings: list) -> bool:
+    """Spoken line includes a numeric print from an attached stamp."""
+    numeric: list[str] = []
+    for finding in findings or []:
+        printed = "" if getattr(finding, "print", None) in {MISSING, "", None} else (finding.print or "").strip()
+        if printed and is_numeric_print(printed):
+            numeric.append(printed)
+    if not numeric:
+        return True
+    body = _speech_norm(vo)
+    bare = (_bare_vo(vo) or "").lower()
+    for printed in numeric:
+        if _speech_norm(printed) and _speech_norm(printed) in body:
+            return True
+        nums = [
+            n
+            for n in pack_numbers(printed)
+            if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
+        ]
+        if nums and all(n.lower() in body or n.lower() in bare for n in nums):
+            return True
+    return False
+
+
 def is_title_read_vo(vo: str, findings: list) -> bool:
-    """Article title / series-page name is not a cite-faithful print/claim/note."""
+    """Article title / hub paste / site name is not a cite-faithful print/claim/note."""
     body = _speech_norm(vo)
     core = _headline_core(vo)
     if not body or len(body) < 8:
         return False
     if any(body == _speech_norm(getattr(f, "claim", None) or "") for f in findings):
         return False
+    covered = _vo_covers_attached_print(vo, findings)
     if is_numeric_print(_bare_vo(vo)) and any(
         _speech_norm(getattr(f, "print", None) or "")
         and _speech_norm(getattr(f, "print", None) or "") in body
         for f in findings
     ):
         return False
+    if not covered and (
+        _is_site_name_only(vo) or _has_publisher_pipe(vo) or _is_headline_shaped_vo(vo)
+    ):
+        return True
     if _is_catalog_or_series_name(vo):
         return True
     prose = _looks_like_prose_claim(vo)
@@ -1974,26 +2057,30 @@ def prefer_covering_scope(vo: str, fids: list[str], findings: list) -> tuple[lis
 
 
 def neutralize_pack_slot_beats(packet) -> None:
-    """Rewrite leftover pack-slot / narrative beat ids to beat1…beatN. Never synonym-swap."""
-    remap: dict[str, str] = {}
+    """Rewrite leftover pack-slot / narrative / duplicate ids to unique beat1…beatN."""
     beats = [b for b in packet.beats if (b.kind or "vo") != "heading"]
+    old_ids = [b.id for b in beats]
     for i, beat in enumerate(beats):
-        if is_pack_slot_beat_id(beat.id) or is_narrative_beat_id(beat.id):
-            new_id = f"beat{i + 1}"
-            if beat.id != new_id:
-                remap[beat.id] = new_id
-                beat.id = new_id
+        beat.id = f"beat{i + 1}"
         beat.scene = f"BEAT {i + 1}"
-    for frame in packet.frames:
-        old = frame.beat_id
-        if old in remap:
-            frame.beat_id = remap[old]
-            if frame.id.endswith(f"-{old}"):
-                frame.id = f"{frame.id[: -len(old)]}{frame.beat_id}"
-    for row in getattr(packet, "collisions", None) or []:
-        old = getattr(row, "beat_id", "") or ""
-        if old in remap:
-            row.beat_id = remap[old]
+    new_ids = [b.id for b in beats]
+
+    def _rebind(items, *, rewrite_id: bool = False) -> None:
+        queue = list(zip(old_ids, new_ids))
+        for item in items:
+            old = getattr(item, "beat_id", "") or ""
+            for i, (src, dst) in enumerate(queue):
+                if src == old:
+                    queue.pop(i)
+                    item.beat_id = dst
+                    if rewrite_id:
+                        fid = getattr(item, "id", "") or ""
+                        if fid.endswith(f"-{old}"):
+                            item.id = f"{fid[: -len(old)]}{dst}"
+                    break
+
+    _rebind(packet.frames, rewrite_id=True)
+    _rebind(getattr(packet, "collisions", None) or [])
 
 
 def drop_thin_title_read_beats(packet) -> list[str]:
@@ -2486,19 +2573,21 @@ def speak_stamp_print(fids: list[str], findings: list[Finding]) -> str:
 
 
 def _looks_like_headline(text: str) -> bool:
-    """Article / series / wire headline. Not a numeric stamp print."""
+    """Article / series / hub / wire headline. Not a numeric stamp print."""
     raw = (text or "").strip()
     if not raw or is_numeric_print(raw):
         return False
     if raw.startswith("#") or _TEXT_CHROME.match(raw):
         return True
-    if ":" in raw or re.search(r"\s[-–—]\s+", raw):
+    if ":" in raw or "|" in raw or re.search(r"\s[-–—]\s+", raw):
+        return True
+    if _is_site_name_only(raw) or _is_headline_shaped_vo(raw):
         return True
     return _is_title_card(raw)
 
 
 def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: list | None = None) -> bool:
-    """Article title / # headline. Not the attached numeric print."""
+    """Article title / hub title / # headline. Not the attached numeric print."""
     raw = (text or "").strip()
     if not raw:
         return False
@@ -2520,7 +2609,11 @@ def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: li
             continue
         if shown == title or title in shown or shown in title or _title_near(raw, getattr(finding, "title", None) or ""):
             return True
-    if printed_tok and _speech_norm(printed_tok) not in shown and _looks_like_headline(raw):
+    if printed_tok and _speech_norm(printed_tok) not in shown and (
+        _looks_like_headline(raw)
+        or _is_site_name_only(raw)
+        or _is_headline_shaped_vo(raw)
+    ):
         return True
     return False
 

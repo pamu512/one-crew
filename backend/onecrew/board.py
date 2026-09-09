@@ -101,6 +101,9 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
     if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
         beat.frame = printed
         return printed
+    if shown and not is_numeric_print(shown) and (title_chrome or headline):
+        beat.frame = ""
+        return ""
     return shown
 
 
