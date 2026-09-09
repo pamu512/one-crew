@@ -1648,6 +1648,28 @@ def write_script(packet: Packet, writer=None) -> Packet:
             vertex_detail = "Vertex script down"
     if not units and local and len(local) == 8:
         units = local
+    has_timeline = any(
+        (f.stamp or "") == "timeline_event"
+        for f in ((receipt.findings if receipt else []) or [])
+    )
+    speakable = [
+        f
+        for f in ((receipt.findings if receipt else []) or [])
+        if _legal_spoken_finding(f)
+        and (f.id or "") not in {"cite-miss", "frame-miss"}
+        and f.stamp != "fringe"
+    ]
+    if (
+        units
+        and len(units) == 8
+        and not has_timeline
+        and not _named_prints(packet)
+        and not speakable
+        and not _invents(packet)
+    ):
+        holes = list(mint_holes) if mint_holes else []
+        holes.append("leftover chrome VO without timeline stamps")
+        return _fail_closed(packet, holes)
     if units and len(units) == 8:
         units = _weave_first_trigger(packet, units)
         _warn_mint(packet, mint_holes)
@@ -1655,10 +1677,6 @@ def write_script(packet: Packet, writer=None) -> Packet:
     holes = list(mint_holes) if mint_holes else ["_eight_from_pack cannot place minted prints"]
     if vertex_detail:
         holes.append(vertex_detail)
-    has_timeline = any(
-        (f.stamp or "") == "timeline_event"
-        for f in ((receipt.findings if receipt else []) or [])
-    )
     if not has_timeline and not _named_prints(packet) and not _invents(packet):
         holes.append("leftover chrome VO without timeline stamps")
     return _fail_closed(packet, holes)

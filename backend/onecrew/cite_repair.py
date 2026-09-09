@@ -177,7 +177,8 @@ def empty_cite_beats(packet: Packet) -> list[ScriptBeat]:
         if (beat.kind or "vo") != "heading" and not _is_hole(beat)
     ]
     if vo_beats and all(not [fid for fid in b.finding_ids if fid in known] for b in vo_beats):
-        return vo_beats
+        sourced = [b for b in vo_beats if b.id in named or _sourced_claim(b)]
+        return sourced
     out: list[ScriptBeat] = []
     for beat in vo_beats:
         fids = [fid for fid in beat.finding_ids if fid in known]
@@ -345,7 +346,12 @@ def _stamp_pack_timeline(packet: Packet) -> list[str]:
     receipt.findings = cap_url_reuse(list(receipt.findings), pairs)
     used = {f.id for f in receipt.findings}
     seen = {(f.parallel_url or "").strip() for f in receipt.findings if (f.parallel_url or "").strip()}
-    planned = plan_timeline(_pack_text(packet), used=used, seen_urls=seen)
+    planned = plan_timeline(
+        _pack_text(packet),
+        used=used,
+        seen_urls=seen,
+        hit_rows=list(getattr(packet, "exclusions", None) or []),
+    )
     apply_timeline(receipt.findings, planned)
     receipt.findings = cap_url_reuse(list(receipt.findings), pairs or [(r.thesis, r.url) for r in planned.mapping])
     if planned.mapping:
@@ -826,6 +832,42 @@ def _credit_hold(packet: Packet) -> bool:
     return "credit" in reason.lower() or "402" in reason
 
 
+def _hits_present(packet: Packet) -> bool:
+    from onecrew.timeline import parse_parallel_hits
+
+    rows = list(getattr(packet, "exclusions", None) or [])
+    if parse_parallel_hits(_pack_text(packet), rows):
+        return True
+    if any((getattr(row, "url", None) or "").startswith("http") for row in rows):
+        return True
+    blob = _pack_text(packet)
+    return "Left out:" in blob and "URL: http" in blob
+
+
+def _hold_if_hits_unstamped(packet: Packet, attempts: int) -> CiteRepairResult | None:
+    """Do not burn 3 empty repair loops on blank VO when hits never became stamps."""
+    from onecrew.timeline import UNSTAMPED_HITS, has_timeline_url
+
+    receipt = packet.receipt
+    if receipt is None:
+        return None
+    if has_timeline_url(receipt.findings):
+        return None
+    if any((f.parallel_url or "").strip() for f in receipt.findings):
+        return None
+    if empty_cite_beats(packet) or unsupported_cite_findings(packet):
+        return None
+    if not _hits_present(packet):
+        return None
+    receipt.disposition = "HOLD"
+    prior = (receipt.hold_reason or "").strip()
+    if UNSTAMPED_HITS not in prior:
+        receipt.hold_reason = f"{prior}; {UNSTAMPED_HITS}".strip("; ") if prior else UNSTAMPED_HITS
+    packet.status = "hold"
+    packet.cite_recheck_attempts = attempts
+    return CiteRepairResult(ok=False, attempts=attempts, hold_reason=UNSTAMPED_HITS)
+
+
 def run_cite_recheck_loop(
     packet: Packet,
     *,
@@ -866,6 +908,11 @@ def run_cite_recheck_loop(
                 p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p
             ),
         )
+    early = _hold_if_hits_unstamped(packet, attempts)
+    if early is not None:
+        early.attached_ids = attached_all
+        early.dropped_beat_ids = dropped_all
+        return early
     while True:
         if current_bag and (current_bag.hit_urls or current_bag.excerpts):
             attached_all.extend(_attach_from_bag(packet, current_bag))

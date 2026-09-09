@@ -100,12 +100,27 @@ _BIBLIO_ID = re.compile(
 _PACK_CHROME = re.compile(
     r"official series cards only|three pack objects|leftover map|"
     r"bibliography|executive_summary|scrape title|"
-    r"go to content|skip to (?:main )?content",
+    r"go to content|skip to (?:main )?content|cookie banner",
     re.I,
 )
 _URL_REUSE_CAP = 2
 _SOURCES_HEAD = re.compile(r"(?im)^#{0,3}\s*sources\b")
+_LEFT_OUT = re.compile(
+    r"(?im)^Left out:\s*(.+?)\.\s*URL:\s*(https?://[^\s]+?)\.\s*reason=(\w+)"
+)
+_SKIP_HIT_REASONS = frozenset(
+    {
+        "parallel_miss",
+        "outside_depth",
+        "off_topic",
+        "no_url",
+        "not_searched",
+        "rails_down",
+    }
+)
 _EMPTY_MINT = "foundry minted nothing"
+UNSTAMPED_HITS = "parallel hits present but unstamped"
+EMPTY_AFTER_STAMP = "timeline empty after hit stamp"
 
 
 class TimelinePlan(BaseModel):
@@ -298,6 +313,72 @@ def parse_chronological_events(text: str) -> list[tuple[str, str]]:
     return pairs
 
 
+def _row_url(row: object) -> str:
+    return _clean_url(getattr(row, "url", None) or "")
+
+
+def _row_claim(row: object) -> str:
+    title = (getattr(row, "title", None) or getattr(row, "what", None) or "").strip()
+    excerpts = list(getattr(row, "excerpts", None) or [])
+    for excerpt in excerpts:
+        text = str(excerpt).strip()
+        if text and not _hit_chrome(text):
+            return title if title and not _hit_chrome(title) else text
+    return title
+
+
+def _row_reason(row: object) -> str:
+    return (getattr(row, "reason", None) or "").strip().lower()
+
+
+def _hit_chrome(thesis: str) -> bool:
+    """Pack/nav chrome only. Short news titles stay — chain chrome uses _chrome_thesis."""
+    blob = (thesis or "").strip()
+    if not blob:
+        return True
+    if _BIBLIO_ID.search(blob) or _PACK_CHROME.search(blob):
+        return True
+    stripped = _CITE_LABEL.sub("", _URL.sub("", blob))
+    stripped = re.sub(r"\[[^\]]+\]", "", stripped).strip(" -—.:;")
+    return len(stripped.split()) < 2
+
+
+def _news_hit(thesis: str, url: str) -> bool:
+    """Event/news page with a real path. Drop chrome titles and bare homepages."""
+    if not (url or "").startswith("http"):
+        return False
+    if _hit_chrome(thesis):
+        return False
+    return bool((urlsplit(url).path or "").rstrip("/"))
+
+
+def parse_parallel_hits(
+    text: str = "",
+    rows: Iterable[object] | None = None,
+) -> list[tuple[str, str]]:
+    """Hit rows / Left-out https URLs when the event chain is missing. Require URL or drop."""
+    pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(thesis: str, url: str) -> None:
+        thesis = (thesis or "").strip()
+        url = _clean_url(url)
+        if not thesis or not url or not _news_hit(thesis, url) or url in seen:
+            return
+        seen.add(url)
+        pairs.append((thesis, url))
+
+    for row in rows or []:
+        if _row_reason(row) in _SKIP_HIT_REASONS:
+            continue
+        _add(_row_claim(row), _row_url(row))
+    for match in _LEFT_OUT.finditer(text or ""):
+        if match.group(3).lower() in _SKIP_HIT_REASONS:
+            continue
+        _add(match.group(1).strip(), match.group(2))
+    return pairs
+
+
 def _yyyy_mm(thesis: str) -> str:
     month = _MONTH_YEAR.search(thesis or "")
     if month:
@@ -338,13 +419,17 @@ def plan_timeline(
     *,
     used: set[str] | None = None,
     seen_urls: Iterable[str] | None = None,
+    hit_rows: Iterable[object] | None = None,
 ) -> TimelinePlan:
     """Parse + log mapping. Does not mutate a findings array."""
     used_ids = set(used or [])
     skip = {(u or "").strip() for u in (seen_urls or []) if (u or "").strip()}
     mapping: list[TimelineMapRow] = []
     findings: list[Finding] = []
-    for thesis, url in parse_chronological_events(text):
+    pairs = parse_chronological_events(text)
+    if not pairs:
+        pairs = parse_parallel_hits(text, hit_rows)
+    for thesis, url in pairs:
         if url in skip:
             continue
         fid = _tl_id(thesis, url, used_ids)
@@ -390,6 +475,9 @@ def chain_pairs(text: str, mapping: Iterable[TimelineMapRow] | None = None) -> l
     pairs = parse_chronological_events(text or "")
     if pairs:
         return pairs
+    hits = parse_parallel_hits(text or "")
+    if hits:
+        return hits
     out: list[tuple[str, str]] = []
     for row in mapping or []:
         thesis = (getattr(row, "thesis", None) or "").strip()
