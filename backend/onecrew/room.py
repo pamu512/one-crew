@@ -334,10 +334,7 @@ def _attached_print_or_name_hole(artifact: GradeArtifact) -> bool:
 
 
 def _empty_titled_uncited(artifact: GradeArtifact) -> bool:
-    """Titled spine beat with empty or attachable VO and no pack cite."""
-    from onecrew.script import is_comparative_vo, pack_numbers
-    from onecrew.timeline import vo_proper_names
-
+    """Titled spine beat with no pack cite."""
     by_id = {row.id: row for row in artifact.stamped_findings}
     map_ids = {row.finding_id for row in artifact.timeline_map}
     for window in _cite_windows(artifact.script):
@@ -346,12 +343,7 @@ def _empty_titled_uncited(artifact: GradeArtifact) -> bool:
         cited = [fid for fid in _cited_ids(window) if fid in by_id or fid in map_ids]
         if cited:
             continue
-        vo = _spoken_window(window)
-        if not vo.strip():
-            return True
-        nums = [n for n in pack_numbers(vo) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
-        if nums or is_comparative_vo(vo) or vo_proper_names(vo):
-            return True
+        return True
     return False
 
 

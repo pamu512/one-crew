@@ -1127,7 +1127,7 @@ def _align_vo_to_stamps(
     findings: list[Finding],
 ) -> tuple[list[str], str]:
     """Named-entity / print VO may only keep a timeline stamp that covers it. Else drop."""
-    from onecrew.timeline import _event_nums, stamp_covers_vo, stamps_for_vo, vo_proper_names
+    from onecrew.timeline import _event_nums, stamp_covers_vo, stamp_text, stamps_for_vo, vo_proper_names
 
     by_id = {f.id: f for f in findings}
     timeline = {f.id for f in findings if f.stamp == "timeline_event"}
@@ -1140,10 +1140,10 @@ def _align_vo_to_stamps(
     names = vo_proper_names(vo)
     if not names:
         if is_comparative_vo(vo) and not _event_nums(vo):
-            chosen = stamps_for_vo(vo, findings, [])
-            keep = [f.id for f in chosen] if chosen else [fid for fid in tl_fids if fid in by_id]
+            chosen = [f for f in stamps_for_vo(vo, findings, []) if _event_nums(stamp_text(f))]
+            keep = [f.id for f in chosen]
             spoken = speak_stamps(keep, findings)
-            if spoken:
+            if spoken and keep:
                 return grounded + keep, spoken
             return grounded, ""
         return fids, vo
@@ -1155,8 +1155,11 @@ def _align_vo_to_stamps(
             if fid not in {f.id for f in chosen}:
                 cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
         if is_comparative_vo(cleaned) and not _event_nums(cleaned):
-            spoken = speak_stamps([f.id for f in chosen], findings)
-            return grounded + [f.id for f in chosen], spoken or cleaned
+            printed = [f for f in chosen if _event_nums(stamp_text(f))]
+            spoken = speak_stamps([f.id for f in printed], findings)
+            if spoken and printed:
+                return grounded + [f.id for f in printed], spoken
+            return grounded, ""
         return grounded + [f.id for f in chosen], cleaned
     if covered:
         cleaned = vo

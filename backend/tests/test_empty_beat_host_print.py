@@ -294,10 +294,45 @@ def test_attach_prefers_unused_host_over_survey_reuse() -> None:
 
 def test_thin_comparative_vo_needs_print_bearing_stamp_or_drops() -> None:
     from onecrew.script import _assemble
+    from onecrew.timeline import _event_nums, stamp_text
 
     printed = _helios_print_stamp()
     pack = _pack((printed.claim, HELIOS_PRINT))
     packet = _packet(pack, [printed])
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "turn": {
+                    "vo": "A slowdown from percent growth.",
+                    "eyes": "card",
+                    "finding_ids": [],
+                }
+            }
+        ),
+    )
+    result = run_cite_recheck_loop(written, search_fn=_no_search)
+    turn = next((b for b in written.beats if b.id == "turn"), None)
+    spoken_all = "".join(f"{b.vo} {b.frame or ''}" for b in written.beats)
+    if turn is None:
+        assert not re.search(r"slowdown from percent growth", spoken_all, re.I)
+        return
+    cited = [f for f in written.receipt.findings if f.id in turn.finding_ids]
+    if cited and any(_event_nums(stamp_text(f)) for f in cited):
+        return
+    reason = ((written.receipt.hold_reason or "") if written.receipt else "").lower()
+    assert written.status == "hold" or not result.ok
+    assert any(tok in reason for tok in ("empty beat", "cites nothing", "no pack finding"))
+    assert "cite-repair loop exhausted" not in reason or written.cite_recheck_attempts > 3
+
+
+def test_thin_comparative_vo_does_not_use_year_only_stamp() -> None:
+    """A June 2026 lease row is not a magnitude print for 'percent growth'."""
+    from onecrew.script import _assemble
+
+    lease = _helios_stamp()
+    pack = _pack((lease.claim, HELIOS_WIRE))
+    packet = _packet(pack, [lease])
     written = _assemble(
         packet,
         _eight_units(
@@ -315,12 +350,8 @@ def test_thin_comparative_vo_needs_print_bearing_stamp_or_drops() -> None:
     if turn is None:
         return
     spoken = f"{turn.vo} {turn.frame or ''}"
-    assert turn.finding_ids, "thin comparative VO cannot ship uncited"
-    cited = [f for f in written.receipt.findings if f.id in turn.finding_ids]
-    assert cited and any(complete_print(f.print or "") for f in cited)
-    if re.search(r"slowdown|percent growth", spoken, re.I):
-        blob = " ".join(f"{f.print} {f.claim}" for f in cited)
-        assert re.search(r"\d", blob)
+    assert lease.id not in turn.finding_ids
+    assert not re.search(r"slowdown from percent growth", spoken, re.I)
 
 
 def test_production_grep_stays_clear_of_fixtures_and_live_topic() -> None:

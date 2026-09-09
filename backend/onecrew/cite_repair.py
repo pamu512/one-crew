@@ -204,12 +204,11 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             if _event_nums(spoken):
                 out.append(beat)
                 continue
-        from onecrew.foundry import complete_print
         from onecrew.script import is_comparative_vo
-        from onecrew.timeline import _event_nums
+        from onecrew.timeline import _event_nums, _print_bearing
 
         if is_comparative_vo(spoken) and not _event_nums(spoken):
-            if not tls or not any(complete_print(f.print or "") for f in tls):
+            if not tls or not any(_print_bearing(f) for f in tls):
                 out.append(beat)
     return out
 
@@ -466,7 +465,7 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
                 continue
             if not host_under_cap(
                 finding.parallel_url or "",
-                [by_id[fid] for fid in keep if fid in by_id],
+                list(receipt.findings),
                 vo=vo,
                 pairs=pairs,
             ) and not stamp_covers_vo(vo, finding):

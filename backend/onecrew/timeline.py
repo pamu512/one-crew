@@ -733,22 +733,19 @@ def union_supports_prints(vo: str, findings: Iterable[object]) -> bool:
 
 
 def _print_bearing(finding: Finding) -> bool:
-    from onecrew.foundry import complete_print
-
-    return complete_print(getattr(finding, "print", None) or "") or bool(
-        _event_nums(stamp_text(finding))
-    )
+    """Non-year magnitude on the stamp. A when-year is not a print."""
+    return bool(_event_nums(stamp_text(finding)))
 
 
 def _print_stamp_for_thin_vo(vo: str, tls: list[Finding]) -> list[Finding]:
-    """Comparative VO without a spoken print may take one print-bearing stamp. Else none."""
+    """Comparative VO without a spoken print may take one overlapping print stamp. Else none."""
     printed = [f for f in tls if _print_bearing(f)]
     if not printed:
         return []
     printed = sorted(printed, key=lambda f: event_score(vo, stamp_text(f)), reverse=True)
     if event_score(vo, stamp_text(printed[0])) > 0:
         return [printed[0]]
-    return printed[:1] if len(printed) == 1 else []
+    return []
 
 
 def _prefer_unused_host(vo: str, tls: list[Finding]) -> Finding | None:
