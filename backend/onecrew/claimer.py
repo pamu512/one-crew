@@ -13,6 +13,7 @@ from onecrew import config
 from onecrew.foundry import (
     _has_usrec_and_payrolls,
     leftover_slot_ids,
+    complete_print,
     gdp_quarter_bars,
     _gdp_print_from_bars,
     _legal_print,
@@ -402,10 +403,14 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
             n += 1
         used.add(fid)
         span = (claim.claim_span or "").strip() or f"{claim.series}={claim.print} ({claim.when})".strip()
+        if not complete_print(claim.print or "") or not (claim.when or "").strip():
+            continue
         cite = clean_cite_url(claim.cite_url or "")
         if not cite and bag is not None:
             cite = clean_cite_url((resolve_missing_cite(claim, bag).cite_url or ""))
-        if not cite and claim.series == "LEI":
+        if not cite:
+            continue
+        if claim.series == "ISM" and "ismworld.org" not in cite.lower():
             continue
         if claim.series == "U-3" and (not cite or not _url_fits_series(cite, "U-3", ())):
             continue

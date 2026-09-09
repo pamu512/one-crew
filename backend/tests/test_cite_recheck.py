@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 
 from onecrew.board import write_shot_list
@@ -874,3 +875,317 @@ def test_lei_sahm_url_requeries_or_drops_and_counts_attempt() -> None:
     shots = write_shot_list(packet)
     assert shots
     assert any(s.beat_id == "close" for s in shots)
+
+
+# Live HOLD oc-data-centers-are-going-to-cause-the--6228b564:
+# beats cite nothing in the pack, cite_recheck_attempts stayed 0.
+GUARDIAN = "https://www.theguardian.com/technology/2026/aug/data-centre-boom-bubble"
+STARGATE_URL = "https://openai.com/index/stargate-announcement"
+MSFT_URL = "https://www.microsoft.com/en-us/investor/lease-cancel"
+_DC_PACK = (
+    "Data centers are going to cause the next economic bubble.\n"
+    "chronological_events:\n"
+    f"- OpenAI Stargate is a $500B infrastructure build. Basis: {STARGATE_URL}\n"
+    f"- Microsoft cancelled data-center leases in August 2026. Basis: {MSFT_URL}\n"
+    f"- The Guardian asked whether the boom is already a bubble. Basis: {GUARDIAN}\n"
+)
+_DC_PACK_NO_URL = (
+    "Data centers are going to cause the next economic bubble.\n"
+    "chronological_events:\n"
+    "- OpenAI Stargate is a $500B infrastructure build.\n"
+    "- Microsoft cancelled data-center leases in August 2026.\n"
+    "- The Guardian asked whether the boom is already a bubble.\n"
+)
+_DC_STARGATE = (
+    "OpenAI and partners announced Stargate, a $500B data-center build, in 2025."
+)
+_DC_MSFT = (
+    "Microsoft cancelled data-center leases in August 2026 after demand slipped."
+)
+_DC_GUARD = (
+    "The Guardian asked in August 2026 whether the data-center boom is already a bubble."
+)
+
+
+def _junk_ism() -> Finding:
+    return Finding(
+        id="ism-august-2026",
+        claim="ISM print 4,",
+        stamp="grounded",
+        title="ISM",
+        series="ISM",
+        print="4,",
+        when="August 2026",
+        parallel_url=None,
+        parallel_status="miss",
+        note="cite missing",
+    )
+
+
+def _dc_empty_cite_packet() -> Packet:
+    """Live shape: sourced VO, zero pack cites, junk ISM row, HOLD already named."""
+    packet = Packet(
+        id="oc-data-centers-are-going-to-cause-the--6228b564",
+        topic="Data centers are going to cause the next economic bubble",
+        hook="Data centers are going to cause the next economic bubble",
+        script="placeholder",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited data-center prints",
+        tone="On the cited print",
+        research_pack=_DC_PACK,
+        task_spine=_DC_PACK,
+        status="hold",
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="HOLD",
+        hold_reason=(
+            "beat1 cites nothing in the pack; beat3 cites nothing in the pack; "
+            "beat4 cites nothing in the pack; beat5 cites nothing in the pack; "
+            "beat6 cites nothing in the pack; beat7 cites nothing in the pack"
+        ),
+        findings=[
+            _junk_ism(),
+            Finding(
+                id="fringe-miss",
+                claim="A fringe claim about hidden offtake contracts.",
+                stamp="fringe",
+                parallel_status="miss",
+                note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+            ),
+        ],
+    )
+    vos = {
+        "cold-open": "NARRATOR\nOpenAI Stargate is a $500B build.",
+        "promise": "NARRATOR\nThe title stays a question.",
+        "gdp": "NARRATOR\nMicrosoft cancelled leases in August 2026.",
+        "labor": "NARRATOR\nThe Guardian named a boom that may already be a bubble.",
+        "turn": "NARRATOR\n$500B is the spoken capex print.",
+        "complication": "NARRATOR\nLease cancels are not the same object as a boom.",
+        "receipt": "NARRATOR\nReceipt: Stargate $500B and the August 2026 cancels.",
+        "close": "NARRATOR\nNear is not a switch.",
+    }
+    empty = {bid: [] for bid in vos}
+    packet.beats = [
+        _beat(bid, empty[bid], vos[bid], start=f"00:{i * 20:02d}")
+        for i, bid in enumerate(vos)
+    ]
+    packet.script = "\n".join(b.scene + "\n" + b.vo for b in packet.beats) + "\n"
+    packet.frames = [
+        ShotFrame(id=f"shot-{b.id}", shot=b.frame or b.id, beat_id=b.id, duration_s=b.duration_s)
+        for b in packet.beats
+    ]
+    return packet
+
+
+def _dc_supporting_search(*, objective, search_queries):
+    blob = f"{objective} {' '.join(search_queries)}".lower()
+    if "microsoft" in blob or "lease" in blob:
+        return SimpleNamespace(
+            results=[SimpleNamespace(url=MSFT_URL, title="Microsoft leases", excerpts=[_DC_MSFT])]
+        )
+    if "guardian" in blob or "bubble" in blob:
+        return SimpleNamespace(
+            results=[SimpleNamespace(url=GUARDIAN, title="Guardian boom", excerpts=[_DC_GUARD])]
+        )
+    return SimpleNamespace(
+        results=[SimpleNamespace(url=STARGATE_URL, title="Stargate", excerpts=[_DC_STARGATE])]
+    )
+
+
+def test_empty_cite_beats_cannot_skip_cite_repair() -> None:
+    """Forbidden wrap: skip cite-repair when beats have zero pack cites."""
+    packet = _dc_empty_cite_packet()
+    calls = {"n": 0}
+
+    def search(**kwargs):
+        calls["n"] += 1
+        return _dc_supporting_search(**kwargs)
+
+    result = run_cite_recheck_loop(packet, search_fn=search)
+    assert packet.cite_recheck_attempts >= 1
+    assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
+    sourced = [b for b in packet.beats if any(ch.isdigit() for ch in b.vo)]
+    for beat in sourced:
+        assert beat.finding_ids, f"{beat.id} shipped untagged factual VO"
+        assert any(f"[{fid}]" in beat.vo for fid in beat.finding_ids)
+    junk = next(f for f in packet.receipt.findings if f.id == "ism-august-2026")
+    assert junk.stamp != "grounded" or (
+        (junk.print or "") not in {"4,", "4"} and (junk.parallel_url or "").strip()
+    )
+    if result.ok:
+        assert packet.receipt.disposition == "READY"
+        assert "cites nothing in the pack" not in (packet.receipt.hold_reason or "")
+    else:
+        assert "cite-repair loop exhausted" in (packet.receipt.hold_reason or "")
+
+
+def test_empty_cite_parallel_miss_drops_beats_and_counts_attempt() -> None:
+    packet = _dc_empty_cite_packet()
+    packet.research_pack = _DC_PACK_NO_URL
+    packet.task_spine = _DC_PACK_NO_URL
+    calls = {"n": 0}
+
+    def search(**kwargs):
+        calls["n"] += 1
+        return _empty_search(**kwargs)
+
+    result = run_cite_recheck_loop(packet, search_fn=search)
+    assert calls["n"] >= 1
+    assert packet.cite_recheck_attempts >= 1
+    sourced_left = [b for b in packet.beats if any(ch.isdigit() for ch in _vo_digits(b.vo))]
+    if sourced_left:
+        assert result.ok is False
+        assert "cite-repair loop exhausted" in (packet.receipt.hold_reason or "")
+    else:
+        assert result.ok is True
+        assert packet.beats
+        assert packet.script.strip()
+        assert packet.receipt.disposition == "READY"
+        assert "cites nothing in the pack" not in (packet.receipt.hold_reason or "")
+
+
+def _vo_digits(vo: str) -> str:
+    return "".join(ch for ch in vo if ch.isdigit() or ch == ",")
+
+
+def test_writer_attaches_pack_finding_ids_on_sourced_beats() -> None:
+    """ADK omitted tags. Writer must attach pack finding ids, not ship untagged VO."""
+    from onecrew.script import _assemble
+
+    url = STARGATE_URL
+    finding = Finding(
+        id="stargate-500b-2025",
+        claim="OpenAI Stargate is a $500B infrastructure build.",
+        stamp="timeline_event",
+        title="timeline_event",
+        series="timeline_event",
+        print="500",
+        when="2025",
+        parallel_url=url,
+        parallel_status="hit",
+        note="Parallel URL on this row.",
+    )
+    packet = Packet(
+        id="oc-dc-writer-attach",
+        topic="Data centers are going to cause the next economic bubble",
+        hook="Data centers are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited data-center prints",
+        tone="On the cited print",
+        research_pack=_DC_PACK,
+        receipt=Receipt(
+            packet_id="oc-dc-writer-attach",
+            written=False,
+            disposition="READY",
+            findings=[finding],
+        ),
+    )
+    units = [
+        {"id": "cold-open", "vo": "OpenAI Stargate is a $500B build.", "eyes": "capex", "finding_ids": []},
+        {"id": "promise", "vo": "The title stays a question.", "eyes": "pack", "finding_ids": []},
+        {"id": "gdp", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "labor", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "turn", "vo": "Hold on the cited print.", "eyes": "hold", "finding_ids": []},
+        {"id": "complication", "vo": "Those are not the same object.", "eyes": "gap", "finding_ids": []},
+        {"id": "receipt", "vo": "Receipt board: named series from the pack.", "eyes": "board", "finding_ids": []},
+        {"id": "close", "vo": "Near is not a switch.", "eyes": "close", "finding_ids": []},
+    ]
+    written = _assemble(packet, units)
+    cold = next(b for b in written.beats if b.id == "cold-open")
+    assert "stargate-500b-2025" in cold.finding_ids
+    assert "[stargate-500b-2025]" in cold.vo
+    assert "cites nothing in the pack" not in (written.receipt.hold_reason or "")
+
+
+def test_live_shift_empty_cite_runs_repair_before_hold(monkeypatch) -> None:
+    """Live cut shape: HOLD cites-nothing cannot finish with attempts=0."""
+    from onecrew.agent.shift import open_shift, run_live_packet
+    from onecrew.cite_repair import run_cite_recheck_loop as real_repair
+    from onecrew.models import Rails
+    from onecrew.room import RoomGrade
+    from onecrew.script_writer import write_vo_from_pack as real_write_vo
+
+    repair_calls = {"n": 0}
+
+    def research(packet, rails, depth, **_k):
+        packet.research_pack = _DC_PACK
+        packet.task_spine = _DC_PACK
+        receipt = Receipt(
+            packet_id=packet.id,
+            written=False,
+            disposition="HOLD",
+            hold_reason="beat1 cites nothing in the pack",
+            findings=[_junk_ism()],
+        )
+        return receipt, [], [], packet.research_pack
+
+    def tracking_repair(packet, **kwargs):
+        repair_calls["n"] += 1
+        kwargs.setdefault("search_fn", _dc_supporting_search)
+        return real_repair(packet, **kwargs)
+
+    eight = (
+        '[{"id":"cold-open","vo":"OpenAI Stargate is a $500B build.","eyes":"capex","finding_ids":[]},'
+        '{"id":"promise","vo":"The title stays a question.","eyes":"pack","finding_ids":[]},'
+        '{"id":"gdp","vo":"Microsoft cancelled leases in August 2026.","eyes":"lease","finding_ids":[]},'
+        '{"id":"labor","vo":"The Guardian named a boom that may already be a bubble.","eyes":"boom","finding_ids":[]},'
+        '{"id":"turn","vo":"$500B is the spoken capex print.","eyes":"print","finding_ids":[]},'
+        '{"id":"complication","vo":"Lease cancels are not the same object as a boom.","eyes":"gap","finding_ids":[]},'
+        '{"id":"receipt","vo":"Receipt: Stargate $500B and the August 2026 cancels.","eyes":"board","finding_ids":[]},'
+        '{"id":"close","vo":"Near is not a switch.","eyes":"close","finding_ids":[]}]'
+    )
+
+    monkeypatch.setattr("onecrew.agent.shift._research", research)
+    monkeypatch.setattr("onecrew.agent.shift.run_cite_recheck_loop", tracking_repair)
+    monkeypatch.setattr("onecrew.agent.shift.write_vo_from_pack", real_write_vo)
+    monkeypatch.setattr("onecrew.script_writer.run_adk_writer", lambda _p: eight)
+    monkeypatch.setattr("onecrew.room.run_adk_room", lambda _a: RoomGrade(vote="ship"))
+    monkeypatch.setattr("onecrew.agent.shift._board", lambda p, _r: p.frames)
+    monkeypatch.setattr("onecrew.collision.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.search", lambda **_k: SimpleNamespace(results=[]))
+    monkeypatch.setattr("onecrew.board.generate_frames", lambda **_k: SimpleNamespace(generated_images=[]))
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    shift = open_shift(
+        "Data centers are going to cause the next economic bubble",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited data-center prints",
+        tone="On the cited print",
+        topic="Data centers are going to cause the next economic bubble",
+    )
+    shift.rails = Rails(parallel=True, vertex=True, imagen=False)
+    packet = run_live_packet(shift)
+    assert repair_calls["n"] >= 1
+    assert packet.cite_recheck_attempts >= 1
+    if packet.receipt and packet.receipt.disposition == "HOLD":
+        assert "cite-repair loop exhausted" in (packet.receipt.hold_reason or "")
+        assert "cites nothing in the pack" not in (packet.receipt.hold_reason or "") or (
+            packet.cite_recheck_attempts >= 1
+        )
+    sourced = [b for b in packet.beats if any(ch.isdigit() for ch in b.vo)]
+    for beat in sourced:
+        assert beat.finding_ids, f"{beat.id} shipped untagged factual VO"
+
+
+def test_production_does_not_hardcode_stargate() -> None:
+    """Forbidden wrap: topic-hardcoding Stargate. Tests may name the live cut."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "onecrew"
+    hits: list[str] = []
+    for path in root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if re.search(r"stargate", text, re.I):
+            hits.append(str(path.relative_to(root.parent)))
+    assert hits == []

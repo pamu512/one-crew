@@ -353,6 +353,8 @@ def _series_of(finding: Finding) -> str | None:
     if finding.id in _LEFTOVER:
         return "leftover"
     stamped = (finding.series or "").strip()
+    if getattr(finding, "stamp", "") == "timeline_event" or stamped == "timeline_event":
+        return None
     if stamped in CLOSED_SERIES:
         return stamped
     title = (finding.title or "").lower()
@@ -425,6 +427,8 @@ def claims_from_findings(findings: list[Finding]) -> list[Claim]:
     out: list[Claim] = []
     for finding in findings or []:
         if finding.stamp == "fringe" and finding.id not in _LEFTOVER:
+            continue
+        if finding.stamp == "timeline_event":
             continue
         series = _series_of(finding)
         if not series:

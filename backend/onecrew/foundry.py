@@ -156,6 +156,29 @@ def leftover_slot_ids() -> frozenset[str]:
     return _LEFTOVER_SLOT_IDS
 
 
+def complete_print(printed: str) -> bool:
+    """A series print, not a dangling `4,` fragment."""
+    raw = (printed or "").strip()
+    if not raw or raw == MISSING:
+        return False
+    if raw.endswith(","):
+        return False
+    return bool(re.search(r"\d", raw))
+
+
+_WRAP_CLAIM = re.compile(
+    r"grounded event inside\s+\S+:|widely repeated frame about\s+|fringe claim about\s+",
+    re.I,
+)
+
+
+def leftover_wrap(findings: list[Finding]) -> bool:
+    """Leftover 3-slot shape. Renaming timeline-* ids does not clear it."""
+    if {f.id for f in findings} & _LEFTOVER_SLOT_IDS:
+        return True
+    return any(_WRAP_CLAIM.search(f.claim or "") for f in findings)
+
+
 def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
     """independent=missing cannot carry a URL. Same for propaganda/lean/who_repeats/vested."""
     kept: list[Finding] = []
@@ -188,6 +211,23 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
             finding.who_repeats_url = None
         if finding.vested_interest == MISSING:
             finding.vested_interest_url = None
+        if finding.stamp == "grounded" and finding.id not in _LEFTOVER_SLOT_IDS:
+            printed = finding.print or ""
+            official = finding.series in {
+                "USREC",
+                "BLS payrolls",
+                "U-3",
+                "GDP",
+                "LEI",
+                "SAHMREALTIME",
+                "ISM",
+            }
+            if printed.endswith(","):
+                continue
+            if official and (not complete_print(printed) or not (finding.parallel_url or "").strip()):
+                continue
+            if not official and not (finding.parallel_url or "").strip():
+                continue
         kept.append(finding)
     return kept
 
@@ -1302,6 +1342,8 @@ def _url_fits_series(url: str, series: str, url_keys: tuple[str, ...]) -> bool:
         if "sahmrealtime" in low or "/series/sahm" in low:
             return False
         return "conference-board.org" in low or "leading" in low
+    if series == "ISM":
+        return "ismworld.org" in low
     return any(key in low for key in url_keys)
 
 
@@ -1688,7 +1730,13 @@ def _legal_print(series: str, text: str) -> str | None:
     if series == "ISM":
         if not re.search(r"\bism\b", text, re.I):
             return None
-        return _first_print(_PRINT, text)
+        match = re.search(r"\b(\d{2}(?:\.\d+)?)\b", text)
+        if not match:
+            return None
+        raw = match.group(1)
+        if not complete_print(raw):
+            return None
+        return raw
     if series == "U-3":
         sahm_def = re.compile(
             r"\bsahm\b|0\.50\s*trigger|or more above|three-month moving average",
@@ -1963,6 +2011,10 @@ def _mint_from_notes(
             exclusions.append((series, "no_url"))
             used_series.add(series)
             continue
+        if not complete_print(printed or "") or not clean_cite_url(cite.url):
+            exclusions.append((series, "incomplete_stamp"))
+            used_series.add(series)
+            continue
         fid = _unique_id(_slug(series, when), used_ids)
         findings.append(
             _grounded(
@@ -2006,6 +2058,12 @@ def _mint_from_notes(
             continue
         printed = _first_print(_PRINT, sentence) or MISSING
         when = _when(sentence)
+        if not clean_cite_url(cite.url):
+            exclusions.append((series, "no_url"))
+            continue
+        if printed not in {MISSING, "", None} and not complete_print(printed):
+            exclusions.append((series, "incomplete_stamp"))
+            continue
         fid = _unique_id(_slug(series, when), used_ids)
         findings.append(
             _grounded(
@@ -2092,6 +2150,8 @@ def require_minted(findings: list[Finding], notes: str) -> None:
     """Fail-closed. Leftover 3-slot + two prints is not a table."""
     ids = {f.id for f in findings}
     distinct = {re.sub(r"\s+", "", n) for n in pack_numbers(notes)}
+    if leftover_wrap(findings):
+        raise FoundryHold("leftover 3-slot; foundry did not mint")
     if ids & _LEFTOVER_SLOT_IDS and len(distinct) >= 2:
         raise FoundryHold("leftover 3-slot; foundry did not mint")
     if _has_usrec_and_payrolls(notes):

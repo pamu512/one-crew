@@ -140,14 +140,25 @@ def size_findings(findings: list, cut: Cut, platform: Platform | None = None) ->
     ]
     named.sort(key=lambda f: getattr(f, "id", ""))
     named_ids = {id(f) for f in named}
+    timeline = [
+        f
+        for f in findings
+        if id(f) not in pin_ids
+        and id(f) not in named_ids
+        and getattr(f, "stamp", None) == "timeline_event"
+    ]
+    timeline_ids = {id(f) for f in timeline}
     other = [
         f
         for f in findings
-        if getattr(f, "stamp", None) == "grounded" and id(f) not in pin_ids and id(f) not in named_ids
+        if getattr(f, "stamp", None) == "grounded"
+        and id(f) not in pin_ids
+        and id(f) not in named_ids
+        and id(f) not in timeline_ids
     ]
     main = [f for f in findings if getattr(f, "stamp", None) == "mainstream"][:1]
     fringe = [f for f in findings if getattr(f, "stamp", None) == "fringe"][:1]
-    return (pin + named + other + main + fringe)[:cap]
+    return (pin + named + timeline + other + main + fringe)[:cap]
 
 
 def scene_seconds(cut: Cut) -> int:

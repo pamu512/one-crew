@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Stamp = Literal["grounded", "mainstream", "fringe"]
+Stamp = Literal["grounded", "mainstream", "fringe", "timeline_event"]
 ParallelStatus = Literal["hit", "miss", "n/a"]
 Independent = Literal["yes", "no", "missing"]
 Propaganda = Literal["yes", "no", "missing"]
@@ -58,7 +58,7 @@ ShiftStatus = Literal["running", "completed", "failed"]
 RoomVote = Literal["ship", "recut"]
 RecutReason = Literal["not_enough_information", "other"]
 
-STAMPS = frozenset({"grounded", "mainstream", "fringe"})
+STAMPS = frozenset({"grounded", "mainstream", "fringe", "timeline_event"})
 INDEPENDENT = frozenset({"yes", "no", "missing"})
 PROPAGANDA = frozenset({"yes", "no", "missing"})
 COLLISIONS = frozenset({"yes", "no", "missing"})
@@ -241,6 +241,14 @@ class ShotFrame(BaseModel):
     kind: str = ""
 
 
+class TimelineMapRow(BaseModel):
+    """Whitebox: thesis bullet → extracted URL → finding id."""
+
+    thesis: str
+    url: str
+    finding_id: str
+
+
 class Receipt(BaseModel):
     packet_id: str
     written: bool = False
@@ -252,6 +260,7 @@ class Receipt(BaseModel):
     invented_stamp: bool = False
     invented_lean: bool = False
     causal_links: list[CausalLink] = Field(default_factory=list)
+    timeline_map: list[TimelineMapRow] = Field(default_factory=list)
 
     @property
     def parallel_hit(self) -> bool:
@@ -287,6 +296,7 @@ class GradeArtifact(BaseModel):
     research_pack: str = ""
     stamped_findings: list[StampedFinding] = Field(default_factory=list)
     parallel_cites: str = ""
+    timeline_map: list[TimelineMapRow] = Field(default_factory=list)
 
     def findings_block(self) -> str:
         return "\n".join(row.line() for row in self.stamped_findings)
