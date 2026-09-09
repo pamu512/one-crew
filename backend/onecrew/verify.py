@@ -126,9 +126,8 @@ def _cite_candidates(claim: Claim, bag: CiteBag) -> list[str]:
         seen.add(key)
         out.append(raw)
     out.sort(key=lambda u: (0 if _url_fits_series(u, claim.series, ()) else 1))
-    if claim.series in CLOSED_SERIES:
-        fitted = [u for u in out if _url_fits_series(u, claim.series, ())]
-        return fitted
+    if claim.series == "LEI":
+        return [u for u in out if _url_fits_series(u, claim.series, ())]
     return out
 
 
@@ -439,9 +438,9 @@ def verify_print_in_cite(claim: Claim, bag: CiteBag) -> VerifyResult:
         return VerifyResult(ok=False, reason="grounded claim missing cite_url")
     if not _url_in(claim.cite_url, bag.hit_urls):
         return VerifyResult(ok=False, reason="cite_url not in hits")
-    if claim.series in CLOSED_SERIES and not _url_fits_series(claim.cite_url, claim.series, ()):
+    if claim.series == "LEI" and not _url_fits_series(claim.cite_url, claim.series, ()):
         return VerifyResult(ok=False, reason="cite_url series mismatch")
-    if claim.series == "LEI" and lei_threshold_claim(claim.claim_span):
+    if claim.series == "LEI" and lei_threshold_claim(claim.claim_span, claim.print):
         return VerifyResult(ok=False, reason="print not in cite")
     excerpt = _cite_text(claim, bag)
     search = f"{excerpt}\n{bag.spine or ''}"

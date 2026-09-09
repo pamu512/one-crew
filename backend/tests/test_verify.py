@@ -1102,7 +1102,7 @@ def test_lei_sahm_url_is_wrong_series_even_if_spine_has_print() -> None:
     )
     got = verify_print_in_cite(claim, bag)
     assert got.ok is False
-    assert got.reason in {"cite_url series mismatch", "print not in cite", "cite_url not in hits"}
+    assert got.reason == "cite_url series mismatch"
 
 
 def test_lei_conference_board_july_turn_still_prints_in_cite() -> None:

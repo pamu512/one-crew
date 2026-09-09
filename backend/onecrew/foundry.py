@@ -1234,13 +1234,17 @@ def _lei_criteria_window(left: str, around: str) -> bool:
     return False
 
 
-def lei_threshold_claim(text: str) -> bool:
-    """3Ds / growth-rate-below sentence. Never a realized LEI print."""
+def lei_threshold_claim(text: str, printed: str = "") -> bool:
+    """True when this print is the 3Ds / below-N% rule criterion, not the observation."""
     blob = text or ""
-    return bool(
-        re.search(r"\bbelow\s+[+\-−]?\d", blob, re.I)
-        and re.search(r"requires|threshold|criteri|3[\s-]*d'?s|growth rate below", blob, re.I)
-    )
+    if not re.search(r"requires|threshold|criteri|3[\s-]*d'?s|growth rate below", blob, re.I):
+        return False
+    digits = re.sub(r"[^\d.]", "", printed or "")
+    if digits and re.search(rf"below\s+[+\-−]?{re.escape(digits)}", blob, re.I):
+        return True
+    if printed:
+        return False
+    return bool(re.search(r"\bbelow\s+[+\-−]?\d", blob, re.I))
 
 
 def _lei_url_ok(url: str, when: str) -> bool:

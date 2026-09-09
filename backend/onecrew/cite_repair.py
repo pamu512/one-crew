@@ -340,8 +340,11 @@ def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
         for finding in receipt.findings:
             if finding.id not in finding_ids or finding.id in cited:
                 continue
+            if (finding.series or "") != "LEI":
+                continue
             finding.stamp = "fringe"
             finding.parallel_status = "miss"
+            finding.parallel_url = None
             finding.note = "Cite-repair dropped this beat. Never sold as fact."
     return dropped
 
