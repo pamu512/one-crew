@@ -469,7 +469,7 @@ def _first_trigger_text(packet: Packet) -> str:
 def _trigger_voiced(vo: str, trigger: str) -> bool:
     if not trigger or not vo:
         return False
-    v = (vo or "").lower()
+    v = re.sub(r"\[[^\]]+\]", "", vo or "").lower()
     t = trigger.lower()
     years = re.findall(r"\b20\d{2}\b", t)
     if years and not any(y in v for y in years):
@@ -1526,9 +1526,12 @@ def strip_action_chrome_vo(vo: str, frame: str = "") -> str:
     """ACTION / (Source) / title-card stay on the frame. Not in narrator VO."""
     body = vo or ""
     if frame and _speech_norm(frame) != _speech_norm(body):
-        trial = re.sub(re.escape(frame), "", body, flags=re.I)
-        if _speech_norm(trial):
-            body = trial
+        chrome = bool(_SOURCE_PAREN.search(frame) or _is_title_card(frame))
+        trailing = bool(re.search(rf"[.!?]\s+{re.escape(frame)}", body, flags=re.I))
+        if chrome or trailing:
+            trial = re.sub(re.escape(frame), "", body, flags=re.I)
+            if _speech_norm(trial):
+                body = trial
     body = _SOURCE_PAREN.sub("", body)
     parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", body) if p.strip()]
     keep = [part for i, part in enumerate(parts) if not (i and _is_title_card(part))]
@@ -1813,7 +1816,8 @@ def _tc(total_s: int, *, hours: bool) -> str:
 
 def _vo_uses_pack(packet: Packet, vo: str) -> bool:
     pack_n = {n.replace("−", "-") for n in _numbers_in(_pack_text(packet))}
-    vo_n = {n.replace("−", "-") for n in _numbers_in(vo)}
+    spoken = re.sub(r"\[[^\]]+\]", "", vo or "")
+    vo_n = {n.replace("−", "-") for n in _numbers_in(spoken)}
     return bool(pack_n & vo_n)
 
 
@@ -1982,6 +1986,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         fids = [fid for fid in (unit.get("finding_ids") or []) if fid in known]
         vo = (unit.get("vo") or "").strip()
         eyes = (unit.get("eyes") or "").strip()
+        slot_vo = vo
+        trigger = _first_trigger_text(packet)
+        voiced_trigger = bool(trigger and _trigger_voiced(vo, trigger))
+        pack_vo = _vo_uses_pack(packet, vo)
         hole = "sahm hole" in f"{vo} {eyes}".lower() or "no matching url" in f"{vo} {eyes}".lower()
         if _GROUNDED_EVENT.search(vo) or _leftover_vo(vo):
             return _fail_closed(packet, ["VO is leftover grounded-event template"])
@@ -2008,10 +2016,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         else:
             uncited_vo = uncited_claim_tokens(packet, vo)
             uncited_eyes = uncited_claim_tokens(packet, eyes)
-            if uncited_vo:
+            if uncited_vo and not voiced_trigger and not (held and pack_vo):
                 vo = _strip_uncited_tokens(vo, uncited_vo)
                 slot_nits.append("uncited claim")
-            if uncited_eyes:
+            if uncited_eyes and not voiced_trigger:
                 eyes = _strip_uncited_tokens(eyes, uncited_eyes)
                 slot_nits.append("uncited claim")
         for fid in known:
@@ -2020,52 +2028,57 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
         if not _invents(packet):
             rows = packet.receipt.findings if packet.receipt else []
             fids = _link_pack_findings(vo, fids, rows, packet=packet)
-            fids, scope_hold = prefer_covering_scope(vo, fids, rows)
-            if scope_hold:
-                slot_nits.append("cite-faithfulness")
-                if packet.receipt is not None:
-                    packet.receipt.disposition = "HOLD"
-                    packet.receipt.hold_reason = "cite-faithfulness"
-                    held = True
-            orig_eyes = eyes
-            fids, vo = _align_vo_to_stamps(vo, fids, rows)
-            _, aligned_eyes = _align_vo_to_stamps(eyes, list(fids), rows)
-            eyes = aligned_eyes or (
-                orig_eyes
-                if orig_eyes and not is_meta_frame(orig_eyes) and not is_thin_frame(orig_eyes, fids, rows)
-                else aligned_eyes
-            )
-            from onecrew.timeline import cap_beat_cites
+            if held and pack_vo:
+                vo = slot_vo
+            else:
+                fids, scope_hold = prefer_covering_scope(vo, fids, rows)
+                if scope_hold:
+                    slot_nits.append("cite-faithfulness")
+                    if packet.receipt is not None:
+                        packet.receipt.disposition = "HOLD"
+                        packet.receipt.hold_reason = "cite-faithfulness"
+                        held = True
+                orig_eyes = eyes
+                fids, vo = _align_vo_to_stamps(vo, fids, rows)
+                _, aligned_eyes = _align_vo_to_stamps(eyes, list(fids), rows)
+                eyes = aligned_eyes or (
+                    orig_eyes
+                    if orig_eyes and not is_meta_frame(orig_eyes) and not is_thin_frame(orig_eyes, fids, rows)
+                    else aligned_eyes
+                )
+                from onecrew.timeline import cap_beat_cites
 
-            fids, vo, forecast_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
-            _, eyes, frame_hold = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
-            if forecast_hold or frame_hold:
-                slot_nits.append("forecast theater")
-            fids = cap_beat_cites(vo, fids, rows)
-            vo = _drop_extra_cite_brackets(vo, fids)
-            eyes = _drop_extra_cite_brackets(eyes, fids)
-            vo = _strip_unsupported_prints(vo, fids, rows) if fids else vo
-            cited = [row for row in rows if row.id in fids]
-            if is_title_read_vo(vo, cited) or is_print_hole(vo):
-                spoken = speak_stamp_fact(fids, rows)
-                if spoken:
-                    vo = spoken
-            elif has_tone_chrome(vo) or is_pack_chrome_vo(vo) or is_action_chrome_vo(vo, eyes) or not _vo_lines(vo).strip():
-                spoken = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
-                if spoken:
-                    vo = spoken
-            if is_thin_frame(eyes, fids, rows) or not (eyes or "").strip():
-                if fids:
-                    eyes = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows) or eyes
-            if not _vo_lines(vo).strip() and fids:
-                vo = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
-            fids, vo, after_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
-            _, eyes, after_frame = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
-            if after_hold or after_frame:
-                slot_nits.append("forecast theater")
-            fids = cap_beat_cites(vo, fids, rows)
-            vo = _drop_extra_cite_brackets(vo, fids)
-            eyes = _drop_extra_cite_brackets(eyes, fids)
+                fids, vo, forecast_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
+                _, eyes, frame_hold = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
+                if forecast_hold or frame_hold:
+                    slot_nits.append("forecast theater")
+                fids = cap_beat_cites(vo, fids, rows)
+                vo = _drop_extra_cite_brackets(vo, fids)
+                eyes = _drop_extra_cite_brackets(eyes, fids)
+                vo = _strip_unsupported_prints(vo, fids, rows) if fids else vo
+                cited = [row for row in rows if row.id in fids]
+                if is_title_read_vo(vo, cited) or is_print_hole(vo):
+                    spoken = speak_stamp_fact(fids, rows)
+                    if spoken:
+                        vo = spoken
+                elif has_tone_chrome(vo) or is_pack_chrome_vo(vo) or is_action_chrome_vo(vo, eyes) or not _vo_lines(vo).strip():
+                    spoken = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
+                    if spoken:
+                        vo = spoken
+                if is_thin_frame(eyes, fids, rows) or not (eyes or "").strip():
+                    if fids:
+                        eyes = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows) or eyes
+                if not _vo_lines(vo).strip() and fids:
+                    vo = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
+                fids, vo, after_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
+                _, eyes, after_frame = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
+                if after_hold or after_frame:
+                    slot_nits.append("forecast theater")
+                fids = cap_beat_cites(vo, fids, rows)
+                vo = _drop_extra_cite_brackets(vo, fids)
+                eyes = _drop_extra_cite_brackets(eyes, fids)
+            if voiced_trigger and trigger and not _trigger_voiced(vo, trigger):
+                vo = slot_vo
         if not fids and not hole:
             spoken_nums = [
                 n
