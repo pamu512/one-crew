@@ -802,8 +802,19 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         },
         {
             "id": "receipt",
-            "vo": _voice("Receipt board: named series from the pack. Holes labeled.", packet),
-            "eyes": "Receipt board. Named series. Holes labeled.",
+            "vo": _voice(
+                (
+                    "Receipt board: cited events from the pack. Holes labeled."
+                    if timeline_row
+                    else "Receipt board: named series from the pack. Holes labeled."
+                ),
+                packet,
+            ),
+            "eyes": (
+                "Receipt board. Cited events. Holes labeled."
+                if timeline_row
+                else "Receipt board. Named series. Holes labeled."
+            ),
             "finding_ids": [f.id for f in findings[:4] if f.id not in _LEFTOVER_IDS],
         },
         {

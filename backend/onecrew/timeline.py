@@ -257,7 +257,9 @@ def _tl_id(thesis: str, url: str, used: set[str]) -> str:
     words = [
         w
         for w in re.findall(r"[a-z0-9]+", raw.lower())
-        if w not in _MACRO_SLUG and w not in _BEAT_SLOTS and w not in {"high", "confidence", "basis"}
+        if w not in _MACRO_SLUG
+        and w not in _BEAT_SLOTS
+        and w not in {"high", "confidence", "basis", "a", "an", "the", "and", "of", "in"}
     ][:4]
     slug = "-".join(words) or "event"
     stamp = _yyyy_mm(thesis)
@@ -270,7 +272,11 @@ def _tl_id(thesis: str, url: str, used: set[str]) -> str:
 
 
 def _event_print(thesis: str) -> str:
-    return _CITE_LABEL.sub("", _URL.sub("", thesis or "")).strip(" -—.:;")
+    cleaned = _HIGH_BASIS.sub("", thesis or "")
+    cleaned = _CITE_LABEL.sub("", cleaned)
+    cleaned = _URL.sub("", cleaned)
+    cleaned = re.sub(r"high[- ]confidence\s+basis\s*[:=]?\s*", "", cleaned, flags=re.I)
+    return cleaned.strip(" -—.:;")
 
 
 def plan_timeline(

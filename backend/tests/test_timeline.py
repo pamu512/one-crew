@@ -408,6 +408,8 @@ def test_prefer_event_chain_basis_over_bibliography_chrome() -> None:
     from onecrew.timeline import plan_timeline
 
     planned = plan_timeline(_CHAIN_AND_BIBLIO)
+    assert all("high-confidence" not in (f.claim or "").lower() for f in planned.findings)
+    assert all("http" not in (f.claim or "").lower() for f in planned.findings)
     urls = {row.url for row in planned.mapping}
     assert OPENAI in urls
     assert REUTERS in urls
@@ -545,6 +547,88 @@ def test_cite_repair_runs_when_all_beats_empty_and_hold_is_empty_mint() -> None:
         assert "foundry minted nothing" not in (packet.receipt.hold_reason or "")
     else:
         assert "cite-repair loop exhausted" in (packet.receipt.hold_reason or "")
+
+
+def test_credit_hold_does_not_requery_parallel() -> None:
+    """Forbidden wrap: Parallel re-query after credit/402 HOLD."""
+    packet = _packet(_CHAIN_AND_BIBLIO)
+    packet.receipt.hold_reason = "Fail-closed: Parallel credit — Parallel 402. No invented pack."
+    packet.receipt.findings = []
+    packet.receipt.disposition = "HOLD"
+    for beat in packet.beats:
+        beat.finding_ids = []
+
+    def boom(**_k):
+        raise AssertionError("credit HOLD must not re-query Parallel")
+
+    result = run_cite_recheck_loop(packet, search_fn=boom)
+    assert result.ok is False
+    assert packet.receipt.disposition == "HOLD"
+    assert "402" in (packet.receipt.hold_reason or "") or "credit" in (packet.receipt.hold_reason or "").lower()
+    assert not any(f.stamp == "timeline_event" for f in packet.receipt.findings)
+
+
+def test_research_empty_mint_with_chain_is_ready(monkeypatch) -> None:
+    """_research must attach timeline_event URLs instead of HOLD-empty on empty mint."""
+    from types import SimpleNamespace
+
+    from onecrew.agent.shift import _research
+    from onecrew.foundry import FoundryHold
+    from onecrew.models import Rails
+
+    hit = OPENAI
+    packet = Packet(
+        id="oc-research-empty-mint",
+        topic="Compute campuses are going to cause the next economic bubble",
+        hook="Compute campuses are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+    )
+
+    def search(*, objective, search_queries):
+        blob = f"{objective} {' '.join(search_queries)}".lower()
+        if "hidden" in blob or "fringe" in blob:
+            return SimpleNamespace(
+                results=[SimpleNamespace(url="https://example.com/fringe", title="miss", excerpts=["fringe offtake"])]
+            )
+        return SimpleNamespace(
+            results=[SimpleNamespace(url=hit, title="campus", excerpts=["A consortium announced a $200B compute campus."])]
+        )
+
+    def extract(*, urls, objective):
+        return SimpleNamespace(
+            results=[SimpleNamespace(url=hit, title="campus", excerpts=["A consortium announced a $200B compute campus."])],
+            errors=[],
+        )
+
+    def task(*, prompt, processor="pro", task_spec=None):
+        return SimpleNamespace(output=SimpleNamespace(content=_CHAIN_AND_BIBLIO, basis=[]))
+
+    def boom_mint(*_a, **_k):
+        raise FoundryHold("foundry minted nothing")
+
+    monkeypatch.setattr("onecrew.agent.shift.search", search)
+    monkeypatch.setattr("onecrew.agent.shift.extract", extract)
+    monkeypatch.setattr("onecrew.agent.shift.run_task", task)
+    monkeypatch.setattr("onecrew.agent.shift.mint", boom_mint)
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: False)
+    receipt, _leftover, _urls, spine = _research(
+        packet, Rails(parallel=True, vertex=False, imagen=False), "2-3y"
+    )
+    assert spine
+    assert receipt.disposition == "READY"
+    assert "foundry minted nothing" not in (receipt.hold_reason or "").lower()
+    tls = [f for f in receipt.findings if f.stamp == "timeline_event"]
+    assert tls
+    assert all((f.parallel_url or "").startswith("http") for f in tls)
+    assert {f.parallel_url for f in tls} >= {OPENAI, REUTERS}
+    assert {f.id for f in tls}.isdisjoint(_BIBLIO_IDS)
+    assert all(f.id.startswith("te-") for f in tls)
 
 
 def test_writer_and_board_strip_leftover_vo_chrome() -> None:

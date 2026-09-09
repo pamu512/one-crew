@@ -691,6 +691,13 @@ def run_cite_recheck_loop(
     dropped_all: list[str] = []
     hit_urls: list[str] = []
     current_bag = _packet_bag(packet, bag)
+    if _credit_hold(packet):
+        packet.cite_recheck_attempts = attempts
+        return CiteRepairResult(
+            ok=False,
+            attempts=attempts,
+            hold_reason=(packet.receipt.hold_reason if packet.receipt else None),
+        )
     entered_empty = bool(empty_cite_beats(packet))
     stamped = _stamp_pack_timeline(packet)
     attached_all.extend(stamped)
@@ -706,15 +713,6 @@ def run_cite_recheck_loop(
             notes="\n".join(
                 p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p
             ),
-        )
-    if _credit_hold(packet):
-        packet.cite_recheck_attempts = attempts
-        return CiteRepairResult(
-            ok=True,
-            attempts=attempts,
-            attached_ids=attached_all,
-            dropped_beat_ids=dropped_all,
-            hit_urls=hit_urls,
         )
     while True:
         if current_bag and (current_bag.hit_urls or current_bag.excerpts):
