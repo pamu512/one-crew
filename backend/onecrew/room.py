@@ -355,19 +355,37 @@ def _action_line(window: str) -> str:
 
 def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
     """Tone chrome, title-read VO, or mute-test meta frames are not cite-faithful speech."""
-    from onecrew.script import has_tone_chrome, is_print_hole, is_thin_frame, is_title_read_vo
+    from onecrew.script import (
+        has_tone_chrome,
+        is_action_chrome_vo,
+        is_broad_scope_vo,
+        is_print_hole,
+        is_thin_frame,
+        is_thin_title_read_vo,
+        is_title_read_vo,
+        stamp_scope,
+    )
 
     by_id = {row.id: row for row in artifact.stamped_findings}
+    prior: list[str] = []
+    covering = [row for row in artifact.stamped_findings if stamp_scope(row) == "broad"]
     for window in _cite_windows(artifact.script):
         vo = _vo_body(window)
         cited = [by_id[fid] for fid in _cited_ids(window) if fid in by_id]
         fids = [row.id for row in cited]
         if has_tone_chrome(vo) or is_print_hole(vo):
             return True
+        if is_action_chrome_vo(vo, _action_line(window)):
+            return True
         if cited and is_title_read_vo(vo, cited):
+            return True
+        if cited and is_thin_title_read_vo(vo, cited, prior_prints=prior):
+            return True
+        if is_broad_scope_vo(vo) and cited and all(stamp_scope(row) == "narrow" for row in cited) and covering:
             return True
         if is_thin_frame(_action_line(window), fids, cited):
             return True
+        prior.append(vo)
     return False
 
 
@@ -528,6 +546,9 @@ def run_room_loop(
     packet.room_grade = grade
     calls = max(0, int(parallel_already))
     if grade.vote == "ship":
+        from onecrew.script import sanitize_for_ship
+
+        sanitize_for_ship(packet)
         return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
     if grade.vote == "recut" and grade.recut_reason == "not_enough_information":
         if calls >= MAX_PARALLEL_RESEARCH:
@@ -546,6 +567,9 @@ def run_room_loop(
         grade = grade_room(artifact, grader=grader)
         packet.room_grade = grade
         if grade.vote == "ship":
+            from onecrew.script import sanitize_for_ship
+
+            sanitize_for_ship(packet)
             return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
         return RoomLoopResult(
             grade=grade,
@@ -563,6 +587,9 @@ def run_room_loop(
     grade = grade_room(artifact, grader=grader)
     packet.room_grade = grade
     if grade.vote == "ship":
+        from onecrew.script import sanitize_for_ship
+
+        sanitize_for_ship(packet)
         return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
     return RoomLoopResult(
         grade=grade,

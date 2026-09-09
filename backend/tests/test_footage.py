@@ -102,7 +102,7 @@ def test_nonfiction_infographic_may_imagen(monkeypatch) -> None:
     assert graphics
     sourced = [f for f in frames if f.footage == "sourced"]
     assert sourced
-    close = next(f for f in frames if f.beat_id == "close")
+    close = next(f for f in frames if f.beat_id == packet.beats[-1].id)
     assert close.footage == "missing"
     assert close.kind != "event"
     assert close.imagen is False

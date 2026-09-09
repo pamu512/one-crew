@@ -175,10 +175,14 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
     """Named-entity miss, print skew, or pack/slot chrome VO on a cited stamp."""
     from onecrew.script import (
         has_tone_chrome,
+        is_action_chrome_vo,
+        is_broad_scope_vo,
         is_pack_chrome_vo,
         is_print_hole,
         is_thin_frame,
+        is_thin_title_read_vo,
         is_title_read_vo,
+        stamp_scope,
     )
     from onecrew.timeline import stamp_covers_vo, union_supports_prints, vo_proper_names
 
@@ -198,11 +202,22 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             if fid in by_id and by_id[fid].stamp == "timeline_event"
         ]
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        prior = [
+            _vo_body(p)
+            for p in packet.beats[: packet.beats.index(beat)]
+            if (p.kind or "vo") != "heading"
+        ]
+        scope_hold = is_broad_scope_vo(vo) and cited and all(
+            stamp_scope(f) == "narrow" for f in cited
+        ) and any(stamp_scope(f) == "broad" for f in receipt.findings)
         if (
             has_tone_chrome(beat.vo)
             or is_title_read_vo(beat.vo, cited)
+            or is_thin_title_read_vo(beat.vo, cited, prior_prints=prior)
+            or is_action_chrome_vo(beat.vo, beat.frame or "")
             or is_print_hole(vo)
             or is_thin_frame(beat.frame or "", list(beat.finding_ids), list(receipt.findings))
+            or scope_hold
         ):
             out.append(beat)
             continue
@@ -465,6 +480,9 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
+        from onecrew.script import _vo_lines
+
+        spoken = _vo_lines(beat.vo)
         vo = _vo_body(beat)
         keep: list[str] = []
         for fid in beat.finding_ids:
@@ -509,7 +527,7 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
         )
         from onecrew.timeline import cap_beat_cites
 
-        keep, new_vo = _align_vo_to_stamps(vo, keep, list(receipt.findings))
+        keep, new_vo = _align_vo_to_stamps(spoken, keep, list(receipt.findings))
         _, new_frame = _align_vo_to_stamps(beat.frame or "", list(keep), list(receipt.findings))
         keep, new_vo, _ = _refuse_forecast_theater(new_vo, keep, list(receipt.findings), packet.tell or "")
         _, new_frame, _ = _refuse_forecast_theater(
@@ -519,11 +537,11 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
         new_vo = _drop_extra_cite_brackets(new_vo, keep)
         new_frame = _drop_extra_cite_brackets(new_frame, keep)
         if is_pack_chrome_vo(new_vo) or is_print_hole(new_vo) or not (new_vo or "").strip():
-            spoken = speak_stamp_fact(keep, list(receipt.findings)) or speak_stamps(
+            fact = speak_stamp_fact(keep, list(receipt.findings)) or speak_stamps(
                 keep, list(receipt.findings)
             )
-            if spoken:
-                new_vo = spoken
+            if fact:
+                new_vo = fact
         if is_thin_frame(new_frame, keep, list(receipt.findings)) or not (new_frame or "").strip():
             if keep:
                 new_frame = (
@@ -531,7 +549,7 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
                     or speak_stamps(keep, list(receipt.findings))
                     or new_frame
                 )
-        if new_vo != vo:
+        if new_vo != spoken:
             beat.vo = f"NARRATOR\n{new_vo}" if (beat.vo or "").startswith("NARRATOR") else new_vo
             changed = True
         for fid in list(keep):
@@ -720,7 +738,7 @@ def rebuild_timed_vo(packet: Packet) -> None:
     cursor = 0
     for i, beat in enumerate(beats):
         beat.start = _tc(cursor, hours=hours)
-        beat.scene = f"BEAT {i + 1} — {beat.id}"
+        beat.scene = f"BEAT {i + 1}"
         cursor += max(1, beat.duration_s)
     lines = [
         f"Timed VO · {packet.platform or 'missing'} · {packet.cut or 'missing'} · {lean}"
@@ -877,15 +895,21 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         _align_vo_to_stamps,
         _drop_extra_cite_brackets,
         _refuse_forecast_theater,
+        _speech_norm,
         _strip_tone_chrome,
         _vo_lines,
+        drop_thin_title_read_beats,
         has_tone_chrome,
+        is_action_chrome_vo,
         is_pack_chrome_vo,
         is_print_hole,
         is_thin_frame,
+        is_thin_title_read_vo,
         is_title_read_vo,
+        prefer_covering_scope,
         speak_stamp_fact,
         speak_stamps,
+        strip_action_chrome_vo,
     )
     from onecrew.timeline import cap_beat_cites
 
@@ -896,8 +920,10 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
-        vo = _vo_lines(beat.vo)
-        keep, new_vo = _align_vo_to_stamps(vo, list(beat.finding_ids), list(receipt.findings))
+        orig_vo = _vo_lines(beat.vo)
+        vo = strip_action_chrome_vo(orig_vo, beat.frame or "")
+        keep, _ = prefer_covering_scope(vo, list(beat.finding_ids), list(receipt.findings))
+        keep, new_vo = _align_vo_to_stamps(vo, keep, list(receipt.findings))
         _, new_frame = _align_vo_to_stamps(beat.frame or "", list(keep), list(receipt.findings))
         keep, new_vo, _ = _refuse_forecast_theater(new_vo, keep, list(receipt.findings), packet.tell or "")
         _, new_frame, _ = _refuse_forecast_theater(
@@ -908,14 +934,33 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         new_frame = _drop_extra_cite_brackets(new_frame, keep)
         new_vo, _ = _strip_tone_chrome(new_vo)
         cited = [f for f in receipt.findings if f.id in keep]
+        prior = [_vo_lines(p.vo) for p in packet.beats[: packet.beats.index(beat)] if (p.kind or "vo") != "heading"]
         if is_title_read_vo(new_vo, cited) or is_print_hole(new_vo):
-            new_vo = speak_stamp_fact(keep, list(receipt.findings))
-        elif has_tone_chrome(new_vo) or is_pack_chrome_vo(new_vo) or not (new_vo or "").strip():
+            spoken = speak_stamp_fact(keep, list(receipt.findings))
+            if spoken and not is_thin_title_read_vo(spoken, cited, prior_prints=prior):
+                new_vo = spoken
+            elif is_thin_title_read_vo(new_vo, cited, prior_prints=prior):
+                new_vo = ""
+                keep = []
+        elif has_tone_chrome(new_vo) or is_pack_chrome_vo(new_vo) or is_action_chrome_vo(new_vo, beat.frame or ""):
             new_vo = speak_stamps(keep, list(receipt.findings))
+        elif not (new_vo or "").strip():
+            new_vo = speak_stamps(keep, list(receipt.findings))
+        elif is_thin_title_read_vo(new_vo, cited, prior_prints=prior):
+            spoken = speak_stamp_fact(keep, list(receipt.findings))
+            if spoken and not is_thin_title_read_vo(spoken, cited, prior_prints=prior):
+                new_vo = spoken
+            else:
+                new_vo = ""
+                keep = []
+        if keep and not _speech_norm(new_vo):
+            new_vo = speak_stamp_fact(keep, list(receipt.findings)) or speak_stamps(
+                keep, list(receipt.findings)
+            )
         if is_pack_chrome_vo(new_frame) or is_thin_frame(new_frame, keep, list(receipt.findings)):
             new_frame = speak_stamp_fact(keep, list(receipt.findings)) or ""
         beat.finding_ids = keep
-        if new_vo != vo:
+        if new_vo != orig_vo:
             beat.vo = f"NARRATOR\n{new_vo}" if (beat.vo or "").startswith("NARRATOR") else new_vo
             changed = True
         for fid in keep:
@@ -925,9 +970,10 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         if new_frame != (beat.frame or ""):
             beat.frame = new_frame
             changed = True
-    if changed:
+    dropped = drop_thin_title_read_beats(packet)
+    if changed or dropped:
         rebuild_timed_vo(packet)
-    return []
+    return dropped
 
 
 def _clear_cite_only_hold(packet: Packet, bag: CiteBag | None = None) -> None:
@@ -1049,6 +1095,14 @@ def _board_gate_reason(packet: Packet) -> str | None:
                 used[host] += 1
     if any(n > URL_REUSE_CAP for n in used.values()):
         return "host reuse"
+    from onecrew.script import is_broad_scope_vo, stamp_scope
+
+    covering = [f for f in (receipt.findings if receipt else []) if stamp_scope(f) == "broad"]
+    if covering:
+        for beat in packet.beats:
+            cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+            if is_broad_scope_vo(beat.vo) and cited and all(stamp_scope(f) == "narrow" for f in cited):
+                return "cite-faithfulness"
     return None
 
 
