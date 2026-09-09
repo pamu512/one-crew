@@ -552,6 +552,9 @@ def run_room_loop(
         return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
     if grade.vote == "recut" and grade.recut_reason == "not_enough_information":
         if calls >= MAX_PARALLEL_RESEARCH:
+            from onecrew.script import sanitize_for_ship
+
+            sanitize_for_ship(packet)
             held = RoomLoopResult(
                 grade=grade,
                 parallel_research_calls=calls,
@@ -571,6 +574,9 @@ def run_room_loop(
 
             sanitize_for_ship(packet)
             return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
+        from onecrew.script import sanitize_for_ship
+
+        sanitize_for_ship(packet)
         return RoomLoopResult(
             grade=grade,
             parallel_research_calls=calls,
@@ -591,6 +597,9 @@ def run_room_loop(
 
         sanitize_for_ship(packet)
         return RoomLoopResult(grade=grade, parallel_research_calls=calls, disposition="READY")
+    from onecrew.script import sanitize_for_ship
+
+    sanitize_for_ship(packet)
     return RoomLoopResult(
         grade=grade,
         parallel_research_calls=calls,

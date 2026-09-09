@@ -237,6 +237,12 @@ def attach_frames(packet: Packet, frames: list[ShotFrame], *, rails: Rails) -> P
     if not packet.script.strip() and not packet.beats:
         packet.frames = []
         return packet
+    if not frames and packet.beats:
+        from onecrew.board import write_shot_list
+        from onecrew.script import sanitize_for_ship
+
+        sanitize_for_ship(packet)
+        frames = write_shot_list(packet)
     out: list[ShotFrame] = []
     for frame in frames:
         if not frame.shot.strip():

@@ -100,7 +100,13 @@ _BIBLIO_ID = re.compile(
 _PACK_CHROME = re.compile(
     r"official series cards only|three pack objects|leftover map|"
     r"bibliography|executive_summary|scrape title|"
-    r"go to content|skip to (?:main )?content|cookie banner",
+    r"go to content|skip to (?:main )?content|cookie banner|"
+    r"last[- ]verified|last[- ]updated|last[- ]checked",
+    re.I,
+)
+_CHROME_COVER = re.compile(
+    r"\blast[- ]verified\b|\blast[- ]updated\b|\blast[- ]checked\b|"
+    r"\bretrieved(?:[- ]at)?\b|\bte-last-verified-",
     re.I,
 )
 _URL_REUSE_CAP = 2
@@ -588,7 +594,18 @@ def stamp_text(finding: object) -> str:
     return " ".join(parts)
 
 
+def is_chrome_cover_stamp(finding: object) -> bool:
+    """Last-verified / retrieved chrome. Not a print-bearing cover."""
+    blob = " ".join(
+        str(getattr(finding, key, None) or "")
+        for key in ("id", "title", "print", "claim", "note")
+    )
+    return bool(_CHROME_COVER.search(blob))
+
+
 def stamp_covers_vo(vo: str, finding: Finding) -> bool:
+    if is_chrome_cover_stamp(finding):
+        return False
     return pair_covers_vo(vo, stamp_text(finding), getattr(finding, "parallel_url", None) or getattr(finding, "url", None) or "")
 
 
@@ -751,11 +768,16 @@ def _print_stamp_for_thin_vo(vo: str, tls: list[Finding]) -> list[Finding]:
 
 
 def _prefer_unused_host(vo: str, tls: list[Finding]) -> Finding | None:
-    covers = [f for f in tls if stamp_covers_vo(vo, f)]
+    covers = [f for f in tls if not is_chrome_cover_stamp(f) and stamp_covers_vo(vo, f)]
     if not covers:
         return None
     full = [f for f in covers if stamp_supports_prints(vo, f)]
-    pool = full or covers
+    # ponytail: spoken nums need a print-bearing stamp. Chrome/name-only fallback is soft-cover.
+    pool = full if (_event_nums(vo) or full) else covers
+    if _event_nums(vo) and not full:
+        return None
+    if not pool:
+        return None
     load = host_load(tls)
     pool.sort(key=lambda f: (load[url_host(f.parallel_url or "")], f.id))
     return pool[0]
@@ -772,7 +794,9 @@ def stamps_for_vo(
     tls = [
         f
         for f in findings or []
-        if getattr(f, "stamp", "") == TIMELINE_STAMP and (f.parallel_url or "").strip()
+        if getattr(f, "stamp", "") == TIMELINE_STAMP
+        and (f.parallel_url or "").strip()
+        and not is_chrome_cover_stamp(f)
     ]
     names = vo_proper_names(vo)
     if not names and not _event_nums(vo) and not _months(vo):

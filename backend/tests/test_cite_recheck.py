@@ -161,6 +161,15 @@ def _empty_search(*, objective, search_queries):
     return SimpleNamespace(results=[])
 
 
+def _beat_vo(packet: Packet, needle: str) -> ScriptBeat:
+    """Post-repair ids are beatN. Look up by spoken text, not leftover slots."""
+    return next(b for b in packet.beats if needle.lower() in (b.vo or "").lower())
+
+
+def _vo_has(packet: Packet, needle: str) -> bool:
+    return any(needle.lower() in (b.vo or "").lower() for b in packet.beats)
+
+
 def test_missing_cite_parallel_hit_attaches_url_keeps_beat() -> None:
     packet = _eight_packet(payrolls_url=None)
     calls = {"n": 0}
@@ -179,13 +188,14 @@ def test_missing_cite_parallel_hit_attaches_url_keeps_beat() -> None:
     pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
     assert pay.parallel_url == BLS
     assert pay.parallel_status == "hit"
-    assert any(b.id == "labor" for b in packet.beats)
+    labor = _beat_vo(packet, "nonfarm payrolls")
+    assert "payrolls-july-2026" in labor.finding_ids
     assert "payrolls-july-2026" in " ".join(b.vo for b in packet.beats)
     assert packet.receipt.disposition == "READY"
     assert packet.status == "ready"
     assert "grounded requires a Parallel URL" not in (packet.receipt.hold_reason or "")
     shots = write_shot_list(packet)
-    assert any(s.beat_id == "labor" for s in shots)
+    assert any(s.beat_id == labor.id for s in shots)
 
 
 def test_missing_cite_parallel_miss_drops_beat_and_ships() -> None:
@@ -203,7 +213,7 @@ def test_missing_cite_parallel_miss_drops_beat_and_ships() -> None:
     assert result.ok is True
     assert calls["n"] >= 1
     assert calls["n"] <= MAX_CITE_RECHECKS
-    assert not any(b.id == "labor" for b in packet.beats)
+    assert not _vo_has(packet, "nonfarm payrolls")
     spoken = (packet.script or "") + "\n".join(b.vo for b in packet.beats)
     assert "payrolls-july-2026" not in spoken
     assert packet.beats
@@ -212,11 +222,12 @@ def test_missing_cite_parallel_miss_drops_beat_and_ships() -> None:
     assert packet.status == "ready"
     pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
     assert pay.stamp != "grounded" or (pay.parallel_url or "").strip()
-    assert not any(f.beat_id == "labor" for f in packet.frames)
+    assert not any("payrolls-july-2026" in (f.shot or "") for f in packet.frames)
     shots = write_shot_list(packet)
     assert shots
+    close = _beat_vo(packet, "not a switch")
+    assert any(s.beat_id == close.id for s in shots)
     assert not any(s.beat_id == "labor" for s in shots)
-    assert any(s.beat_id == "close" for s in shots)
 
 
 def test_cite_recheck_fourth_failure_holds_loop_exhausted() -> None:
@@ -301,8 +312,10 @@ def test_print_not_in_cite_parallel_miss_drops_beat_no_fail() -> None:
     assert calls["n"] >= 1
     assert packet.cite_recheck_attempts >= 1
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
-    assert not any(b.id == "labor" for b in packet.beats)
-    assert {"promise", "gdp", "close"} <= {b.id for b in packet.beats}
+    assert not _vo_has(packet, "nonfarm payrolls")
+    assert _vo_has(packet, "is the flag")
+    assert _vo_has(packet, "USREC=0 (July 2026)")
+    assert _vo_has(packet, "not a switch")
     spoken = (packet.script or "") + "\n".join(b.vo for b in packet.beats)
     assert "payrolls-july-2026" not in spoken
     assert packet.beats
@@ -378,8 +391,10 @@ def test_print_not_in_cite_parallel_hit_keeps_beat_fixes_url() -> None:
     pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
     assert pay.parallel_url == BLS
     assert pay.parallel_status == "hit"
-    kept = {b.id for b in packet.beats}
-    assert {"labor", "promise", "gdp", "close"} <= kept
+    assert _vo_has(packet, "nonfarm payrolls")
+    assert _vo_has(packet, "is the flag")
+    assert _vo_has(packet, "USREC=0 (July 2026)")
+    assert _vo_has(packet, "not a switch")
     assert "payrolls-july-2026" in " ".join(b.vo for b in packet.beats)
     usrec = next(f for f in packet.receipt.findings if f.id == "usrec-july-2026")
     assert usrec.parallel_url == FRED
@@ -387,8 +402,10 @@ def test_print_not_in_cite_parallel_hit_keeps_beat_fixes_url() -> None:
     assert packet.status == "ready"
     assert "print not in cite" not in (packet.receipt.hold_reason or "")
     shots = write_shot_list(packet)
-    assert any(s.beat_id == "labor" for s in shots)
-    assert any(s.beat_id == "close" for s in shots)
+    labor = _beat_vo(packet, "nonfarm payrolls")
+    close = _beat_vo(packet, "not a switch")
+    assert any(s.beat_id == labor.id for s in shots)
+    assert any(s.beat_id == close.id for s in shots)
 
 
 def test_print_not_in_cite_existing_bag_hit_relinks_without_requery() -> None:
@@ -418,7 +435,10 @@ def test_print_not_in_cite_existing_bag_hit_relinks_without_requery() -> None:
     assert packet.cite_recheck_attempts == 0
     pay = next(f for f in packet.receipt.findings if f.id == "payrolls-july-2026")
     assert pay.parallel_url == BLS
-    assert {"labor", "promise", "gdp", "close"} <= {b.id for b in packet.beats}
+    assert _vo_has(packet, "nonfarm payrolls")
+    assert _vo_has(packet, "is the flag")
+    assert _vo_has(packet, "USREC=0 (July 2026)")
+    assert _vo_has(packet, "not a switch")
     assert packet.receipt.disposition == "READY"
 
 
@@ -874,7 +894,8 @@ def test_lei_sahm_url_requeries_or_drops_and_counts_attempt() -> None:
     assert "cite-repair loop exhausted" not in (packet.receipt.hold_reason or "")
     shots = write_shot_list(packet)
     assert shots
-    assert any(s.beat_id == "close" for s in shots)
+    close = _beat_vo(packet, "not a switch")
+    assert any(s.beat_id == close.id for s in shots)
 
 
 # Live HOLD oc-data-centers-are-going-to-cause-the--6228b564:

@@ -1025,9 +1025,11 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
             prior = (fresh.receipt.hold_reason or "").strip()
             fresh.receipt.hold_reason = f"{prior} {loop.hold_reason or ''}".strip()
         fresh.status = "hold"
-        cite_recut = "cite-faithfulness" in (
+        from onecrew.cite_repair import is_cite_faithfulness_hold
+
+        cite_recut = is_cite_faithfulness_hold(
             f"{loop.hold_reason or ''} {loop.grade.recut_detail or ''}"
-        ).lower()
+        )
         if cite_recut:
             if not _cite_repair():
                 stamp_collisions(fresh, rails)

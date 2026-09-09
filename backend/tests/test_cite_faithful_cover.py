@@ -340,7 +340,7 @@ def test_cite_repair_runs_on_named_entity_and_chrome_holes() -> None:
     result = run_cite_recheck_loop(packet, search_fn=_no_search)
     assert packet.cite_recheck_attempts >= 1
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
-    turn = next((b for b in packet.beats if b.id == "turn"), None)
+    turn = next((b for b in packet.beats if "meridian" in (b.vo or "").lower()), None)
     if turn is not None:
         assert cover.id not in turn.finding_ids or not re.search(r"helios", turn.vo, re.I)
         assert not re.search(r"helios", turn.vo, re.I)
@@ -581,7 +581,7 @@ def test_cite_repair_reattaches_covering_host_for_org_plus_prints() -> None:
     run_cite_recheck_loop(packet, search_fn=_no_search)
     assert packet.cite_recheck_attempts >= 1
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
-    turn = next(b for b in packet.beats if b.id == "turn")
+    turn = next(b for b in packet.beats if "18" in (b.vo or "") and "7" in (b.vo or ""))
     cited = [f for f in packet.receipt.findings if f.id in turn.finding_ids]
     spoken = f"{turn.vo} {turn.frame or ''}"
     assert wrong.id not in turn.finding_ids

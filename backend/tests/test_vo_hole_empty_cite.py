@@ -193,9 +193,9 @@ def test_covering_finding_ids_do_not_hold_as_cites_nothing() -> None:
     reason = _reason(written)
     assert "cites nothing" not in reason
     assert "empty beat" not in reason
-    for bid in ("cold-open", "promise", "complication"):
-        beat = next(b for b in written.beats if b.id == bid)
-        assert stamp.id in beat.finding_ids
+    covered = [b for b in written.beats if stamp.id in b.finding_ids]
+    assert len(covered) >= 3
+    for beat in covered:
         assert f"[{stamp.id}]" in beat.vo
         assert re.search(r"14\.2|helios occupancy", beat.vo, re.I)
         assert not re.search(_HOLE, f"{beat.vo} {beat.frame or ''}")
@@ -279,7 +279,7 @@ def test_stripped_cite_tags_reattach_when_ids_cover() -> None:
     packet.status = "hold"
     result = run_cite_recheck_loop(packet, search_fn=_no_search)
     assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
-    turn = next((b for b in packet.beats if b.id == "turn"), None)
+    turn = next((b for b in packet.beats if stamp.id in b.finding_ids and "14.2" in (b.vo or "")), None)
     assert turn is not None
     assert stamp.id in turn.finding_ids
     assert f"[{stamp.id}]" in turn.vo
