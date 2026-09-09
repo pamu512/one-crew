@@ -395,3 +395,199 @@ def test_propose_claims_fills_gdp_pair_when_vertex_omits_it() -> None:
     assert _when_print_on_fred_row(sahm.when, sahm.print, _FRED_SAHM_TABLE)
     if _norm_print(sahm.print) == "-0.03":
         assert (sahm.when or "").lower() == "july 2026"
+
+
+# Live HOLD oc-are-we-near-recession-6814d7c0: spine says June = −0.03,
+# FRED pipe is Jun 0.07 / Jul −0.03. Stamp kept June; VO spoke July.
+_LIVE_SAHM_JUNE_PROSE_JULY_PIPE = (
+    "Sahm June 2026 = −0.03 vs 0.50 trigger. "
+    "2026-06-01 | 0.07\n2026-07-01 | -0.03\n"
+    "June 2026 0.07\n"
+    "July 2026 −0.03\n"
+)
+_MONTH_YEAR = re.compile(
+    r"(January|February|March|April|May|June|July|August|September|October|November|December)"
+    r"\s+(20\d{2})",
+    re.I,
+)
+
+
+def _assert_sahm_vo_month_matches_stamp(packet: Packet) -> None:
+    """Fail if a beat speaks the Sahm print, cites the Sahm id, and names another month."""
+    receipt = packet.receipt
+    assert receipt is not None
+    sahm = next(f for f in receipt.findings if f.series == "SAHMREALTIME")
+    stamp = (sahm.when or "").strip().lower()
+    printed = _norm_print(sahm.print)
+    assert stamp and printed
+    for beat in packet.beats:
+        vo = beat.vo or ""
+        if f"[{sahm.id}]" not in vo:
+            continue
+        vo_n = _norm_print(vo)
+        if printed not in vo_n and printed.lstrip("+-") not in vo_n:
+            continue
+        for match in _MONTH_YEAR.finditer(vo):
+            spoken = f"{match.group(1).title()} {match.group(2)}".lower()
+            assert spoken == stamp, (
+                f"{beat.id} speaks {spoken} for {printed} [{sahm.id}] but stamp when is {stamp}"
+            )
+
+
+def test_sahm_june_prose_july_pipe_stamps_july_and_vo_month_matches() -> None:
+    """Print −0.03 on the July pipe. Do not keep June because prose said June = −0.03."""
+    from onecrew.claimer import claims_from_cites, findings_from_claims, propose_claims
+    from onecrew.foundry import mint
+    from onecrew.verify import Claim
+
+    spine = f"USREC July 2026 = 0. {_CES} {_LIVE_SAHM_JUNE_PROSE_JULY_PIPE}"
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-6814d7c0"
+    packet.task_spine = spine
+    packet.research_pack = spine
+    minted = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", [_USREC]),
+            _row(BLS, "BLS", [_CES]),
+            _row(FRED_SAHM, "SAHMREALTIME", [_LIVE_SAHM_JUNE_PROSE_JULY_PIPE]),
+        ],
+        _miss(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    bag = _bag(
+        excerpts=[
+            (FRED_SAHM, "SAHMREALTIME", _LIVE_SAHM_JUNE_PROSE_JULY_PIPE),
+            (FRED_USREC, "USREC", _USREC),
+            (BLS, "BLS", _CES),
+        ],
+        spine=spine,
+        hit_urls=[FRED_SAHM, FRED_USREC, BLS],
+    )
+
+    def june_vertex(_bag, _packet=None):
+        return [
+            Claim(
+                series="SAHMREALTIME",
+                print="−0.03",
+                when="June 2026",
+                id="sahm-june-2026",
+                cite_url=FRED_SAHM,
+                claim_span=_LIVE_SAHM_JUNE_PROSE_JULY_PIPE,
+            )
+        ]
+
+    scanned = findings_from_claims(claims_from_cites(bag), bag)
+    remapped = propose_claims(bag, proposer=june_vertex)
+    assert ledger.parallel_calls == before
+    for rows in (minted, scanned, remapped):
+        sahm = next(f for f in rows if getattr(f, "series", None) == "SAHMREALTIME")
+        assert _norm_print(sahm.print) == "-0.03"
+        assert (sahm.when or "").lower() == "july 2026"
+        assert sahm.id == "sahm-july-2026"
+        assert "june" not in (sahm.when or "").lower()
+    sahm = next(f for f in minted if f.series == "SAHMREALTIME")
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=minted),
+    )
+    write_script(packet)
+    assert ledger.parallel_calls == before
+    spoken = (packet.script or "") + "\n" + "\n".join(b.vo for b in packet.beats)
+    assert "−0.03" in spoken or "-0.03" in spoken
+    assert "[sahm-july-2026]" in spoken
+    assert "[sahm-june-2026]" not in spoken
+    _assert_sahm_vo_month_matches_stamp(packet)
+
+
+def test_writer_rejects_sahm_vo_month_off_stamp(monkeypatch) -> None:
+    """Vertex must not speak July for −0.03 while citing a June Sahm id."""
+    pack = (
+        "USREC July 2026 = 0. "
+        "Nonfarm payrolls fell −23,000 in July 2026. "
+        "Sahm June 2026 = −0.03 vs the 0.50 trigger. "
+        "2026-06-01 | 0.07\n2026-07-01 | -0.03\n"
+    )
+    packet = _packet()
+    packet.id = "oc-are-we-near-recession-6814d7c0"
+    packet.research_pack = pack
+    packet.task_spine = pack
+    rows = [
+        Finding(
+            id="usrec-july-2026",
+            claim="USREC=0 (July 2026).",
+            stamp="grounded",
+            series="USREC",
+            print="0",
+            when="July 2026",
+            parallel_url=FRED_USREC,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="payrolls-july-2026",
+            claim="Nonfarm payrolls fell −23,000.",
+            stamp="grounded",
+            series="BLS payrolls",
+            print="−23,000",
+            when="July 2026",
+            parallel_url=BLS,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="sahm-june-2026",
+            claim="Sahm June 2026 = −0.03 vs 0.50 trigger.",
+            stamp="grounded",
+            series="SAHMREALTIME",
+            print="−0.03",
+            when="June 2026",
+            parallel_url=FRED_SAHM,
+            parallel_status="hit",
+            note="Parallel URL on this row.",
+        ),
+        Finding(
+            id="fringe-miss",
+            claim="Hidden treaty already mined the strait.",
+            stamp="fringe",
+            parallel_status="miss",
+            note="Parallel miss. Included and tagged fringe. Never sold as fact.",
+        ),
+    ]
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    mixed = (
+        '[{"id":"cold-open","vo":"USREC=0 (July 2026) smashed into payrolls −23,000. '
+        '[usrec-july-2026] [payrolls-july-2026]",'
+        '"eyes":"cards","finding_ids":["usrec-july-2026","payrolls-july-2026"]},'
+        '{"id":"promise","vo":"Three objects from the pack. [usrec-july-2026]",'
+        '"eyes":"pack","finding_ids":["usrec-july-2026"]},'
+        '{"id":"gdp","vo":"The official series stay on the cards. [usrec-july-2026]",'
+        '"eyes":"gdp","finding_ids":["usrec-july-2026"]},'
+        '{"id":"labor","vo":"Labor: payrolls −23,000. Named BLS. [payrolls-july-2026]",'
+        '"eyes":"ces","finding_ids":["payrolls-july-2026"]},'
+        '{"id":"turn","vo":"Turn: Sahm −0.03 in July 2026 vs the 0.50 trigger. [sahm-june-2026]",'
+        '"eyes":"sahm","finding_ids":["sahm-june-2026"]},'
+        '{"id":"complication","vo":"Sahm −0.03 in July 2026 is not the official call. [sahm-june-2026]",'
+        '"eyes":"gap","finding_ids":["sahm-june-2026"]},'
+        '{"id":"receipt","vo":"Receipt board: named series. [usrec-july-2026]",'
+        '"eyes":"board","finding_ids":["usrec-july-2026"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-july-2026]",'
+        '"eyes":"close","finding_ids":["usrec-july-2026"]}]'
+    )
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda _p: mixed)
+    before = ledger.parallel_calls
+    write_script(packet)
+    assert ledger.parallel_calls == before
+    spoken = (packet.script or "") + "\n" + "\n".join(b.vo for b in packet.beats)
+    assert "Sahm −0.03 in July 2026" not in spoken
+    assert "[sahm-june-2026]" in spoken or "[sahm-july-2026]" in spoken
+    _assert_sahm_vo_month_matches_stamp(packet)
+    for beat in packet.beats:
+        if "[sahm-june-2026]" in (beat.vo or "") and ("−0.03" in beat.vo or "-0.03" in beat.vo):
+            assert "july 2026" not in beat.vo.lower()
