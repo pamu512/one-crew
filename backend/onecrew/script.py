@@ -1116,13 +1116,18 @@ def is_pack_chrome_vo(text: str) -> bool:
     return False
 
 
+def is_comparative_vo(text: str) -> bool:
+    """Spoken magnitude/comparison without requiring a topic noun."""
+    return bool(_COMPARATIVE_VO.search(_vo_lines(text) or text or ""))
+
+
 def _align_vo_to_stamps(
     vo: str,
     fids: list[str],
     findings: list[Finding],
 ) -> tuple[list[str], str]:
     """Named-entity / print VO may only keep a timeline stamp that covers it. Else drop."""
-    from onecrew.timeline import stamp_covers_vo, stamps_for_vo, vo_proper_names
+    from onecrew.timeline import _event_nums, stamp_covers_vo, stamps_for_vo, vo_proper_names
 
     by_id = {f.id: f for f in findings}
     timeline = {f.id for f in findings if f.stamp == "timeline_event"}
@@ -1134,6 +1139,13 @@ def _align_vo_to_stamps(
         return grounded + keep, spoken or vo
     names = vo_proper_names(vo)
     if not names:
+        if is_comparative_vo(vo) and not _event_nums(vo):
+            chosen = stamps_for_vo(vo, findings, [])
+            keep = [f.id for f in chosen] if chosen else [fid for fid in tl_fids if fid in by_id]
+            spoken = speak_stamps(keep, findings)
+            if spoken:
+                return grounded + keep, spoken
+            return grounded, ""
         return fids, vo
     covered = [fid for fid in tl_fids if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
     chosen = stamps_for_vo(vo, findings, [])
@@ -1142,6 +1154,9 @@ def _align_vo_to_stamps(
         for fid in tl_fids:
             if fid not in {f.id for f in chosen}:
                 cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
+        if is_comparative_vo(cleaned) and not _event_nums(cleaned):
+            spoken = speak_stamps([f.id for f in chosen], findings)
+            return grounded + [f.id for f in chosen], spoken or cleaned
         return grounded + [f.id for f in chosen], cleaned
     if covered:
         cleaned = vo
@@ -1217,6 +1232,13 @@ _PACK_CHROME_VO = re.compile(
     r"(?:the\s+)?named print stays on the card\.?|"
     r"(?:the\s+)?cited event stays on the card\.?|"
     r"(?:the\s+)?official series stay on the cards?\.?",
+    re.I,
+)
+_COMPARATIVE_VO = re.compile(
+    r"\b(slowdown|slowed|slowing|growth|grew|decline|declined|"
+    r"increase|increased|decrease|decreased|percent|percentage|"
+    r"higher|lower|versus|compared|more than|less than|"
+    r"rise|rose|falling|fell)\b",
     re.I,
 )
 

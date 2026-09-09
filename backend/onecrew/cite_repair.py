@@ -139,13 +139,23 @@ def _vo_body(beat: ScriptBeat) -> str:
 
 
 def _sourced_claim(beat: ScriptBeat) -> bool:
-    from onecrew.script import pack_numbers
+    from onecrew.script import is_comparative_vo, pack_numbers
 
     vo = _vo_body(beat)
     nums = [n.replace("−", "-") for n in pack_numbers(vo)]
     if any(not _YEAR_TOK.fullmatch(n) for n in nums):
         return True
-    return bool(_MONTH_YEAR.search(vo))
+    if _MONTH_YEAR.search(vo):
+        return True
+    return is_comparative_vo(vo)
+
+
+def _attachable_claim(beat: ScriptBeat) -> bool:
+    if _sourced_claim(beat):
+        return True
+    from onecrew.timeline import vo_proper_names
+
+    return bool(vo_proper_names(f"{_vo_body(beat)} {beat.frame or ''}"))
 
 
 def _named_empty_cite_ids(packet: Packet) -> set[str]:
@@ -193,11 +203,19 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
 
             if _event_nums(spoken):
                 out.append(beat)
+                continue
+        from onecrew.foundry import complete_print
+        from onecrew.script import is_comparative_vo
+        from onecrew.timeline import _event_nums
+
+        if is_comparative_vo(spoken) and not _event_nums(spoken):
+            if not tls or not any(complete_print(f.print or "") for f in tls):
+                out.append(beat)
     return out
 
 
 def empty_cite_beats(packet: Packet) -> list[ScriptBeat]:
-    """Nonfiction VO beats that state a sourced claim but cite no pack finding."""
+    """Nonfiction titled/spoken beats with no pack finding. Chrome slots count."""
     if invents_frame(cut=packet.cut, tell=packet.tell or ""):
         return []
     known = {
@@ -205,23 +223,29 @@ def empty_cite_beats(packet: Packet) -> list[ScriptBeat]:
         for f in (packet.receipt.findings if packet.receipt else [])
         if not is_pack_slot_id(f.id)
     }
-    named = _named_empty_cite_ids(packet)
-    vo_beats = [
-        beat
-        for beat in packet.beats
-        if (beat.kind or "vo") != "heading" and not _is_hole(beat)
-    ]
-    if vo_beats and all(not [fid for fid in b.finding_ids if fid in known] for b in vo_beats):
-        sourced = [b for b in vo_beats if b.id in named or _sourced_claim(b)]
-        return sourced
     out: list[ScriptBeat] = []
-    for beat in vo_beats:
-        fids = [fid for fid in beat.finding_ids if fid in known]
-        if fids:
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
-        if beat.id in named or _sourced_claim(beat):
-            out.append(beat)
+        if any(fid in known for fid in beat.finding_ids):
+            continue
+        out.append(beat)
     return out
+
+
+def _hollow_uncited_beats(packet: Packet) -> list[ScriptBeat]:
+    return [beat for beat in empty_cite_beats(packet) if not _attachable_claim(beat)]
+
+
+def drop_hollow_uncited_beats(packet: Packet) -> list[str]:
+    drop_ids = {b.id for b in _hollow_uncited_beats(packet)}
+    if not drop_ids or not _can_drop_cleanly(packet, drop_ids):
+        return []
+    dropped = [b.id for b in packet.beats if b.id in drop_ids]
+    packet.beats = [b for b in packet.beats if b.id not in drop_ids]
+    rebuild_timed_vo(packet)
+    _retire_incomplete_grounded(packet)
+    return dropped
 
 
 def _queries_for_beats(beats: list[ScriptBeat]) -> list[str]:
@@ -264,9 +288,10 @@ def _finding_from_beat(
     used: set[str],
     chain_urls: set[str] | None = None,
     pairs: list[tuple[str, str]] | None = None,
+    findings: list[Finding] | None = None,
 ) -> Finding | None:
-    from onecrew.script import pack_numbers
-    from onecrew.timeline import cite_host_ok, spoken_basis_url, url_host
+    from onecrew.script import is_comparative_vo, pack_numbers
+    from onecrew.timeline import cite_host_ok, host_under_cap, spoken_basis_url, url_host
 
     vo = _vo_body(beat)
     nums = [n for n in pack_numbers(vo) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
@@ -285,13 +310,18 @@ def _finding_from_beat(
             excerpts = ranked
         else:
             return None
+    have = list(findings or [])
     for excerpt in excerpts:
         url = clean_cite_url(excerpt.url or "")
         if not url:
             continue
+        if not host_under_cap(url, have, vo=vo, pairs=rows):
+            continue
         blob = excerpt.text or ""
         printed = next((n for n in nums if _print_in_text(n, blob)), None)
-        if printed is None and _MONTH_YEAR.search(vo) and _MONTH_YEAR.search(blob):
+        if printed is None and (
+            (_MONTH_YEAR.search(vo) and _MONTH_YEAR.search(blob)) or is_comparative_vo(vo)
+        ):
             printed = next((n for n in pack_numbers(blob) if complete_print(n)), None)
         if not printed or not complete_print(printed):
             continue
@@ -429,8 +459,17 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
                 beat.vo = re.sub(rf"\s*\[{re.escape(fid)}\]", "", beat.vo).strip()
                 continue
             keep.append(fid)
+        from onecrew.timeline import host_under_cap
+
         for finding in stamps_for_vo(vo, tls, pairs):
             if pairs and not cite_host_ok(vo, finding.parallel_url or "", pairs) and not stamp_covers_vo(vo, finding):
+                continue
+            if not host_under_cap(
+                finding.parallel_url or "",
+                [by_id[fid] for fid in keep if fid in by_id],
+                vo=vo,
+                pairs=pairs,
+            ) and not stamp_covers_vo(vo, finding):
                 continue
             if finding.id not in keep:
                 keep.append(finding.id)
@@ -468,7 +507,11 @@ def _attach_empty_cite_beats(packet: Packet, bag: CiteBag | None) -> list[str]:
     pairs = _chain_pairs(packet)
     chain = {u for _t, u in pairs if u}
     for beat in list(empty_cite_beats(packet)):
-        finding = _finding_from_beat(beat, bag, used, chain_urls=chain, pairs=pairs)
+        if not _attachable_claim(beat):
+            continue
+        finding = _finding_from_beat(
+            beat, bag, used, chain_urls=chain, pairs=pairs, findings=list(receipt.findings)
+        )
         if finding is None:
             continue
         receipt.findings.append(finding)
@@ -741,6 +784,7 @@ def _clause_is_cite_marker(
     return False
 
 
+_EMPTY_BEAT_REASON = "empty beat has no pack finding"
 _CITE_HOLD_MARKERS = (
     "grounded requires a Parallel URL",
     "grounded claim missing cite_url",
@@ -751,6 +795,7 @@ _CITE_HOLD_MARKERS = (
     "cites nothing in the pack",
     "uncited claim",
     "cite-faithfulness",
+    _EMPTY_BEAT_REASON,
     _EXHAUST_REASON,
 )
 _EIGHT_IDS = (
@@ -887,6 +932,30 @@ def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
     return dropped
 
 
+def _hold_empty_beats(packet: Packet, attempts: int) -> CiteRepairResult:
+    packet.cite_recheck_attempts = attempts
+    receipt = packet.receipt
+    if receipt is None:
+        receipt = Receipt(
+            packet_id=packet.id,
+            written=False,
+            findings=[],
+            causal_links=[],
+            disposition="HOLD",
+            hold_reason=_EMPTY_BEAT_REASON,
+        )
+        packet.receipt = receipt
+    else:
+        receipt.disposition = "HOLD"
+        prior = (receipt.hold_reason or "").strip()
+        if _EMPTY_BEAT_REASON not in prior:
+            receipt.hold_reason = (
+                f"{prior}; {_EMPTY_BEAT_REASON}".strip() if prior else _EMPTY_BEAT_REASON
+            )
+    packet.status = "hold"
+    return CiteRepairResult(ok=False, attempts=attempts, hold_reason=_EMPTY_BEAT_REASON)
+
+
 def _hold_exhausted(packet: Packet, attempts: int) -> CiteRepairResult:
     packet.cite_recheck_attempts = attempts
     receipt = packet.receipt
@@ -988,9 +1057,16 @@ def run_cite_recheck_loop(
     attached_all.extend(_attach_timeline_beats(packet))
     dropped_all.extend(_repair_faithless_beats(packet))
     dropped_all.extend(drop_excerpt_slot_findings(packet))
-    if entered_empty or entered_faithless or faithless_cite_beats(packet):
+    dropped_all.extend(drop_hollow_uncited_beats(packet))
+    if entered_empty or entered_faithless or faithless_cite_beats(packet) or dropped_all:
         attempts = max(attempts, 1)
         packet.cite_recheck_attempts = attempts
+    hollow = _hollow_uncited_beats(packet)
+    if hollow and not any(_attachable_claim(b) for b in empty_cite_beats(packet)):
+        early_empty = _hold_empty_beats(packet, attempts)
+        early_empty.attached_ids = attached_all
+        early_empty.dropped_beat_ids = dropped_all
+        return early_empty
     if packet.receipt is not None:
         from onecrew.timeline import clear_empty_mint_hold
 
@@ -1010,11 +1086,13 @@ def run_cite_recheck_loop(
             attached_all.extend(_attach_from_bag(packet, current_bag))
             attached_all.extend(_attach_timeline_beats(packet))
             attached_all.extend(_attach_empty_cite_beats(packet, current_bag))
+        dropped_all.extend(drop_hollow_uncited_beats(packet))
         missing = unsupported_cite_findings(packet, current_bag)
         empty = empty_cite_beats(packet)
         faithless = faithless_cite_beats(packet)
         if faithless:
             dropped_all.extend(_repair_faithless_beats(packet))
+            dropped_all.extend(drop_hollow_uncited_beats(packet))
             faithless = faithless_cite_beats(packet)
         missing_beats = bool(missing) and bool(unsupported_cite_beats(packet, current_bag))
         if not empty and not missing_beats:
@@ -1035,7 +1113,9 @@ def run_cite_recheck_loop(
             return result
         attempts += 1
         packet.cite_recheck_attempts = attempts
-        fresh_bag, status = _recheck_parallel(missing, search_fn, empty)
+        fresh_bag, status = _recheck_parallel(
+            missing, search_fn, [b for b in empty if _attachable_claim(b)]
+        )
         if fresh_bag.hit_urls or fresh_bag.excerpts:
             current_bag = _merge_bags(current_bag, fresh_bag)
             object.__setattr__(packet, "_cite_bag", current_bag)

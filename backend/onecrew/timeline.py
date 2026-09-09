@@ -732,12 +732,42 @@ def union_supports_prints(vo: str, findings: Iterable[object]) -> bool:
     return True
 
 
+def _print_bearing(finding: Finding) -> bool:
+    from onecrew.foundry import complete_print
+
+    return complete_print(getattr(finding, "print", None) or "") or bool(
+        _event_nums(stamp_text(finding))
+    )
+
+
+def _print_stamp_for_thin_vo(vo: str, tls: list[Finding]) -> list[Finding]:
+    """Comparative VO without a spoken print may take one print-bearing stamp. Else none."""
+    printed = [f for f in tls if _print_bearing(f)]
+    if not printed:
+        return []
+    printed = sorted(printed, key=lambda f: event_score(vo, stamp_text(f)), reverse=True)
+    if event_score(vo, stamp_text(printed[0])) > 0:
+        return [printed[0]]
+    return printed[:1] if len(printed) == 1 else []
+
+
+def _prefer_unused_host(vo: str, tls: list[Finding]) -> Finding | None:
+    covers = [f for f in tls if stamp_covers_vo(vo, f)]
+    if not covers:
+        return None
+    load = host_load(tls)
+    covers.sort(key=lambda f: (load[url_host(f.parallel_url or "")], f.id))
+    return covers[0]
+
+
 def stamps_for_vo(
     vo: str,
     findings: Iterable[Finding],
     pairs: Iterable[tuple[str, str]],
 ) -> list[Finding]:
     """One name-covering stamp, plus rows that supply leftover prints/whens. No invent."""
+    from onecrew.script import is_comparative_vo
+
     tls = [
         f
         for f in findings or []
@@ -746,10 +776,14 @@ def stamps_for_vo(
     names = vo_proper_names(vo)
     if not names and not _event_nums(vo) and not _months(vo):
         best = best_timeline_finding(vo, tls, pairs)
-        return [best] if best else []
+        if best is not None:
+            return [best]
+        if is_comparative_vo(vo):
+            return _print_stamp_for_thin_vo(vo, tls)
+        return []
     best = best_timeline_finding(vo, tls, pairs)
     if best is None:
-        best = next((f for f in tls if stamp_covers_vo(vo, f)), None)
+        best = _prefer_unused_host(vo, tls)
     out: list[Finding] = []
     if best is not None:
         out.append(best)
@@ -778,13 +812,42 @@ def stamps_for_vo(
     return list({f.id: f for f in [*num_rows, *when_rows]}.values()) or out
 
 
+def host_load(findings: Iterable[Finding]) -> Counter[str]:
+    used: Counter[str] = Counter()
+    for finding in findings or []:
+        if getattr(finding, "stamp", "") != TIMELINE_STAMP:
+            continue
+        host = url_host(getattr(finding, "parallel_url", None) or "")
+        if host:
+            used[host] += 1
+    return used
+
+
+def host_under_cap(
+    url: str,
+    findings: Iterable[Finding],
+    *,
+    vo: str = "",
+    pairs: Iterable[tuple[str, str]] | None = None,
+) -> bool:
+    """One survey host cannot soft-cover half the cut. Named chain basis may reuse."""
+    host = url_host(url)
+    if not host:
+        return True
+    if host_load(findings)[host] < _URL_REUSE_CAP:
+        return True
+    want = spoken_basis_url(vo, pairs or []) if vo else None
+    return bool(want and url_key(want) == url_key(url))
+
+
 def cap_url_reuse(
     findings: list[Finding],
     pairs: Iterable[tuple[str, str]],
 ) -> list[Finding]:
-    """Same parallel_url on >2 timeline_event rows is a smell unless the chain repeats that basis."""
+    """Same URL or host on >2 timeline_event rows is a smell unless that exact basis repeats."""
     basis_n = Counter(u for _t, u in (pairs or []) if u)
     used: Counter[str] = Counter()
+    used_host: Counter[str] = Counter()
     kept: list[Finding] = []
     for finding in findings:
         if getattr(finding, "stamp", "") != TIMELINE_STAMP:
@@ -795,9 +858,12 @@ def cap_url_reuse(
             kept.append(finding)
             continue
         cap = basis_n[url] if basis_n[url] else _URL_REUSE_CAP
-        if used[url] >= cap:
+        host = url_host(url)
+        if used[url] >= cap or (host and used_host[host] >= _URL_REUSE_CAP):
             continue
         used[url] += 1
+        if host:
+            used_host[host] += 1
         kept.append(finding)
     return kept
 

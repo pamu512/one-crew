@@ -333,11 +333,37 @@ def _attached_print_or_name_hole(artifact: GradeArtifact) -> bool:
     return False
 
 
+def _empty_titled_uncited(artifact: GradeArtifact) -> bool:
+    """Titled spine beat with empty or attachable VO and no pack cite."""
+    from onecrew.script import is_comparative_vo, pack_numbers
+    from onecrew.timeline import vo_proper_names
+
+    by_id = {row.id: row for row in artifact.stamped_findings}
+    map_ids = {row.finding_id for row in artifact.timeline_map}
+    for window in _cite_windows(artifact.script):
+        if not re.search(r"^BEAT\s+\d+", window, re.I | re.M):
+            continue
+        cited = [fid for fid in _cited_ids(window) if fid in by_id or fid in map_ids]
+        if cited:
+            continue
+        vo = _spoken_window(window)
+        if not vo.strip():
+            return True
+        nums = [n for n in pack_numbers(vo) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
+        if nums or is_comparative_vo(vo) or vo_proper_names(vo):
+            return True
+    return False
+
+
 def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
     """Fail-closed: named-host / entity / print must sit on the attached stamp."""
     from onecrew.timeline import chain_pairs, cite_host_ok, pair_covers_vo, stamp_text
 
-    if _chrome_cited(artifact) or _attached_print_or_name_hole(artifact):
+    if (
+        _chrome_cited(artifact)
+        or _attached_print_or_name_hole(artifact)
+        or _empty_titled_uncited(artifact)
+    ):
         return True
     pairs = chain_pairs(artifact.research_pack or "", artifact.timeline_map)
     by_id = {row.id: row for row in artifact.stamped_findings}

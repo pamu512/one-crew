@@ -299,7 +299,9 @@ def test_cite_repair_runs_on_named_entity_and_chrome_holes() -> None:
     spoken = "".join(f"{b.vo} {b.frame}" for b in packet.beats)
     assert not re.search(r"named print stays on the card", spoken, re.I)
     if not result.ok:
-        assert "cite-repair loop exhausted" in (packet.receipt.hold_reason or "")
+        reason = (packet.receipt.hold_reason or "").lower()
+        assert "cite-repair loop exhausted" in reason or "empty beat" in reason
+        assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
 
 
 def test_room_cite_faithfulness_hold_must_run_cite_repair(monkeypatch) -> None:
