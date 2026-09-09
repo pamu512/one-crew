@@ -117,7 +117,7 @@ _GDP_PROJ = re.compile(
 )
 _SAHM_PRINT = re.compile(r"([\-−])\s*0\.03")
 _U3_HEDGE = re.compile(
-    r"\bcould\b|\bforecast|\basked whether\b|\bprojects?\b|\boutlook\b",
+    r"\bcould\b|\bforecast|\basked whether\b|\bprojects?\b|\boutlook\b|\bexpected\b",
     re.I,
 )
 _PCT = re.compile(rf"({_SIGN}?\d+(?:\.\d+)?\s*%)")
@@ -1566,7 +1566,7 @@ def _legal_print(series: str, text: str) -> str | None:
         )
         scored: list[tuple[str, str, str]] = []
         for match in re.finditer(
-            r"(?:unemployment(?:\s+rate)?|u-3).{0,48}?(\d+(?:\.\d+)?)\s*(?:%|percent\b)",
+            r"(?:unemployment(?:\s+rate)?|u-3).{0,48}?(?<![\d.])(\d+(?:\.\d+)?)(?:\s*%|\s*percent\b|%)",
             text,
             re.I,
         ):

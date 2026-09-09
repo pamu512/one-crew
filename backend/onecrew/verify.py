@@ -619,8 +619,17 @@ _U3_HEDGE = re.compile(
     r"\bcould\b|\bforecast|\basked whether\b|\bprojects?\b|\boutlook\b|\bexpected\b",
     re.I,
 )
-_U3_RATE = re.compile(
-    r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:%|percent)\b",
+_U3_NUM = r"\d+(?:\.\d+)?"
+_CES_VINTAGE = re.compile(
+    rf"EMPLOYMENT SITUATION\s*[—–\-]+\s*({_MONTH_RE})\.?\s+(20\d{{2}})"
+    rf"|(?:nonfarm\s+)?payroll(?:s|\s+employment)\s+"
+    rf"(?:rose|fell|increased|decreased|grew|dropped)\s+by\s+[\d,]+\s+"
+    rf"in\s+({_MONTH_RE})\.?\s+(20\d{{2}})",
+    re.I,
+)
+_U3_OBS = re.compile(
+    rf"unemployment rate (?:was|is) ({_U3_NUM})(?:\s*%|\s*percent\b|%)"
+    rf"(?:\s+in\s+({_MONTH_RE})\.?\s+(20\d{{2}}))?",
     re.I,
 )
 
@@ -629,12 +638,27 @@ def _u3_hedge(text: str) -> bool:
     return bool(_U3_HEDGE.search(text or "")) or _bad_window(text or "")
 
 
+def _u3_ces_excerpt_texts(bag: CiteBag) -> list[str]:
+    out: list[str] = []
+    for excerpt in bag.excerpts:
+        chunk = excerpt.text or ""
+        if not _CES.search(chunk):
+            continue
+        if _NAICS_LEVEL.search(chunk) and not re.search(
+            r"nonfarm|employment situation|\bces\b|payroll employment", chunk, re.I
+        ):
+            continue
+        out.append(chunk)
+    return out
+
+
 def _u3_lock_text(bag: CiteBag) -> str:
-    """Realized CES unemployment + header. Drop hedges. Do not use the full bag."""
-    chunks = _ces_chunks(bag)
-    sources = chunks or [*(e.text for e in bag.excerpts), bag.spine or ""]
+    """Realized CES unemployment + header. CES excerpts beat a mixed spine."""
+    chunks = _u3_ces_excerpt_texts(bag) or _ces_chunks(bag)
+    if not chunks:
+        chunks = [e.text for e in bag.excerpts if (e.text or "").strip()]
     kept: list[str] = []
-    for chunk in sources:
+    for chunk in chunks:
         for sent in re.split(r"(?<=[.!?])\s+", chunk or ""):
             if not sent.strip() or _u3_hedge(sent):
                 continue
@@ -645,14 +669,53 @@ def _u3_lock_text(bag: CiteBag) -> str:
     return " ".join(kept)
 
 
-def _u3_rate_in(printed: str, text: str) -> bool:
+def _u3_num(printed: str) -> str | None:
     raw = re.sub(r"[^\d.]", "", (printed or "").replace("−", "-"))
-    if not raw:
-        return False
-    return bool(re.search(rf"(?<![\d.]){re.escape(raw)}\s*(?:%|percent)\b", text or "", re.I))
+    return raw or None
+
+
+def _ces_vintage(text: str) -> tuple[int, int] | None:
+    match = _CES_VINTAGE.search(text or "")
+    if not match:
+        return None
+    if match.group(1):
+        return (int(match.group(2)), _MONTHS[match.group(1).lower().rstrip(".")])
+    return (int(match.group(4)), _MONTHS[match.group(3).lower().rstrip(".")])
+
+
+def _when_month_key(when: str) -> tuple[int, int] | None:
+    parsed = _parse_when(when)
+    if parsed and parsed[0] == "month":
+        return (parsed[1], parsed[2])
+    return None
+
+
+def _ces_u3_rows(text: str) -> list[tuple[tuple[int, int], str]]:
+    """Unhedged CES U-3 (year, month, print) pairs. Vintage month wins when present."""
+    vintage = _ces_vintage(text)
+    rows: list[tuple[tuple[int, int], str]] = []
+    for match in _U3_OBS.finditer(text or ""):
+        if _u3_hedge(text[max(0, match.start() - 80) : match.end() + 40]):
+            continue
+        raw = match.group(1)
+        if match.group(2):
+            key = (int(match.group(3)), _MONTHS[match.group(2).lower().rstrip(".")])
+        elif vintage:
+            key = vintage
+        else:
+            continue
+        rows.append((key, raw))
+    if vintage:
+        rows = [row for row in rows if row[0] == vintage]
+    return rows
 
 
 def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
+    """U-3 when+print must be one unhedged CES observation.
+
+    Month and print are locked as a pair. A CES vintage (Employment Situation
+    header or payrolls-in-month) admits only that month's rate. Topic-agnostic.
+    """
     if claim.series != "U-3":
         return VerifyResult(ok=True, reason=None)
     blob = _bag_text(bag)
@@ -667,21 +730,15 @@ def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
         if unemp and all(_SAHM.search(s) for s in unemp):
             return VerifyResult(ok=False, reason="sahm-trigger window")
     ces = _u3_lock_text(bag)
-    parsed = _parse_when(claim.when)
-    if parsed and parsed[0] == "month":
-        if not ces or not _year_adjacent_month(ces, parsed[1], parsed[2]):
-            return VerifyResult(ok=False, reason="u3 year absent from ces")
-        if claim.print and not _u3_rate_in(claim.print, ces):
-            return VerifyResult(ok=False, reason="u3 year absent from ces")
-    elif parsed:
-        year = str(parsed[1])
-        if not ces or year not in ces:
-            return VerifyResult(ok=False, reason="u3 year absent from ces")
-        if claim.print and not _u3_rate_in(claim.print, ces):
-            return VerifyResult(ok=False, reason="u3 year absent from ces")
-    elif claim.print and ces and not _u3_rate_in(claim.print, ces):
+    rows = _ces_u3_rows(ces)
+    want = _u3_num(claim.print)
+    key = _when_month_key(claim.when)
+    if not rows or want is None or key is None:
         return VerifyResult(ok=False, reason="u3 year absent from ces")
-    return VerifyResult(ok=True, reason=None, matched_in=ces or " ".join(unemp) or None)
+    for when_key, raw in rows:
+        if when_key == key and raw == want:
+            return VerifyResult(ok=True, reason=None, matched_in=ces)
+    return VerifyResult(ok=False, reason="u3 year absent from ces")
 
 
 def verify_claim_set(claims: list[Claim], bag: CiteBag) -> ClaimSetResult:

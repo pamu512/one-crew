@@ -238,11 +238,11 @@ def test_u3_20_percent_december_fails_when_ces_has_other_month() -> None:
     ces = (
         "THE EMPLOYMENT SITUATION -- AUGUST 2026. "
         "Total nonfarm payroll employment fell by 11,000 in August 2026. "
-        "The unemployment rate was 4.1 percent in August 2026."
+        "The unemployment rate was 4.1% in August 2026."
     )
     noise = (
-        "A blog asked whether unemployment could reach 20 percent by December 2026. "
-        "Some forecasts put the jobless rate at 20% in December 2026."
+        "The unemployment rate was 20 percent in December 2026. "
+        "A blog asked whether unemployment could reach 20 percent by December 2026."
     )
     bag = _bag(
         excerpts=[
@@ -263,6 +263,35 @@ def test_u3_20_percent_december_fails_when_ces_has_other_month() -> None:
     got = verify_u3_ces(claim, bag)
     assert got.ok is False
     assert got.reason == "u3 year absent from ces"
+    mixed_when = Claim(
+        series="U-3",
+        print="4.1%",
+        when="December 2026",
+        id="unemployment-december-2026",
+        cite_url=BLS,
+        claim_span=noise,
+    )
+    mixed_print = Claim(
+        series="U-3",
+        print="20%",
+        when="August 2026",
+        id="unemployment-august-2026",
+        cite_url=BLS,
+        claim_span=ces,
+    )
+    ces_ok = Claim(
+        series="U-3",
+        print="4.1%",
+        when="August 2026",
+        id="unemployment-august-2026",
+        cite_url=BLS,
+        claim_span=ces,
+    )
+    assert verify_u3_ces(mixed_when, bag).ok is False
+    assert verify_u3_ces(mixed_when, bag).reason == "u3 year absent from ces"
+    assert verify_u3_ces(mixed_print, bag).ok is False
+    assert verify_u3_ces(mixed_print, bag).reason == "u3 year absent from ces"
+    assert verify_u3_ces(ces_ok, bag).ok is True
     gated = apply_verify_gate(
         Receipt(
             packet_id="oc-u3-future",

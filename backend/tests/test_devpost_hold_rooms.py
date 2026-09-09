@@ -609,11 +609,12 @@ def test_writer_rejects_sahm_vo_month_off_stamp(monkeypatch) -> None:
 _AUG_CES_U3 = (
     "THE EMPLOYMENT SITUATION -- AUGUST 2026. "
     "Total nonfarm payroll employment fell by 11,000 in August 2026. "
-    "The unemployment rate was 4.1 percent in August 2026."
+    "The unemployment rate was 4.1% in August 2026."
 )
 _BOGUS_U3 = (
+    "The unemployment rate was 20 percent in December 2026. "
     "Commentators asked whether the unemployment rate could reach 20 percent "
-    "by December 2026. One note printed unemployment 20% in December 2026."
+    "by December 2026."
 )
 _USREC_AUG = "2026-08-01 | 0\nUSREC August 2026 = 0."
 
