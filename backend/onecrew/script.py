@@ -7,7 +7,6 @@ from onecrew import config
 from onecrew.cut import is_long_cut, require_cut
 from onecrew.models import MISSING, Exclusion, Finding, Packet, ScriptBeat
 from onecrew.tell import invents_frame
-from onecrew.tone import apply_tone
 from onecrew.vertex_client import VertexDownError, generate_script
 
 _VERTEX_HOLE = "Vertex script"
@@ -280,7 +279,8 @@ def _voice(line: str, packet: Packet) -> str:
         spoken = f"{line} Date and claim. Stop there."
     elif lean == "unhinged_fringe":
         spoken = f"Plain: {line}"
-    return apply_tone(spoken.rstrip(), packet.tone, fiction=_invents(packet))
+    # ponytail: tone is writer stance, not spoken chrome. Strip leftover prefixes in sanitize.
+    return spoken.rstrip()
 
 
 def _recession_pack(text: str) -> bool:
@@ -797,21 +797,27 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         # Empty timeline + no official/event object: HOLD. Fiction and leftover Hormuz still write.
         if not has_timeline and not named and not speakable and not _invents(packet):
             return []
+        def _object_eyes(finding: Finding | None) -> str:
+            if finding is None:
+                return ""
+            printed = "" if finding.print in {MISSING, "", None} else finding.print
+            return (printed or finding.claim or "").strip()
+
         if smash_ok:
             smash = f"{first.series}={first.print} smashed into {second.series} {second.print}."
             eyes = f"{first.series}={first.print} and {second.series} {second.print} on screen. Official series cards only."
         elif timeline_row:
             smash = (first.claim or first.print or packet.tell or packet.topic or "").strip()
-            eyes = "Cited event on screen."
+            eyes = _object_eyes(first) or smash
         elif first and first.print not in {MISSING, "", None} and leftover_costume.isdisjoint({"hormuz", "jcpoa"}):
             smash = f"{first.series}={first.print}."
             eyes = f"{first.series}={first.print} on screen. Official series cards only."
         elif first:
             smash = (first.claim or packet.tell or packet.topic or "").strip()
-            eyes = "Cited print on screen."
+            eyes = _object_eyes(first) or smash
         else:
             smash = (packet.tell or packet.topic or "").strip()
-            eyes = "Cited event on screen."
+            eyes = smash
         units = [
         {
             "id": "cold-open",
@@ -832,23 +838,23 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             "eyes": (
                 "Dated first-trigger from the pack. Official series stay on later cards."
                 if trigger
-                else "Cited events on later cards."
+                else (_object_eyes(first) or smash)
             ),
             "finding_ids": [first.id] if first else [],
         },
         {
             "id": "gdp",
             "vo": _voice(f"{(third or first).claim}{_cite(third)}" if (third or first) else smash, packet),
-            "eyes": "New art from the cited print." if timeline_row else "New art from the cited print. Not a leftover map.",
+            "eyes": _object_eyes(third or first) or smash,
             "finding_ids": [third.id] if third else [],
         },
         {
             "id": "labor",
             "vo": _voice(f"{(second or first).claim}{_cite(second or first)}" if (second or first) else smash, packet),
             "eyes": (
-                f"Cited event: {(second or first).claim}."
+                _object_eyes(second or first) or smash
                 if (second or first)
-                else "Cited event on screen."
+                else smash
             ),
             "finding_ids": [(second or first).id] if (second or first) else [],
         },
@@ -867,12 +873,12 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                 packet,
             ),
             "eyes": (
-                "Cited event on screen."
+                _object_eyes(first) or smash
                 if timeline_row
                 else (
                     f"{first.series}={first.print} on screen."
                     if first and first.print not in {MISSING, "", None}
-                    else "Cited event on screen."
+                    else (_object_eyes(first) or smash)
                 )
             ),
             "finding_ids": [first.id] if first else [],
@@ -1253,6 +1259,21 @@ _VO_CHROME = re.compile(
     r"no leftover map\.?",
     re.I,
 )
+_TONE_CHROME = re.compile(
+    r"from the news desk\.|"
+    r"think past the headline\.|"
+    r"question the decision that put this on the air\.|"
+    r"personal take:",
+    re.I,
+)
+_META_FRAME = re.compile(
+    r"cited events? on (?:screen|later cards)\.?|"
+    r"cited print on screen\.?|"
+    r"new art from the cited print\.?(?:\s+not a leftover map\.?)?|"
+    r"dated first-trigger from the pack\.?(?:\s+official series stay on later cards\.?)?",
+    re.I,
+)
+_GENERIC_TITLE = frozenset({"timeline_event", "grounded", "mainstream", "fringe", ""})
 
 
 def _strip_hold_meta(text: str) -> tuple[str, list[str]]:
@@ -1261,6 +1282,55 @@ def _strip_hold_meta(text: str) -> tuple[str, list[str]]:
     if not n:
         return text or "", []
     return cleaned, ["hold meta stripped from VO"]
+
+
+def _strip_tone_chrome(text: str) -> tuple[str, list[str]]:
+    """Tone is stance for the writer. Never narrate it as VO filler."""
+    cleaned, n = _TONE_CHROME.subn("", text or "")
+    if not n:
+        return text or "", []
+    return _tidy_vo(cleaned), ["tone chrome stripped from VO"]
+
+
+def has_tone_chrome(text: str) -> bool:
+    return bool(_TONE_CHROME.search(_vo_lines(text) or text or ""))
+
+
+def is_meta_frame(text: str) -> bool:
+    """Mute-test fail: frame names the cite, not the stamped print/object."""
+    body = _tidy_vo(text or "")
+    if not body or not _META_FRAME.search(body):
+        return False
+    return not _tidy_vo(_META_FRAME.sub("", body))
+
+
+def _speech_norm(text: str) -> str:
+    body = re.sub(r"\[[^\]]+\]", "", text or "")
+    body = _TONE_CHROME.sub("", _vo_lines(body))
+    return _tidy_vo(re.sub(r"\s+", " ", body)).lower()
+
+
+def is_title_read_vo(vo: str, findings: list) -> bool:
+    """Article title is not a cite-faithful print/claim/note."""
+    body = _speech_norm(vo)
+    if not body or len(body) < 8:
+        return False
+    for finding in findings:
+        title = _speech_norm(getattr(finding, "title", None) or "")
+        if title in _GENERIC_TITLE:
+            continue
+        printed = _speech_norm(getattr(finding, "print", None) or "")
+        claim = _speech_norm(getattr(finding, "claim", None) or "")
+        note = _speech_norm(getattr(finding, "note", None) or "")
+        if title in {printed, claim} or (note and title == note):
+            continue
+        if body == title or (len(title) >= 16 and (title in body or body in title)):
+            if printed and printed not in title and printed in body:
+                continue
+            if claim and claim not in title and claim in body:
+                continue
+            return True
+    return False
 
 
 def _strip_vo_chrome(text: str) -> tuple[str, list[str]]:
@@ -1320,12 +1390,13 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
         nits.append("junk GDP print stripped from VO")
     cleaned, meta_nits = _strip_hold_meta(cleaned)
     cleaned, chrome_nits = _strip_vo_chrome(cleaned)
-    if not nits and not meta_nits and not chrome_nits:
+    cleaned, tone_nits = _strip_tone_chrome(cleaned)
+    if not nits and not meta_nits and not chrome_nits and not tone_nits:
         return text or "", []
     cleaned = _tidy_vo(cleaned)
     if not cleaned:
         cleaned = "The named print stays on the card."
-    # ponytail: hold-meta/chrome is cleaned, not a HOLD nit. Slot/topic nits still warn.
+    # ponytail: hold-meta/chrome/tone is cleaned, not a HOLD nit. Slot/topic nits still warn.
     return cleaned, list(dict.fromkeys(nits))
 
 
@@ -1546,6 +1617,18 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             fids = _link_pack_findings(vo, fids, rows, packet=packet)
             fids, vo = _align_vo_to_stamps(vo, fids, rows)
             fids, eyes = _align_vo_to_stamps(eyes, fids, rows)
+            cited = [row for row in rows if row.id in fids]
+            if (
+                is_title_read_vo(vo, cited)
+                or has_tone_chrome(vo)
+                or is_pack_chrome_vo(vo)
+                or not _vo_lines(vo).strip()
+            ):
+                spoken = speak_stamps(fids, rows)
+                if spoken:
+                    vo = spoken
+            if is_meta_frame(eyes):
+                eyes = speak_stamps(fids, rows) or eyes
             if not _vo_lines(vo).strip() and fids:
                 vo = speak_stamps(fids, rows)
         if not fids and not hole:
@@ -1632,7 +1715,7 @@ def _weave_first_trigger(packet: Packet, units: list[dict]) -> list[dict]:
         return units
     later = dict(units[1])
     later["vo"] = _promise_trigger_vo(packet, trigger)
-    later["eyes"] = "Dated first-trigger from the pack. Official series stay on later cards."
+    later["eyes"] = trigger
     units = list(units)
     units[1] = later
     return units

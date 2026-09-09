@@ -74,6 +74,7 @@ def _stamped_findings(packet: Packet) -> list[StampedFinding]:
                 print=_blank_stamp(finding.print),
                 when=(finding.when or "").strip(),
                 claim=(finding.claim or "").strip(),
+                title=(finding.title or "").strip(),
                 url=(finding.parallel_url or "").strip(),
                 note=(finding.note or "").strip(),
             )
@@ -347,6 +348,31 @@ def _empty_titled_uncited(artifact: GradeArtifact) -> bool:
     return False
 
 
+def _action_line(window: str) -> str:
+    for line in (window or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("ACTION:"):
+            return stripped.split(":", 1)[1].strip()
+    return ""
+
+
+def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
+    """Tone chrome, title-read VO, or mute-test meta frames are not cite-faithful speech."""
+    from onecrew.script import has_tone_chrome, is_meta_frame, is_title_read_vo
+
+    by_id = {row.id: row for row in artifact.stamped_findings}
+    for window in _cite_windows(artifact.script):
+        vo = _vo_body(window)
+        cited = [by_id[fid] for fid in _cited_ids(window) if fid in by_id]
+        if has_tone_chrome(vo):
+            return True
+        if cited and is_title_read_vo(vo, cited):
+            return True
+        if is_meta_frame(_action_line(window)):
+            return True
+    return False
+
+
 def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
     """Fail-closed: named-host / entity / print must sit on the attached stamp."""
     from onecrew.timeline import chain_pairs, cite_host_ok, pair_covers_vo, stamp_text
@@ -355,6 +381,7 @@ def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
         _chrome_cited(artifact)
         or _attached_print_or_name_hole(artifact)
         or _empty_titled_uncited(artifact)
+        or _tone_title_meta_hole(artifact)
     ):
         return True
     pairs = chain_pairs(artifact.research_pack or "", artifact.timeline_map)
@@ -390,6 +417,11 @@ def grade_room(artifact: GradeArtifact, *, grader: GraderFn | None = None) -> Ro
         raise ValueError("recut other requires a short reason")
     if _cite_host_mismatch(artifact):
         return RoomGrade(vote="recut", recut_reason="other", recut_detail="cite-faithfulness")
+    if (
+        grade.vote == "recut"
+        and "cite-faithfulness" in (grade.recut_detail or "").lower()
+    ):
+        return RoomGrade(vote="ship")
     if _beat1_trigger_nit(grade, artifact):
         return RoomGrade(vote="ship")
     if _false_invent_recut(grade, artifact):

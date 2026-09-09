@@ -279,6 +279,7 @@ class StampedFinding(BaseModel):
     print: str = ""
     when: str = ""
     claim: str = ""
+    title: str = ""
     url: str = ""
     note: str = ""
 

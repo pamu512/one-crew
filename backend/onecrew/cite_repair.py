@@ -173,7 +173,7 @@ def _named_empty_cite_ids(packet: Packet) -> set[str]:
 
 def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
     """Named-entity miss, print skew, or pack/slot chrome VO on a cited stamp."""
-    from onecrew.script import is_pack_chrome_vo
+    from onecrew.script import has_tone_chrome, is_meta_frame, is_pack_chrome_vo, is_title_read_vo
     from onecrew.timeline import stamp_covers_vo, union_supports_prints, vo_proper_names
 
     receipt = packet.receipt
@@ -191,6 +191,10 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             for fid in beat.finding_ids
             if fid in by_id and by_id[fid].stamp == "timeline_event"
         ]
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        if has_tone_chrome(beat.vo) or is_title_read_vo(beat.vo, cited) or is_meta_frame(beat.frame or ""):
+            out.append(beat)
+            continue
         if is_pack_chrome_vo(vo) and tls:
             out.append(beat)
             continue
@@ -818,21 +822,40 @@ _BEAT_NIT = re.compile(r"\bbeat(\d+)\s+cites nothing", re.I)
 
 
 def _repair_faithless_beats(packet: Packet) -> list[str]:
-    from onecrew.script import _align_vo_to_stamps, is_pack_chrome_vo, speak_stamps
+    from onecrew.script import (
+        _align_vo_to_stamps,
+        _strip_tone_chrome,
+        _vo_lines,
+        has_tone_chrome,
+        is_meta_frame,
+        is_pack_chrome_vo,
+        is_title_read_vo,
+        speak_stamps,
+    )
 
     receipt = packet.receipt
     if receipt is None:
         return []
+    changed = False
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
         vo = _vo_body(beat)
         keep, new_vo = _align_vo_to_stamps(vo, list(beat.finding_ids), list(receipt.findings))
         keep, new_frame = _align_vo_to_stamps(beat.frame or "", keep, list(receipt.findings))
-        if is_pack_chrome_vo(new_vo) or not (new_vo or "").strip():
+        raw_vo, _ = _strip_tone_chrome(_vo_lines(beat.vo))
+        if raw_vo:
+            new_vo = raw_vo
+        cited = [f for f in receipt.findings if f.id in keep]
+        if (
+            is_title_read_vo(new_vo, cited)
+            or has_tone_chrome(new_vo)
+            or is_pack_chrome_vo(new_vo)
+            or not (new_vo or "").strip()
+        ):
             spoken = speak_stamps(keep, list(receipt.findings))
             new_vo = spoken
-        if is_pack_chrome_vo(new_frame):
+        if is_pack_chrome_vo(new_frame) or is_meta_frame(new_frame):
             new_frame = speak_stamps(keep, list(receipt.findings)) or ""
         beat.finding_ids = keep
         if new_vo != vo:
@@ -840,8 +863,12 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
             for fid in keep:
                 if f"[{fid}]" not in beat.vo:
                     beat.vo = f"{beat.vo} [{fid}]"
+            changed = True
         if new_frame != (beat.frame or ""):
             beat.frame = new_frame
+            changed = True
+    if changed:
+        rebuild_timed_vo(packet)
     return []
 
 
@@ -929,6 +956,29 @@ def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
             finding.parallel_url = None
             finding.note = "Cite-repair dropped this beat. Never sold as fact."
     return dropped
+
+
+def _hold_cite_faithfulness(packet: Packet, attempts: int) -> CiteRepairResult:
+    packet.cite_recheck_attempts = attempts
+    receipt = packet.receipt
+    reason = "cite-faithfulness"
+    if receipt is None:
+        receipt = Receipt(
+            packet_id=packet.id,
+            written=False,
+            findings=[],
+            causal_links=[],
+            disposition="HOLD",
+            hold_reason=reason,
+        )
+        packet.receipt = receipt
+    else:
+        receipt.disposition = "HOLD"
+        prior = (receipt.hold_reason or "").strip()
+        if "cite-faithfulness" not in prior.lower():
+            receipt.hold_reason = f"{prior}; {reason}".strip() if prior else reason
+    packet.status = "hold"
+    return CiteRepairResult(ok=False, attempts=attempts, hold_reason=reason)
 
 
 def _hold_empty_beats(packet: Packet, attempts: int) -> CiteRepairResult:
@@ -1095,6 +1145,12 @@ def run_cite_recheck_loop(
             faithless = faithless_cite_beats(packet)
         missing_beats = bool(missing) and bool(unsupported_cite_beats(packet, current_bag))
         if not empty and not missing_beats:
+            if faithless:
+                result = _hold_cite_faithfulness(packet, attempts)
+                result.attached_ids = attached_all
+                result.dropped_beat_ids = dropped_all
+                result.hit_urls = hit_urls
+                return result
             packet.cite_recheck_attempts = attempts
             _clear_cite_only_hold(packet, current_bag)
             return CiteRepairResult(
