@@ -164,6 +164,8 @@ def sanitize_stamps(findings: list[Finding]) -> list[Finding]:
                 if finding.series == "LEI":
                     continue
                 finding.parallel_url = None
+            elif finding.series == "U-3" and not _ces_capable_url(cleaned):
+                finding.parallel_url = None
             else:
                 finding.parallel_url = cleaned
         if finding.independent == MISSING:
@@ -1200,6 +1202,19 @@ def _citation_table(hit_rows: list, extracted: object, spine: str) -> list[_Cite
     return list(by_url.values())
 
 
+_CES_PAGE = re.compile(r"empsit|/ces(?:/|$)|cesbtab", re.I)
+
+
+def _ces_capable_url(url: str) -> bool:
+    """bls.gov CES / Employment Situation HTML. Not charts, NAICS, or news wraps."""
+    low = (url or "").lower()
+    if "bls.gov" not in low:
+        return False
+    if "/charts/" in low or "/iag/" in low:
+        return False
+    return bool(_CES_PAGE.search(low))
+
+
 def _url_fits_series(url: str, series: str, url_keys: tuple[str, ...]) -> bool:
     """No urls[0] fallback across series. Sahm never takes the USREC page."""
     low = url.lower()
@@ -1207,8 +1222,10 @@ def _url_fits_series(url: str, series: str, url_keys: tuple[str, ...]) -> bool:
         return "sahmrealtime" in low or "/series/sahm" in low
     if series == "USREC":
         return "usrec" in low
-    if series == "BLS payrolls" or series == "U-3":
+    if series == "BLS payrolls":
         return "bls.gov" in low
+    if series == "U-3":
+        return _ces_capable_url(url)
     if series == "GDP":
         return "bea.gov" in low
     if series == "LEI":
@@ -1218,6 +1235,42 @@ def _url_fits_series(url: str, series: str, url_keys: tuple[str, ...]) -> bool:
             return False
         return "conference-board.org" in low or "leading" in low
     return any(key in low for key in url_keys)
+
+
+def _cite_has_print_when(cite: _Cite, printed: str, when: str) -> bool:
+    """Print on this excerpt. Month token is enough; year may live on the CES URL/header."""
+    blob = " ".join(cite.excerpts)
+    digits = re.sub(r"[^\d.]", "", (printed or "").replace("−", "-"))
+    if digits and digits not in blob.replace(",", ""):
+        return False
+    stamp = _MONTH.search(when or "")
+    if stamp and not re.search(rf"\b{re.escape(stamp.group(1))}\b", blob, re.I):
+        return False
+    return True
+
+
+def _u3_from_ces_table(
+    table: list[_Cite], notes: str, tokens: tuple[str, ...]
+) -> tuple[str, str, str, _Cite] | None:
+    """One U-3 observation from a CES-capable Parallel excerpt. Not a news wrap."""
+    best: tuple[tuple, str, str, str, _Cite] | None = None
+    for row in table:
+        if not _ces_capable_url(row.url) or _broken_href(row.url):
+            continue
+        blob = " ".join(row.excerpts)
+        cand = _hit_for_series(blob, "U-3", tokens)
+        if cand is None:
+            continue
+        printed, claim = cand
+        when = _when(claim, "U-3", notes, printed)
+        if not _cite_has_print_when(row, printed, when):
+            continue
+        rank = _month_key(when)
+        if best is None or rank > best[0]:
+            best = (rank, printed, claim, when, row)
+    if best is None:
+        return None
+    return best[1], best[2], best[3], best[4]
 
 
 def _pick_bls_cite(table: list[_Cite], when: str) -> _Cite | None:
@@ -1801,22 +1854,30 @@ def _mint_from_notes(
     claimed_sentences: set[str] = set()
 
     for series, tokens, url_keys, _print_re in _CUES:
-        hit = _hit_for_series(notes, series, tokens)
-        if hit is None:
-            continue
-        printed, claim = hit
+        if series == "U-3":
+            picked = _u3_from_ces_table(table, notes, tokens)
+            if picked is None:
+                exclusions.append((series, "no_url"))
+                used_series.add(series)
+                continue
+            printed, claim, when, cite = picked
+        else:
+            hit = _hit_for_series(notes, series, tokens)
+            if hit is None:
+                continue
+            printed, claim = hit
+            when = _when(claim, series, notes, printed)
+            if series == "SAHMREALTIME":
+                when = when_matching_print(f"{claim} {notes}", printed, when) or when
+            cite = _pick_cite(table, url_keys, tokens + (series.lower(),), series)
+            if series == "BLS payrolls":
+                cite = _pick_bls_cite(table, when) or cite
         if _is_forecast(claim) and "imf" in claim.lower():
             continue
         if series == "GDP" and _gdp_half_bar(printed or ""):
             continue
         if series == "GDP" and _GDP_PROJ.search(claim) and "/" not in (printed or ""):
             continue
-        when = _when(claim, series, notes, printed)
-        if series == "SAHMREALTIME":
-            when = when_matching_print(f"{claim} {notes}", printed, when) or when
-        cite = _pick_cite(table, url_keys, tokens + (series.lower(),), series)
-        if series in {"BLS payrolls", "U-3"}:
-            cite = _pick_bls_cite(table, when) or cite
         if series == "GDP":
             cite = _pick_gdp_cite(table, when, printed) or cite
         if series == "LEI":

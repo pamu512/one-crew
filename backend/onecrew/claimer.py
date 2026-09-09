@@ -18,6 +18,7 @@ from onecrew.foundry import (
     _legal_print,
     _when,
     clean_cite_url,
+    _url_fits_series,
     when_matching_print,
 )
 from onecrew.models import MISSING, Finding, Packet
@@ -198,6 +199,8 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
         u3 = _U3.search(excerpt.text)
         month = _MONTH_YEAR.search(excerpt.text)
         if u3 and month and excerpt.url and "U-3" not in seen:
+            if not _url_fits_series(excerpt.url, "U-3", ()):
+                continue
             when = f"{month.group(1).title()} {month.group(2)}"
             claim = Claim(
                 series="U-3",
@@ -389,6 +392,8 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
         if not cite and bag is not None:
             cite = clean_cite_url((resolve_missing_cite(claim, bag).cite_url or ""))
         if not cite and claim.series == "LEI":
+            continue
+        if claim.series == "U-3" and (not cite or not _url_fits_series(cite, "U-3", ())):
             continue
         out.append(
             Finding(
