@@ -216,6 +216,7 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
         is_thin_frame,
         is_thin_title_read_vo,
         is_title_read_vo,
+        is_topic_question_vo,
         is_unverified_meta_vo,
         stamp_scope,
     )
@@ -259,6 +260,7 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
         if (
             has_tone_chrome(beat.vo)
             or is_unverified_meta_vo(beat.vo)
+            or is_topic_question_vo(beat.vo, packet)
             or is_hanging_clause_vo(beat.vo)
             or is_incomplete_vo(beat.vo)
             or is_title_read_vo(beat.vo, cited)
@@ -978,6 +980,7 @@ _BEAT_NIT = re.compile(r"\bbeat(\d+)\s+cites nothing", re.I)
 def _repair_faithless_beats(packet: Packet) -> list[str]:
     from onecrew.script import (
         _align_vo_to_stamps,
+        _bare_vo,
         _drop_extra_cite_brackets,
         _refuse_forecast_theater,
         _speech_norm,
@@ -988,12 +991,14 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         is_action_chrome_vo,
         is_hanging_clause_vo,
         is_incomplete_vo,
+        is_numeric_print,
         is_pack_chrome_vo,
         is_placeholder_finding_id,
         is_print_hole,
         is_thin_frame,
         is_thin_title_read_vo,
         is_title_read_vo,
+        is_topic_question_vo,
         is_unverified_meta_vo,
         strip_hanging_clause_vo,
         strip_unverified_meta_vo,
@@ -1034,8 +1039,17 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         new_vo = _drop_extra_cite_brackets(new_vo, keep)
         new_frame = _drop_extra_cite_brackets(new_frame, keep)
         new_vo, _ = _strip_tone_chrome(new_vo)
+        was_meta = is_unverified_meta_vo(new_vo) or is_topic_question_vo(new_vo, packet)
         if is_unverified_meta_vo(new_vo):
             new_vo = strip_unverified_meta_vo(new_vo)
+        if is_topic_question_vo(new_vo, packet) and not is_numeric_print(_bare_vo(new_vo)):
+            new_vo = ""
+        if was_meta and not is_numeric_print(_bare_vo(new_vo)):
+            spoken = speak_stamp_fact(keep, list(receipt.findings))
+            if spoken and not is_thin_title_read_vo(spoken, [f for f in receipt.findings if f.id in keep]):
+                new_vo = spoken
+            else:
+                new_vo = spoken or ""
         if is_hanging_clause_vo(new_vo) or is_incomplete_vo(new_vo):
             from onecrew.script import strip_incomplete_vo
 

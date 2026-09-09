@@ -1364,7 +1364,7 @@ def is_incomplete_vo(text: str) -> bool:
     body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
     if not body:
         return False
-    if is_print_hole(body) or is_hanging_clause_vo(body):
+    if is_print_hole(body) or is_hanging_clause_vo(body) or _HANGING_CONJ.search(body):
         return True
     return bool(_BARE_ACCORDING.search(body) or _HANGING_DATE.search(body))
 
@@ -1387,6 +1387,7 @@ def strip_incomplete_vo(text: str) -> str:
         body,
         flags=re.I,
     )
+    body = re.sub(r"\s+(?:and|or|but|with)\s*$", "", body, flags=re.I)
     return _tidy_vo(body)
 
 
@@ -1515,7 +1516,9 @@ _UNVERIFIED_META_VO = re.compile(
     r"premise cannot be verified|"
     r"cannot be verified|"
     r"our research indicates|"
-    r"(?:a )?common question circulating|"
+    r"the question on (?:many|most) minds|"
+    r"(?:a |the )?common question(?:\s+\w+){0,4}|"
+    r"the question (?:is|remains) whether|"
     r"\bunverified\b|"
     r"we (?:could not|cannot) (?:verify|confirm)",
     re.I,
@@ -1523,6 +1526,19 @@ _UNVERIFIED_META_VO = re.compile(
 _HANGING_CLAUSE = re.compile(
     r"(?:^|(?<=[.!?])\s+)(?:for instance|for example|such as|including|namely|"
     r"specifically|in particular)\s*[.,;:]?\s*$",
+    re.I,
+)
+_HANGING_CONJ = re.compile(
+    r"(?:^|(?<=[.!?])\s+).+\s+(?:and|or|but|with)\s*$",
+    re.I,
+)
+_SERIES_PAGE_CHROME = re.compile(
+    r"historical data(?:\s*(?:&|and)\s*trends)?",
+    re.I,
+)
+_BEAT_N_ID = re.compile(r"^beat\d+$")
+_TOPIC_Q_LEAD = re.compile(
+    r"^(?:did|do|does|is|are|was|were|have|has|whether)\s+",
     re.I,
 )
 _HEADLINE_SUFFIX = re.compile(r"\s+[-–—]\s+[A-Z][A-Za-z.]{0,24}\s*$")
@@ -1578,6 +1594,36 @@ def strip_unverified_meta_vo(text: str) -> str:
     return _tidy_vo(_UNVERIFIED_META_VO.sub("", text or ""))
 
 
+def _topic_qcore(text: str) -> str:
+    body = _speech_norm(text)
+    return _TOPIC_Q_LEAD.sub("", body).strip(" ?")
+
+
+def _bare_vo(text: str) -> str:
+    return re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or "")
+
+
+def is_topic_question_vo(text: str, packet) -> bool:
+    """Restates the user topic as a question. Not a stamped print."""
+    raw = _bare_vo(text)
+    body = _speech_norm(raw)
+    if not body or is_numeric_print(raw):
+        return False
+    asked = (
+        "?" in raw
+        or "whether" in body
+        or bool(_TOPIC_Q_LEAD.match(body))
+    )
+    if not asked:
+        return False
+    vo_core = _topic_qcore(body)
+    for cand in (getattr(packet, "topic", ""), getattr(packet, "hook", "")):
+        core = _topic_qcore(cand or "")
+        if core and len(core) >= 12 and (core in body or vo_core in core or core == vo_core):
+            return True
+    return False
+
+
 def is_hanging_clause_vo(text: str) -> bool:
     """Incomplete trailing clause. Not a cite-faithful sentence."""
     body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
@@ -1622,12 +1668,78 @@ def _headline_core(text: str) -> str:
     return _speech_norm(_HEADLINE_SUFFIX.sub("", text or ""))
 
 
+def _catalog_core(text: str) -> str:
+    """Strip page/source tails so series names compare as stems."""
+    body = _speech_norm(text)
+    body = re.sub(
+        r"\s+[-–—]?\s*historical data(?:\s*(?:&|and)\s*trends)?\s*$",
+        "",
+        body,
+        flags=re.I,
+    )
+    for _ in range(3):
+        nxt = re.sub(r"\s+[-–—]\s+[a-z0-9][a-z0-9. ]{0,40}$", "", body)
+        if nxt == body:
+            break
+        body = nxt.strip()
+    return body.strip(" -–—")
+
+
+def _title_near(vo: str, title: str) -> bool:
+    a = _catalog_core(vo)
+    b = _catalog_core(title)
+    if not a or not b or min(len(a), len(b)) < 8:
+        return False
+    if a == b or a in b or b in a:
+        return True
+    wa, wb = set(a.split()), set(b.split())
+    if not wa or not wb:
+        return False
+    shared = wa & wb
+    return len(shared) >= 3 and len(shared) / min(len(wa), len(wb)) >= 0.6
+
+
+def _is_catalog_or_series_name(text: str) -> bool:
+    """Page/chart/series title. Not a spoken claim with a stamp print."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    if not body or is_numeric_print(body) or _TITLE_CARD_VERB.search(body):
+        return False
+    if _SERIES_PAGE_CHROME.search(body):
+        return True
+    if not re.search(r"\s[-–—]\s+", body):
+        return False
+    words = re.findall(r"[A-Za-z0-9]+", body)
+    if len(words) < 2 or len(words) > 14:
+        return False
+    caps = sum(1 for w in words if w[:1].isupper() or w.lower() in {"vs", "versus"})
+    return caps >= max(2, len(words) - 2)
+
+
+def _looks_like_prose_claim(text: str) -> bool:
+    """Spoken sentence with a verb. Not a page/series title card."""
+    body = _bare_vo(text)
+    if _TITLE_CARD_VERB.search(body):
+        return True
+    return bool(re.search(r"\b(?:is|are|was|were|has|have|had|will|after|because)\b", body, re.I))
+
+
 def is_title_read_vo(vo: str, findings: list) -> bool:
-    """Article title is not a cite-faithful print/claim/note."""
+    """Article title / series-page name is not a cite-faithful print/claim/note."""
     body = _speech_norm(vo)
     core = _headline_core(vo)
     if not body or len(body) < 8:
         return False
+    if any(body == _speech_norm(getattr(f, "claim", None) or "") for f in findings):
+        return False
+    if is_numeric_print(_bare_vo(vo)) and any(
+        _speech_norm(getattr(f, "print", None) or "")
+        and _speech_norm(getattr(f, "print", None) or "") in body
+        for f in findings
+    ):
+        return False
+    if _is_catalog_or_series_name(vo):
+        return True
+    prose = _looks_like_prose_claim(vo)
     for finding in findings:
         title = _speech_norm(getattr(finding, "title", None) or "")
         title_core = _headline_core(getattr(finding, "title", None) or "")
@@ -1644,11 +1756,12 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
             or (title_core and core == title_core)
             or (len(title) >= 16 and title in body)
             or (len(title_core) >= 16 and title_core in core)
+            or (not prose and _title_near(vo, getattr(finding, "title", None) or ""))
         )
         if title_hit:
             if printed and printed not in title and printed in body:
                 continue
-            if claim and claim not in title and claim in body:
+            if claim and (body == claim or (claim not in title and claim in body)):
                 continue
             return True
     return False
@@ -1657,6 +1770,12 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
 def is_pack_slot_beat_id(bid: str) -> bool:
     """Leftover recession-pack beat vocabulary. Not a topic-neutral label."""
     return (bid or "").strip().lower() in PACK_SLOT_BEAT_IDS
+
+
+def is_narrative_beat_id(bid: str) -> bool:
+    """Any leftover narrative label. Room grades packet beat ids as beatN."""
+    body = (bid or "").strip()
+    return bool(body) and not _BEAT_N_ID.fullmatch(body)
 
 
 _SLOT_FRAME_CHROME = PACK_SLOT_BEAT_IDS | frozenset({"card", "pack", "hold", "gap", "board"})
@@ -1855,14 +1974,15 @@ def prefer_covering_scope(vo: str, fids: list[str], findings: list) -> tuple[lis
 
 
 def neutralize_pack_slot_beats(packet) -> None:
-    """Rewrite leftover pack-slot beat ids to beat1…beatN. Never synonym-swap."""
+    """Rewrite leftover pack-slot / narrative beat ids to beat1…beatN. Never synonym-swap."""
     remap: dict[str, str] = {}
     beats = [b for b in packet.beats if (b.kind or "vo") != "heading"]
     for i, beat in enumerate(beats):
-        if is_pack_slot_beat_id(beat.id):
+        if is_pack_slot_beat_id(beat.id) or is_narrative_beat_id(beat.id):
             new_id = f"beat{i + 1}"
-            remap[beat.id] = new_id
-            beat.id = new_id
+            if beat.id != new_id:
+                remap[beat.id] = new_id
+                beat.id = new_id
         beat.scene = f"BEAT {i + 1}"
     for frame in packet.frames:
         old = frame.beat_id
@@ -2231,11 +2351,17 @@ def _strip_meta_hanging_beats(packet) -> None:
         if (beat.kind or "vo") == "heading":
             continue
         vo = _vo_lines(beat.vo)
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        was_meta = is_unverified_meta_vo(vo) or is_topic_question_vo(vo, packet)
         cleaned = strip_unverified_meta_vo(vo) if is_unverified_meta_vo(vo) else vo
+        if is_topic_question_vo(cleaned, packet) and not is_numeric_print(_bare_vo(cleaned)):
+            cleaned = ""
         if is_hanging_clause_vo(cleaned) or is_incomplete_vo(cleaned):
             cleaned = strip_incomplete_vo(cleaned)
-        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
-        if (is_unverified_meta_vo(vo) or is_hanging_clause_vo(vo) or is_incomplete_vo(vo)) and not _speech_norm(cleaned):
+        needs_print = was_meta and not is_numeric_print(_bare_vo(cleaned))
+        if (
+            was_meta or is_hanging_clause_vo(vo) or is_incomplete_vo(vo)
+        ) and (not _speech_norm(cleaned) or needs_print):
             cleaned = speak_stamp_fact(list(beat.finding_ids), list(by_id.values())) or speak_stamps(
                 list(beat.finding_ids), list(by_id.values())
             )
@@ -2245,6 +2371,9 @@ def _strip_meta_hanging_beats(packet) -> None:
                 continue
         if cleaned != vo:
             beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
+            for fid in beat.finding_ids:
+                if f"[{fid}]" not in beat.vo:
+                    beat.vo = f"{beat.vo} [{fid}]"
 
 
 def _strip_action_chrome_beats(packet) -> None:
@@ -2356,6 +2485,18 @@ def speak_stamp_print(fids: list[str], findings: list[Finding]) -> str:
     return ""
 
 
+def _looks_like_headline(text: str) -> bool:
+    """Article / series / wire headline. Not a numeric stamp print."""
+    raw = (text or "").strip()
+    if not raw or is_numeric_print(raw):
+        return False
+    if raw.startswith("#") or _TEXT_CHROME.match(raw):
+        return True
+    if ":" in raw or re.search(r"\s[-–—]\s+", raw):
+        return True
+    return _is_title_card(raw)
+
+
 def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: list | None = None) -> bool:
     """Article title / # headline. Not the attached numeric print."""
     raw = (text or "").strip()
@@ -2365,17 +2506,22 @@ def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: li
         return True
     shown = _speech_norm(raw)
     rows = [f for f in (findings or []) if not fids or f.id in set(fids)]
+    printed_tok = ""
     for finding in rows:
         title = _speech_norm(getattr(finding, "title", None) or "")
         printed = "" if finding.print in {MISSING, "", None} else (finding.print or "").strip()
+        if printed and is_numeric_print(printed):
+            printed_tok = printed
         if not title or title in _GENERIC_TITLE:
             continue
         if not is_numeric_print(printed):
             continue
         if _speech_norm(printed) in shown:
             continue
-        if shown == title or title in shown or shown in title:
+        if shown == title or title in shown or shown in title or _title_near(raw, getattr(finding, "title", None) or ""):
             return True
+    if printed_tok and _speech_norm(printed_tok) not in shown and _looks_like_headline(raw):
+        return True
     return False
 
 
@@ -2770,9 +2916,11 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 cited = [row for row in rows if row.id in fids]
                 if is_unverified_meta_vo(vo):
                     vo = strip_unverified_meta_vo(vo)
+                if is_topic_question_vo(vo, packet) and not is_numeric_print(_bare_vo(vo)):
+                    vo = ""
                 if is_hanging_clause_vo(vo) or is_incomplete_vo(vo):
                     vo = strip_incomplete_vo(vo)
-                if is_title_read_vo(vo, cited) or is_print_hole(vo) or is_hanging_clause_vo(vo) or is_incomplete_vo(vo):
+                if is_title_read_vo(vo, cited) or is_print_hole(vo) or is_hanging_clause_vo(vo) or is_incomplete_vo(vo) or (is_unverified_meta_vo(slot_vo) and not is_numeric_print(_bare_vo(vo))):
                     spoken = speak_stamp_fact(fids, rows)
                     if spoken:
                         vo = spoken
@@ -2800,6 +2948,17 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 eyes = _drop_extra_cite_brackets(eyes, fids)
             if voiced_trigger and trigger and not _trigger_voiced(vo, trigger):
                 vo = slot_vo
+        rows = packet.receipt.findings if packet.receipt else []
+        if (
+            fids
+            and not _invents(packet)
+            and (
+                is_meta_frame(eyes)
+                or is_title_chrome_frame(eyes, fids, rows)
+                or is_thin_frame(eyes, fids, rows)
+            )
+        ):
+            eyes = speak_stamp_print(fids, rows) or speak_stamp_fact(fids, rows) or speak_stamps(fids, rows) or ""
         if fids:
             from onecrew.timeline import _event_nums, union_supports_prints
 
