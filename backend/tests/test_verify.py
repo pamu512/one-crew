@@ -269,6 +269,31 @@ _HYPO_THEN_JULY_CES = (
 )
 
 
+def test_consensus_estimate_only_is_hypo_ci_not_realized_ces() -> None:
+    bag = _bag(
+        excerpts=[
+            (
+                BLS,
+                "CES consensus",
+                "Economists' consensus estimate for August payrolls is +53,000.",
+            )
+        ],
+        spine="USREC July 2026 = 0. Consensus estimate for August payrolls is +53,000.",
+        hit_urls=[BLS],
+    )
+    claim = Claim(
+        series="BLS payrolls",
+        print="+53,000",
+        when="August 2026",
+        id="payrolls-august-2026",
+        cite_url=BLS,
+        claim_span="Economists' consensus estimate for August payrolls is +53,000.",
+    )
+    got = verify_payrolls_realized_ces(claim, bag)
+    assert got.ok is False
+    assert got.reason == "hypo/CI/revision window"
+
+
 def test_hypo_ci_same_excerpt_does_not_hold_realized_july_ces() -> None:
     bag = _bag(
         excerpts=[(BLS, "CES mixed", _HYPO_THEN_JULY_CES)],

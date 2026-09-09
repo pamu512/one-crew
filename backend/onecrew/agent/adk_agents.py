@@ -169,6 +169,7 @@ Nonfiction: nothing uncited — every spoken print or claim must appear in a Par
 Fiction: research is reference only. Do not speak real person names from the pack. Label invented people (frame).
 Parallel does not write the timed VO.
 Never speak pack schema or slot ids: no chronological_events, executive_summary, missing_causal_links, what_counts_as_the_first_trigger, or [field[n]] path cites. Finding cites like [payrolls-july-2026] stay only when they are real finding ids.
+Never speak production notes: Hold., GDP hole named, Sahm hole named, No matching URL, or the spine chart stays. Stamped pack numbers the cut asks for must be spoken or the beat dropped — not a spoken hole with a silent finding.
 Flexible weave — pick one from the pack + tell/tone:
 - chronological
 - outcome-first (current print first; first trigger / first transmission may appear later, not required in beat 1)

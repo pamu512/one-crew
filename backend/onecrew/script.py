@@ -369,8 +369,12 @@ def _missing_pack_marks(packet: Packet, vo: str) -> list[str]:
         if not _vo_has_payroll(vlow, printed):
             holes.append(f"payrolls {printed}")
     sahm = _by_series(packet, "SAHMREALTIME")
-    if sahm and not (("−0.03" in vlow or "-0.03" in vlow) and "0.50" in vlow):
-        holes.append("Sahm −0.03 vs 0.50")
+    if sahm:
+        printed = _print_of(sahm, "")
+        if printed:
+            have = printed in vlow or printed.replace("−", "-") in vlow.replace("−", "-")
+            if not have:
+                holes.append(f"Sahm {printed}")
     gdp = _by_series(packet, "GDP")
     if gdp:
         printed = _print_of(gdp, "")
@@ -439,6 +443,8 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
     if unemp and not unemp_print and "4.1" in (unemp.claim or ""):
         unemp_print = "4.1%"
     sahm_print = _print_of(sahm, "")
+    gdp_vo, gdp_eyes = _gdp_lines(_print_of(gdp, ""))
+    gdp_fallback = gdp or usrec or sahm or payrolls
     trigger = _first_trigger_text(packet)
     if usrec and payrolls:
         labor = (
@@ -489,18 +495,18 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                 "id": "gdp",
                 "vo": _voice(
                     (
-                        f"{_gdp_lines(_print_of(gdp, ''))[0]}{_cite(gdp)}"
-                        if gdp
-                        else "GDP hole named. No matching URL. Hold."
+                        f"{gdp_vo}{_cite(gdp)}"
+                        if gdp_vo
+                        else f"The official series stay on the cards.{_cite(gdp_fallback)}"
                     ),
                     packet,
                 ),
                 "eyes": (
-                    _gdp_lines(_print_of(gdp, ""))[1]
-                    if gdp
-                    else "GDP hole named. No matching URL."
+                    gdp_eyes
+                    if gdp_eyes
+                    else "Official series cards only. New art, not a leftover map."
                 ),
-                "finding_ids": [gdp.id] if gdp else [],
+                "finding_ids": [gdp.id] if gdp else ([gdp_fallback.id] if gdp_fallback else []),
             },
             {
                 "id": "labor",
@@ -516,16 +522,20 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                 "id": "turn",
                 "vo": _voice(
                     (
-                        f"Turn: Sahm {sahm_print} vs the 0.50 trigger. Hold. The spine chart stays.{_cite(sahm)}"
-                        if sahm
-                        else "Turn: Sahm hole named. No matching URL. Hold."
+                        f"Turn: Sahm {sahm_print} vs the 0.50 trigger.{_cite(sahm)}"
+                        if sahm and sahm_print
+                        else (
+                            f"{(sahm.claim or '').strip()}{_cite(sahm)}"
+                            if sahm and (sahm.claim or "").strip()
+                            else "The official series stay on the cards."
+                        )
                     ),
                     packet,
                 ),
                 "eyes": (
-                    f"Sahm spine chart: {sahm_print} vs 0.50 trigger. Hold. Chart stays."
-                    if sahm
-                    else "Sahm hole named. No matching URL."
+                    f"Sahm {sahm_print} vs 0.50 trigger."
+                    if sahm and sahm_print
+                    else "Official series card. Named print only."
                 ),
                 "finding_ids": [sahm.id] if sahm else [],
             },
@@ -627,8 +637,19 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         },
         {
             "id": "turn",
-            "vo": _voice("Hold on the pack number. The spine chart stays.", packet),
-            "eyes": "Spine chart from the cited series. Hold.",
+            "vo": _voice(
+                (
+                    f"{first.series}={first.print}."
+                    if first and first.print not in {MISSING, "", None}
+                    else "The official series stay on the cards."
+                ),
+                packet,
+            ),
+            "eyes": (
+                f"{first.series}={first.print} on screen."
+                if first and first.print not in {MISSING, "", None}
+                else "Official series cards only."
+            ),
             "finding_ids": [first.id] if first else [],
         },
         {
@@ -685,7 +706,7 @@ def _soften_uncited_off(text: str, fids: list[str]) -> tuple[str, bool]:
     cleaned = _OFF_PRINT.sub("", _OFF_NAME.sub("", text))
     cleaned = _tidy_vo(cleaned)
     if not cleaned:
-        return "Hold on the pack number.", True
+        return "The named print stays on the card.", True
     return cleaned, True
 
 
@@ -816,7 +837,7 @@ def _strip_uncited_tokens(text: str, tokens: list[str]) -> str:
     out = text or ""
     for tok in sorted(set(tokens), key=len, reverse=True):
         out = re.sub(rf"(?<![\d.]){re.escape(tok)}(?![\d.])", "", out)
-    return _tidy_vo(out) or "Hold on the cite."
+    return _tidy_vo(out) or "The named print stays on the card."
 
 
 def _org_span(name: str) -> bool:
@@ -841,11 +862,31 @@ def _strip_pack_names(text: str, pack: str) -> tuple[str, bool]:
     if not hit:
         return text or "", False
     cleaned = _tidy_vo(out)
-    return cleaned or "Hold the frame.", True
+    return cleaned or "The named print stays on the card.", True
+
+
+_HOLD_META = re.compile(
+    r"(?:GDP|Sahm)\s+hole\s+named\.?|"
+    r"No matching URL\.?|"
+    r"Hold on the (?:pack number|cite)\.?(?:\s+The spine chart stays\.?)?|"
+    r"(?:The\s+)?spine chart stays\.?|"
+    r"Hold\.\s*(?:The spine chart stays\.?|Chart stays\.?)?|"
+    r"(?<![A-Za-z])Hold(?=\s*\.)",
+    re.I,
+)
+_SPEAKABLE_FALLBACK = "The named print stays on the card."
+
+
+def _strip_hold_meta(text: str) -> tuple[str, list[str]]:
+    """Drop production/hold notes. Same class as pack slot-token strip."""
+    cleaned, n = _HOLD_META.subn("", text or "")
+    if not n:
+        return text or "", []
+    return cleaned, ["hold meta stripped from VO"]
 
 
 def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
-    """Strip pack schema/slot cites. Keep real finding ids. Drop topics absent from pack."""
+    """Strip pack schema/slot cites and hold-meta. Keep real finding ids."""
     nits: list[str] = []
 
     def keep_or_drop(inner: str) -> str:
@@ -877,11 +918,13 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
         return ""
 
     cleaned = _RISK_TOPIC.sub(drop_topic, cleaned)
-    if not nits:
+    cleaned, meta_nits = _strip_hold_meta(cleaned)
+    if not nits and not meta_nits:
         return text or "", []
     cleaned = _tidy_vo(cleaned)
     if not cleaned:
-        cleaned = "Hold on the pack number."
+        cleaned = _SPEAKABLE_FALLBACK
+    # ponytail: hold-meta is cleaned, not a HOLD nit. Slot/topic nits still warn.
     return cleaned, list(dict.fromkeys(nits))
 
 
@@ -911,6 +954,8 @@ def _vertex_keeps(
         return False
     if _vo_mixed_smash(packet, spoken):
         return False
+    if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
+        return False
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
     cited = any(fid in known for u in units for fid in (u.get("finding_ids") or []))
     if cited or _vo_uses_pack(packet, spoken):
@@ -938,10 +983,54 @@ def _pack_source(packet: Packet) -> bool:
     return bool(receipt and receipt.findings)
 
 
+def _voice_stamped_marks(packet: Packet, units: list[dict]) -> list[dict]:
+    """Speak stamped prints the cut asked for. Do not HOLD with a silent finding."""
+    spoken = _units_spoken(units)
+    holes = _missing_pack_marks(packet, spoken)
+    if not holes:
+        return units
+    out = [dict(unit) for unit in units]
+    by_id = {unit.get("id"): unit for unit in out}
+
+    def _put(bid: str, line: str, finding: Finding | None) -> None:
+        unit = by_id.get(bid)
+        if unit is None:
+            return
+        unit["vo"] = _voice(f"{line}{_cite(finding)}", packet)
+        if finding is None:
+            return
+        fids = list(unit.get("finding_ids") or [])
+        if finding.id not in fids:
+            fids.append(finding.id)
+        unit["finding_ids"] = fids
+
+    sahm = _by_series(packet, "SAHMREALTIME")
+    if sahm and any(h.startswith("Sahm ") for h in holes):
+        printed = _print_of(sahm, "")
+        if printed:
+            _put("turn", f"Turn: Sahm {printed} vs the 0.50 trigger.", sahm)
+    pay = _by_series(packet, "BLS payrolls", "payrolls")
+    if pay and any(h.startswith("payrolls ") for h in holes):
+        printed = _print_of(pay, "")
+        if printed:
+            _put("labor", f"Labor: payrolls {printed}. Named BLS.", pay)
+    usrec = _by_series(packet, "USREC")
+    if usrec and any(h.startswith("USREC=") for h in holes):
+        _put("cold-open", f"USREC={_print_of(usrec, '0')}.", usrec)
+    gdp = _by_series(packet, "GDP")
+    if gdp and any(h.startswith("GDP ") for h in holes):
+        line, _eyes = _gdp_lines(_print_of(gdp, ""))
+        if line:
+            _put("gdp", line, gdp)
+    return out
+
+
 def _assemble(packet: Packet, units: list[dict]) -> Packet:
     if len(units) != 8:
         return _fail_closed(packet, ["writer must emit 8 beats"])
     held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
+    if not held:
+        units = _voice_stamped_marks(packet, units)
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
     spoken_all = _units_spoken(units)
     pack_grounded = _vo_uses_pack(packet, spoken_all) or any(
@@ -995,7 +1084,12 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             if f"[{fid}]" in vo and fid not in fids:
                 fids.append(fid)
         if not fids and known and not hole:
-            if not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
+            spoken_nums = [
+                n
+                for n in _numbers_in(_vo_lines(vo))
+                if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
+            ]
+            if spoken_nums and not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
                 slot_nits.append(f"{bid} cites nothing in the pack")
         for fid in fids:
             if f"[{fid}]" not in vo:
@@ -1098,6 +1192,8 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
         "Never speak pack schema or slot ids (chronological_events, executive_summary, "
         "missing_causal_links, what_counts_as_the_first_trigger, [field[n]]). "
         "Finding cites stay only when they are real finding ids.\n"
+        "Never speak production notes: Hold., GDP hole named, Sahm hole named, "
+        "No matching URL, or the spine chart stays.\n"
         "Flexible weave: chronological OR outcome-first OR tell/tone stance "
         "(humor / disprove / question / facts-only). "
         "Outcome-first: cold-open is the current named print (USREC×payrolls or other pack print). "
@@ -1131,6 +1227,13 @@ def _parse_units(raw: str) -> list[dict] | None:
     if not isinstance(beats, list) or len(beats) != 8:
         return None
     return beats
+
+
+def _hormuz_on_foreign(packet: Packet, vo: str) -> bool:
+    pack_l = _pack_text(packet).lower()
+    if "hormuz" in pack_l or "jcpoa" in pack_l:
+        return False
+    return any(w in (vo or "").lower() for w in ("hormuz", "jcpoa", "strait of hormuz", "hormuz-share"))
 
 
 def write_script(packet: Packet, writer=None) -> Packet:
@@ -1208,6 +1311,8 @@ def write_script(packet: Packet, writer=None) -> Packet:
     if config.has_vertex() and packet.id not in {config.SEED_PACKET_ID, "oc-hormuz-decade"}:
         try:
             parsed = _parse_units(emit(_prompt(packet, spine)))
+            if parsed and _hormuz_on_foreign(packet, _units_spoken(parsed)):
+                return _fail_closed(packet, ["leftover Hormuz on a non-Hormuz topic"])
             if parsed and _vertex_keeps(packet, parsed, mint_holes=mint_holes):
                 units = parsed
             elif parsed and _accept_units(

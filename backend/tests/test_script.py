@@ -319,3 +319,146 @@ def test_hold_receipt_writes_empty_script() -> None:
     write_script(packet)
     assert packet.script == ""
     assert packet.beats == []
+
+
+_HOLD_META_BANNED = (
+    "gdp hole named",
+    "no matching url",
+    "spine chart stays",
+    "hold. the spine",
+    "hold on the pack number",
+)
+
+
+def _live_sahm_packet() -> Packet:
+    """Live dd25387b shape: USREC+payrolls+Sahm stamped. GDP 0.5 already rejected."""
+    from onecrew.models import Finding
+
+    pack = (
+        "USREC July 2026 = 0. "
+        "Nonfarm payrolls fell −23,000 in July 2026. "
+        "Sahm is −0.03 vs the 0.50 trigger."
+    )
+    packet = Packet(
+        id="oc-are-we-near-recession-dd25387b",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the last year of US recession prints",
+        research_pack=pack,
+        task_spine=pack,
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=True,
+        disposition="READY",
+        findings=[
+            Finding(
+                id="usrec-july-2026",
+                claim="USREC=0 (July 2026).",
+                stamp="grounded",
+                title="USREC",
+                series="USREC",
+                print="0",
+                when="July 2026",
+                parallel_url="https://fred.stlouisfed.org/series/USREC",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="payrolls-july-2026",
+                claim="Nonfarm payrolls fell −23,000.",
+                stamp="grounded",
+                title="BLS payrolls",
+                series="BLS payrolls",
+                print="−23,000",
+                when="July 2026",
+                parallel_url="https://www.bls.gov/news.release/empsit.nr0.htm",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+            Finding(
+                id="sahm-july-2026",
+                claim="Sahm is −0.03 vs the 0.50 trigger.",
+                stamp="grounded",
+                title="Sahm rule",
+                series="SAHMREALTIME",
+                print="−0.03",
+                when="July 2026",
+                parallel_url="https://fred.stlouisfed.org/series/SAHMREALTIME",
+                parallel_status="hit",
+                note="Parallel URL on this row.",
+            ),
+        ],
+    )
+    return packet
+
+
+def _narrator_blob(packet: Packet) -> str:
+    return (packet.script or "") + "\n" + "\n".join(b.vo for b in packet.beats)
+
+
+def test_local_eight_beat_never_speaks_hold_meta_and_voices_stamped_sahm() -> None:
+    packet = _live_sahm_packet()
+    write_script(packet)
+    spoken = _narrator_blob(packet)
+    low = spoken.lower()
+    for banned in _HOLD_META_BANNED:
+        assert banned not in low, banned
+    assert re.search(r"\bhold\.", low) is None
+    assert "−0.03" in spoken or "-0.03" in spoken
+    assert "0.50" in spoken
+    assert "pack numbers missing from VO" not in ((packet.receipt.hold_reason or "") if packet.receipt else "")
+    assert packet.status == "ready"
+    assert len([b for b in packet.beats if b.kind == "vo"]) == 8
+    from onecrew.board import write_shot_list
+
+    frames = write_shot_list(packet)
+    assert len(frames) == 8
+
+
+def test_vertex_hold_meta_stripped_stamped_sahm_spoken_not_hold(monkeypatch) -> None:
+    """ADK leftover production notes must not stay in NARRATOR or silent-drop Sahm."""
+    dirty = (
+        '[{"id":"cold-open","vo":"USREC=0 (July 2026). Labor: payrolls −23,000. Named BLS. '
+        '[usrec-july-2026] [payrolls-july-2026]",'
+        '"eyes":"cards","finding_ids":["usrec-july-2026","payrolls-july-2026"]},'
+        '{"id":"promise","vo":"Three objects from the pack. [usrec-july-2026]",'
+        '"eyes":"pack","finding_ids":["usrec-july-2026"]},'
+        '{"id":"gdp","vo":"GDP hole named. No matching URL. Hold.",'
+        '"eyes":"GDP hole named. No matching URL.","finding_ids":[]},'
+        '{"id":"labor","vo":"Labor: payrolls −23,000. Named BLS. [payrolls-july-2026]",'
+        '"eyes":"ces","finding_ids":["payrolls-july-2026"]},'
+        '{"id":"turn","vo":"Hold. The spine chart stays.",'
+        '"eyes":"Hold. Chart stays.","finding_ids":[]},'
+        '{"id":"complication","vo":"Those are not the same object. Near is the gap. [usrec-july-2026]",'
+        '"eyes":"gap","finding_ids":["usrec-july-2026"]},'
+        '{"id":"receipt","vo":"Receipt board: named series NBER, FRED, BLS. '
+        '[usrec-july-2026] [payrolls-july-2026]",'
+        '"eyes":"board","finding_ids":["usrec-july-2026","payrolls-july-2026"]},'
+        '{"id":"close","vo":"Near is not a switch. [usrec-july-2026]",'
+        '"eyes":"close","finding_ids":["usrec-july-2026"]}]'
+    )
+    packet = _live_sahm_packet()
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: True)
+    monkeypatch.setattr("onecrew.script.generate_script", lambda *_a, **_k: dirty)
+    write_script(packet)
+    spoken = _narrator_blob(packet)
+    low = spoken.lower()
+    for banned in _HOLD_META_BANNED:
+        assert banned not in low, banned
+    assert re.search(r"\bhold\.", low) is None
+    assert "−0.03" in spoken or "-0.03" in spoken
+    reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
+    assert "pack numbers missing from VO" not in reason
+    assert packet.status == "ready"
+    assert packet.script
+    assert len(packet.beats) == 8
+    from onecrew.board import write_shot_list
+
+    frames = write_shot_list(packet)
+    assert len(frames) == 8

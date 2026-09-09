@@ -74,7 +74,8 @@ _PAY_CUE = re.compile(
 )
 _PAY_HYP = re.compile(
     r"\bsuppose\b|the estimate of nonfarm|from one month to the next|"
-    r"if,\s*however,\s*the reported|the reported nonfarm|employment rise was",
+    r"if,\s*however,\s*the reported|the reported nonfarm|employment rise was|"
+    r"\bconsensus\b|economists?\s+expect|expected\s+to\b",
     re.I,
 )
 _PAY_CI = re.compile(r"confidence interval|90-percent", re.I)
@@ -1372,6 +1373,13 @@ def _legal_print(series: str, text: str) -> str | None:
             ces_verb = bool(_PAY_FALL.search(isol_l) or _PAY_RISE.search(isol_l))
             if _PAY_REV.search(isol_l) or (_PAY_REV.search(clause) and not ces_verb):
                 continue
+            if (
+                re.search(r"\b(?:is|of|at)\s*$", isol_l)
+                and not ces_verb
+                and not _PAY_CES.search(clause)
+            ):
+                # "payrolls is 53,000" / "estimate of 53,000" without a CES verb is soft.
+                continue
             raw = _sign_payroll(isol_l, match.group(0))
             if notes_fall and not raw.startswith(("−", "-")) and not _PAY_RISE.search(isol_l):
                 continue
@@ -1552,6 +1560,9 @@ def _hit_for_series(notes: str, series: str, tokens: tuple[str, ...]) -> tuple[s
             hit = _keep(printed, sentence)
             if hit:
                 return hit
+            continue
+        if series == "BLS payrolls" and printed is None and _PAY_HYP.search(sentence):
+            # ponytail: a cue window that starts at "payrolls" drops the hedge. Don't remint.
             continue
         for both in (True, False):
             for window in _cue_spans(sentence, tokens, both=both):

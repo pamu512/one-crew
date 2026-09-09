@@ -1234,7 +1234,11 @@ def test_sahm_hole_turn_does_not_tape_usrec() -> None:
     assert usrec.id not in turn.finding_ids
     assert "usrec" not in " ".join(turn.finding_ids).lower()
     blob = f"{turn.vo} {turn.frame}"
-    assert "Sahm hole" in blob or "No matching URL" in blob
+    assert "Sahm hole" not in blob
+    assert "No matching URL" not in blob
+    assert "Hold." not in blob
+    assert "spine chart stays" not in blob.lower()
+    assert "−0.03" not in blob and "-0.03" not in blob
     shots = write_shot_list(packet)
     prefer_footage(shots, Rails(parallel=True, vertex=False, imagen=False), packet)
     turn_shot = next(s for s in shots if s.beat_id == "turn")
@@ -3627,3 +3631,52 @@ def test_lei_cite_is_conference_board_not_bls_empsit() -> None:
     assert "empsit" not in cite
     assert "bls.gov" not in cite
     assert "conference-board.org" in cite
+
+
+def test_consensus_estimate_only_does_not_mint_payrolls_as_ces() -> None:
+    from onecrew.foundry import FoundryHold, require_minted
+    from onecrew.spend import ledger
+
+    spine = (
+        "USREC July 2026 = 0. "
+        "Economists' consensus estimate for August payrolls is 53,000. "
+        f"{FRED_USREC} {BLS}"
+    )
+    before = ledger.parallel_calls
+    packet, rows = _mint_notes(spine)
+    assert ledger.parallel_calls == before
+    pays = [f for f in rows if f.series == "BLS payrolls"]
+    for pay in pays:
+        printed = pay.print or ""
+        assert "53,000" not in printed
+        assert "53000" not in printed.replace(",", "")
+    assert not pays or not any("53" in (p.print or "") for p in pays)
+    with pytest.raises(FoundryHold, match="foundry dropped named series"):
+        require_minted(rows, spine)
+    write_receipt(
+        packet,
+        Receipt(packet_id=packet.id, written=False, disposition="READY", findings=rows),
+    )
+    write_script(packet)
+    reason = (packet.receipt.hold_reason or "") + " ".join(row.detail for row in packet.exclusions)
+    assert "foundry dropped named series" in reason.lower() or "hypo/CI/revision" in reason
+    spoken = (packet.script or "") + "".join(b.vo for b in packet.beats)
+    assert "53,000" not in spoken
+
+
+def test_consensus_plus_realized_ces_mints_realized_not_estimate() -> None:
+    from onecrew.spend import ledger
+
+    spine = (
+        "USREC July 2026 = 0. "
+        "Consensus estimate for August payrolls is +53,000. "
+        "July nonfarm payroll employment fell by 23,000. "
+        f"{FRED_USREC} {BLS}"
+    )
+    before = ledger.parallel_calls
+    _, rows = _mint_notes(spine)
+    assert ledger.parallel_calls == before
+    payrolls = next(f for f in rows if f.series == "BLS payrolls")
+    assert "23,000" in (payrolls.print or "")
+    assert "53,000" not in (payrolls.print or "")
+    assert (payrolls.when or "").lower() == "july 2026"
