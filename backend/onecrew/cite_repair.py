@@ -210,6 +210,7 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
         is_action_chrome_vo,
         is_broad_scope_vo,
         is_hanging_clause_vo,
+        is_incomplete_vo,
         is_pack_chrome_vo,
         is_print_hole,
         is_thin_frame,
@@ -259,6 +260,7 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             has_tone_chrome(beat.vo)
             or is_unverified_meta_vo(beat.vo)
             or is_hanging_clause_vo(beat.vo)
+            or is_incomplete_vo(beat.vo)
             or is_title_read_vo(beat.vo, cited)
             or is_thin_title_read_vo(beat.vo, cited, prior_prints=prior)
             or is_action_chrome_vo(beat.vo, beat.frame or "")
@@ -298,12 +300,14 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
 
 def empty_cite_beats(packet: Packet) -> list[ScriptBeat]:
     """Nonfiction titled/spoken beats with no pack finding. Chrome slots count."""
+    from onecrew.script import is_placeholder_finding_id
+
     if invents_frame(cut=packet.cut, tell=packet.tell or ""):
         return []
     known = {
         f.id
         for f in (packet.receipt.findings if packet.receipt else [])
-        if not is_pack_slot_id(f.id)
+        if not is_pack_slot_id(f.id) and not is_placeholder_finding_id(f.id)
     }
     out: list[ScriptBeat] = []
     for beat in packet.beats:
@@ -541,7 +545,12 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
         spoken = _vo_lines(beat.vo)
         vo = _vo_body(beat)
         keep: list[str] = []
+        from onecrew.script import is_placeholder_finding_id
+
         for fid in beat.finding_ids:
+            if is_placeholder_finding_id(fid):
+                beat.vo = re.sub(rf"\s*\[{re.escape(fid)}\]", "", beat.vo).strip()
+                continue
             finding = by_id.get(fid)
             if finding is None or finding.stamp != "timeline_event":
                 keep.append(fid)
@@ -942,6 +951,7 @@ _CITE_HOLD_MARKERS = (
     "cites nothing in the pack",
     "uncited claim",
     "cite-faithfulness",
+    "pack slot token stripped from VO",
     _EMPTY_BEAT_REASON,
     _EXHAUST_REASON,
 )
@@ -977,7 +987,9 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         has_tone_chrome,
         is_action_chrome_vo,
         is_hanging_clause_vo,
+        is_incomplete_vo,
         is_pack_chrome_vo,
+        is_placeholder_finding_id,
         is_print_hole,
         is_thin_frame,
         is_thin_title_read_vo,
@@ -1004,7 +1016,11 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
             continue
         orig_vo = _vo_lines(beat.vo)
         vo = strip_action_chrome_vo(orig_vo, beat.frame or "")
-        keep, _ = prefer_covering_scope(vo, list(beat.finding_ids), list(receipt.findings))
+        keep, _ = prefer_covering_scope(
+            vo,
+            [fid for fid in beat.finding_ids if not is_placeholder_finding_id(fid)],
+            list(receipt.findings),
+        )
         keep, print_hold = prefer_covering_print(vo, keep, list(receipt.findings))
         if print_hold:
             keep = []
@@ -1020,11 +1036,13 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         new_vo, _ = _strip_tone_chrome(new_vo)
         if is_unverified_meta_vo(new_vo):
             new_vo = strip_unverified_meta_vo(new_vo)
-        if is_hanging_clause_vo(new_vo):
-            new_vo = strip_hanging_clause_vo(new_vo)
+        if is_hanging_clause_vo(new_vo) or is_incomplete_vo(new_vo):
+            from onecrew.script import strip_incomplete_vo
+
+            new_vo = strip_incomplete_vo(new_vo)
         cited = [f for f in receipt.findings if f.id in keep]
         prior = [_vo_lines(p.vo) for p in packet.beats[: packet.beats.index(beat)] if (p.kind or "vo") != "heading"]
-        if is_title_read_vo(new_vo, cited) or is_print_hole(new_vo):
+        if is_title_read_vo(new_vo, cited) or is_print_hole(new_vo) or is_incomplete_vo(new_vo):
             spoken = speak_stamp_fact(keep, list(receipt.findings))
             if spoken and not is_thin_title_read_vo(spoken, cited, prior_prints=prior):
                 new_vo = spoken
@@ -1035,6 +1053,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
             has_tone_chrome(new_vo)
             or is_unverified_meta_vo(new_vo)
             or is_hanging_clause_vo(new_vo)
+            or is_incomplete_vo(new_vo)
             or is_pack_chrome_vo(new_vo)
             or is_action_chrome_vo(new_vo, beat.frame or "")
         ):
@@ -1073,7 +1092,20 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
 
 def _clear_cite_only_hold(packet: Packet, bag: CiteBag | None = None) -> None:
     """Successful attach/drop must not leave a cite-only HOLD."""
+    from onecrew.script import _legal_spoken_finding, vo_has_pack_slot_token
+
     if unsupported_cite_beats(packet, bag) or empty_cite_beats(packet) or faithless_cite_beats(packet):
+        return
+    known = {
+        f.id
+        for f in (packet.receipt.findings if packet.receipt else [])
+        if _legal_spoken_finding(f)
+    }
+    if any(
+        vo_has_pack_slot_token(b.vo, known) or vo_has_pack_slot_token(b.frame or "", known)
+        for b in packet.beats
+        if (b.kind or "vo") != "heading"
+    ):
         return
     _retire_incomplete_grounded(packet)
     _retire_uncited_grounded(packet)

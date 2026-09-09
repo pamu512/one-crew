@@ -152,11 +152,22 @@ _SHORT_IDS = {
 }
 
 
+def is_placeholder_finding_id(fid: str) -> bool:
+    """cite-miss / missing / empty / frame-miss. Not a covering stamp."""
+    raw = (fid or "").strip()
+    if not raw:
+        return True
+    low = raw.lower()
+    if "cite-miss" in low or "frame-miss" in low:
+        return True
+    return low in {"missing", "miss"}
+
+
 def _legal_spoken_finding(finding: Finding) -> bool:
     """Cite-able row: not excerpts[N] / unofficial GDP / USREC prose. Fringe and fiction frames stay."""
     from onecrew.foundry import complete_print, is_pack_slot_id, official_closed_shape, official_gdp_url
 
-    if is_pack_slot_id(finding.id):
+    if is_placeholder_finding_id(finding.id) or is_pack_slot_id(finding.id):
         return False
     if finding.series == "GDP":
         return official_gdp_url(finding.parallel_url or "") and complete_print(finding.print or "")
@@ -273,7 +284,9 @@ def _link_pack_findings(
     out = [
         fid
         for fid in fids
-        if not is_pack_slot_id(fid) and not (fid in by_id and is_chrome_cover_stamp(by_id[fid]))
+        if not is_pack_slot_id(fid)
+        and not is_placeholder_finding_id(fid)
+        and not (fid in by_id and is_chrome_cover_stamp(by_id[fid]))
     ]
     for finding in findings:
         if is_pack_slot_id(finding.id) or finding.id in leftover or finding.id in out:
@@ -848,7 +861,7 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             f
             for f in findings
             if _legal_spoken_finding(f)
-            and (f.id or "") not in {"cite-miss", "frame-miss"}
+            and not is_placeholder_finding_id(f.id)
             and f.stamp != "fringe"
         ]
         from onecrew.foundry import leftover_wrap
@@ -1320,6 +1333,20 @@ _PRINT_HOLE_ONLY = re.compile(
     re.I,
 )
 _PRINT_HOLE_UNIT = re.compile(r"\b(?:over|under|by)\s+[A-Za-z]+s\b", re.I)
+_SPLIT_PERCENT = re.compile(r"\d,\s+\d+\s*(?:percent|%)", re.I)
+_BARE_ACCORDING = re.compile(
+    r"(?:^|(?<=[.!?])\s+)according to (?:the )?[A-Z][\w.&'-]+(?:\s+[A-Z][\w.&'-]+)*\s*$",
+    re.I,
+)
+_HANGING_DATE = re.compile(
+    r"(?:^|(?<=[.!?])\s+)(?:the following week,?\s+)?ending\s+"
+    r"(?:January|February|March|April|May|June|July|August|September|"
+    r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+    r"\s+\d{1,2}(?:st|nd|rd|th)?\s*$",
+    re.I,
+)
+_TEXT_CHROME = re.compile(r"^text\s*:\s*", re.I)
+_PACK_SLOT_NIT = "pack slot token stripped from VO"
 
 
 def is_print_hole(text: str) -> bool:
@@ -1327,9 +1354,40 @@ def is_print_hole(text: str) -> bool:
     body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
     if not body:
         return False
-    if _PRINT_HOLE_LEAD.search(body) or _PRINT_HOLE_ONLY.match(body):
+    if _PRINT_HOLE_LEAD.search(body) or _PRINT_HOLE_ONLY.match(body) or _SPLIT_PERCENT.search(body):
         return True
     return not pack_numbers(body) and bool(_PRINT_HOLE_UNIT.search(body))
+
+
+def is_incomplete_vo(text: str) -> bool:
+    """Bare attribution, hanging date, or print hole. Not a cite-faithful sentence."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    if not body:
+        return False
+    if is_print_hole(body) or is_hanging_clause_vo(body):
+        return True
+    return bool(_BARE_ACCORDING.search(body) or _HANGING_DATE.search(body))
+
+
+def strip_incomplete_vo(text: str) -> str:
+    """Drop hanging attribution / date / example clauses. Keep a complete prior claim."""
+    body = strip_hanging_clause_vo(text or "")
+    body = re.sub(
+        r"(?:[.!?]\s+)?according to (?:the )?[A-Z][\w.&'-]+(?:\s+[A-Z][\w.&'-]+)*\s*$",
+        "",
+        body,
+        flags=re.I,
+    )
+    body = re.sub(
+        r"(?:[.!?]\s+)?(?:the following week,?\s+)?ending\s+"
+        r"(?:January|February|March|April|May|June|July|August|September|"
+        r"October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)"
+        r"\s+\d{1,2}(?:st|nd|rd|th)?\s*$",
+        "",
+        body,
+        flags=re.I,
+    )
+    return _tidy_vo(body)
 
 
 def is_thin_frame(text: str, fids: list[str] | None = None, findings: list | None = None) -> bool:
@@ -1729,7 +1787,13 @@ def prefer_covering_print(vo: str, fids: list[str], findings: list) -> tuple[lis
     )
 
     by_id = {f.id: f for f in findings}
-    keep = [fid for fid in fids if fid in by_id and not is_chrome_cover_stamp(by_id[fid])]
+    keep = [
+        fid
+        for fid in fids
+        if fid in by_id
+        and not is_placeholder_finding_id(fid)
+        and not is_chrome_cover_stamp(by_id[fid])
+    ]
     nums = _event_nums(vo)
     if not nums:
         return keep or [fid for fid in fids if fid not in by_id or not is_chrome_cover_stamp(by_id[fid])], False
@@ -2036,13 +2100,16 @@ def sanitize_for_ship(packet):
     """Ship-facing: neutralize leftover slot ids, chrome VO, thin reads, scope cites."""
     from onecrew.cite_repair import rebuild_timed_vo
 
+    _drop_placeholder_cites(packet)
     _strip_action_chrome_beats(packet)
     _strip_meta_hanging_beats(packet)
+    _strip_incomplete_beats(packet)
     _reattach_covering_scope_beats(packet)
     dropped = drop_thin_title_read_beats(packet)
     thin = refuse_thin_episode(packet)
     axis = ensure_topic_axes(packet)
     neutralize_pack_slot_beats(packet)
+    _strip_pack_slot_beats(packet)
     if thin:
         _hold_ship(packet, thin)
     if axis:
@@ -2050,6 +2117,111 @@ def sanitize_for_ship(packet):
     if dropped or packet.beats or thin or axis:
         rebuild_timed_vo(packet)
     return packet
+
+
+def _drop_placeholder_cites(packet) -> None:
+    """Never keep cite-miss / missing / empty as a covering stamp."""
+    from onecrew.timeline import stamps_for_vo
+
+    receipt = packet.receipt
+    rows = list(receipt.findings if receipt else [])
+    by_id = {f.id: f for f in rows}
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        keep = [
+            fid
+            for fid in beat.finding_ids
+            if not is_placeholder_finding_id(fid) and fid in by_id
+        ]
+        beat.vo = _drop_extra_cite_brackets(beat.vo, keep)
+        if keep:
+            beat.finding_ids = keep
+            for fid in keep:
+                if f"[{fid}]" not in beat.vo:
+                    beat.vo = f"{beat.vo} [{fid}]"
+            continue
+        beat.finding_ids = []
+        chosen = [
+            f
+            for f in stamps_for_vo(_vo_lines(beat.vo), rows, [])
+            if not is_placeholder_finding_id(f.id) and _legal_spoken_finding(f)
+        ]
+        if not chosen:
+            continue
+        beat.finding_ids = [chosen[0].id]
+        if f"[{chosen[0].id}]" not in beat.vo:
+            beat.vo = f"{beat.vo} [{chosen[0].id}]"
+
+
+def _strip_incomplete_beats(packet) -> None:
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        vo = _vo_lines(beat.vo)
+        if not is_incomplete_vo(vo):
+            continue
+        cleaned = strip_incomplete_vo(vo)
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        if is_incomplete_vo(cleaned) or not _speech_norm(cleaned):
+            cleaned = speak_stamp_fact(list(beat.finding_ids), list(by_id.values())) or speak_stamps(
+                list(beat.finding_ids), list(by_id.values())
+            )
+            if not cleaned or is_incomplete_vo(cleaned) or is_thin_title_read_vo(cleaned, cited):
+                beat.vo = ""
+                beat.finding_ids = []
+                continue
+        beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
+        for fid in beat.finding_ids:
+            if f"[{fid}]" not in beat.vo:
+                beat.vo = f"{beat.vo} [{fid}]"
+
+
+def _strip_pack_slot_beats(packet) -> None:
+    receipt = packet.receipt
+    known = {
+        f.id
+        for f in (receipt.findings if receipt else [])
+        if _legal_spoken_finding(f)
+    }
+    pack_blob = _pack_text(packet)
+    leftover = False
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        vo, _ = _sanitize_vo(_vo_lines(beat.vo), known, pack_blob)
+        if vo != _vo_lines(beat.vo):
+            beat.vo = f"NARRATOR\n{vo}" if (beat.vo or "").startswith("NARRATOR") else vo
+        frame, _ = _sanitize_vo(beat.frame or "", known, pack_blob)
+        if frame != (beat.frame or ""):
+            beat.frame = frame
+        for fid in beat.finding_ids:
+            if f"[{fid}]" not in beat.vo:
+                beat.vo = f"{beat.vo} [{fid}]"
+        if vo_has_pack_slot_token(beat.vo, known) or vo_has_pack_slot_token(beat.frame or "", known):
+            leftover = True
+    if leftover:
+        _hold_ship(packet, _PACK_SLOT_NIT)
+        return
+    if receipt is None:
+        return
+    kept = [
+        part.strip()
+        for part in (receipt.hold_reason or "").replace("\n", ";").split(";")
+        if part.strip() and part.strip().lower() != _PACK_SLOT_NIT.lower()
+    ]
+    if kept == [
+        part.strip()
+        for part in (receipt.hold_reason or "").replace("\n", ";").split(";")
+        if part.strip()
+    ]:
+        return
+    receipt.hold_reason = "; ".join(kept) or None
+    if not receipt.hold_reason and receipt.disposition == "HOLD":
+        receipt.disposition = "READY"
+        packet.status = "ready"
 
 
 def _strip_meta_hanging_beats(packet) -> None:
@@ -2060,10 +2232,10 @@ def _strip_meta_hanging_beats(packet) -> None:
             continue
         vo = _vo_lines(beat.vo)
         cleaned = strip_unverified_meta_vo(vo) if is_unverified_meta_vo(vo) else vo
-        if is_hanging_clause_vo(cleaned):
-            cleaned = strip_hanging_clause_vo(cleaned)
+        if is_hanging_clause_vo(cleaned) or is_incomplete_vo(cleaned):
+            cleaned = strip_incomplete_vo(cleaned)
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
-        if (is_unverified_meta_vo(vo) or is_hanging_clause_vo(vo)) and not _speech_norm(cleaned):
+        if (is_unverified_meta_vo(vo) or is_hanging_clause_vo(vo) or is_incomplete_vo(vo)) and not _speech_norm(cleaned):
             cleaned = speak_stamp_fact(list(beat.finding_ids), list(by_id.values())) or speak_stamps(
                 list(beat.finding_ids), list(by_id.values())
             )
@@ -2096,6 +2268,7 @@ def _reattach_covering_scope_beats(packet) -> None:
         if (beat.kind or "vo") == "heading":
             continue
         vo = _vo_lines(beat.vo)
+        beat.finding_ids = [fid for fid in beat.finding_ids if not is_placeholder_finding_id(fid)]
         keep, hold = prefer_covering_scope(vo, list(beat.finding_ids), rows)
         if hold:
             continue
@@ -2156,8 +2329,15 @@ _AXIS_STOP = frozenset(
 
 
 def is_numeric_print(text: str) -> bool:
-    """Magnitude token ($ / % / /t). Not an article title."""
-    return bool(_NUMERIC_PRINT.search(text or ""))
+    """Magnitude token ($ / % / /t / unit). Not an article title."""
+    if _NUMERIC_PRINT.search(text or ""):
+        return True
+    nums = [
+        n
+        for n in pack_numbers(text or "")
+        if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
+    ]
+    return bool(nums)
 
 
 def speak_stamp_print(fids: list[str], findings: list[Finding]) -> str:
@@ -2178,7 +2358,7 @@ def is_title_chrome_frame(text: str, fids: list[str] | None = None, findings: li
     raw = (text or "").strip()
     if not raw:
         return False
-    if raw.startswith("#"):
+    if raw.startswith("#") or _TEXT_CHROME.match(raw):
         return True
     shown = _speech_norm(raw)
     rows = [f for f in (findings or []) if not fids or f.id in set(fids)]
@@ -2236,12 +2416,12 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
     def keep_or_drop(inner: str) -> str:
         token = (inner or "").strip()
         if is_pack_slot_id(token) or _EXCERPT_TOKEN.fullmatch(token):
-            nits.append("pack slot token stripped from VO")
+            nits.append(_PACK_SLOT_NIT)
             return ""
         if token in known:
             return f"[{token}]"
         if _is_schema_slot(token) or _FINDING_LIKE.match(token):
-            nits.append("pack slot token stripped from VO")
+            nits.append(_PACK_SLOT_NIT)
             return ""
         return f"[{token}]"
 
@@ -2251,7 +2431,7 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
         word = match.group(0)
         if word in known:
             return word
-        nits.append("pack slot token stripped from VO")
+        nits.append(_PACK_SLOT_NIT)
         return ""
 
     cleaned = _SNAKE_KEY.sub(drop_snake, cleaned)
@@ -2267,7 +2447,7 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
     cleaned = _RISK_TOPIC.sub(drop_topic, cleaned)
     if _EXCERPT_TOKEN.search(cleaned):
         cleaned = _EXCERPT_TOKEN.sub("", cleaned)
-        nits.append("pack slot token stripped from VO")
+        nits.append(_PACK_SLOT_NIT)
     if _GDP_EQ_TRILLION.search(cleaned):
         cleaned = _GDP_EQ_TRILLION.sub("", cleaned)
         nits.append("junk GDP print stripped from VO")
@@ -2279,8 +2459,47 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
     cleaned = _tidy_vo(cleaned)
     if not cleaned:
         cleaned = "The named print stays on the card."
-    # ponytail: hold-meta/chrome/tone is cleaned, not a HOLD nit. Slot/topic nits still warn.
+    if not vo_has_pack_slot_token(cleaned, known):
+        nits = [n for n in nits if n != _PACK_SLOT_NIT]
+    # ponytail: hold-meta/chrome/tone/successful slot strip is cleaned, not a HOLD nit.
     return cleaned, list(dict.fromkeys(nits))
+
+
+def vo_has_pack_slot_token(text: str, known: set[str] | None = None) -> bool:
+    """True when pack/schema/excerpt tokens remain in VO after strip."""
+    from onecrew.foundry import is_pack_slot_id
+
+    known = known or set()
+    body = text or ""
+    if _EXCERPT_TOKEN.search(body):
+        return True
+
+    def _slot_token(token: str) -> bool:
+        raw = (token or "").strip()
+        if not raw or raw in known:
+            return False
+        return bool(
+            is_pack_slot_id(raw)
+            or _EXCERPT_TOKEN.fullmatch(raw)
+            or _is_schema_slot(raw)
+            or _FINDING_LIKE.match(raw)
+        )
+
+    if re.search(r"\[([^\[\]]+(?:\[[^\[\]]+\])?)\]", body):
+        leftovers = []
+
+        def _mark(inner: str) -> str:
+            if _slot_token(inner):
+                leftovers.append(inner)
+            return inner
+
+        _map_brackets(body, _mark)
+        if leftovers:
+            return True
+    for match in _SNAKE_KEY.finditer(body):
+        if match.group(0) not in known:
+            return True
+    return False
 
 
 def _tc(total_s: int, *, hours: bool) -> str:
@@ -2461,7 +2680,11 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     stamped = _stamped_named_series(packet)
     for i, unit in enumerate(units):
         bid = unit.get("id") or _EIGHT_IDS[i]
-        fids = [fid for fid in (unit.get("finding_ids") or []) if fid in known]
+        fids = [
+            fid
+            for fid in (unit.get("finding_ids") or [])
+            if fid in known and not is_placeholder_finding_id(fid)
+        ]
         vo = (unit.get("vo") or "").strip()
         eyes = (unit.get("eyes") or "").strip()
         slot_vo = vo
@@ -2544,9 +2767,9 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 cited = [row for row in rows if row.id in fids]
                 if is_unverified_meta_vo(vo):
                     vo = strip_unverified_meta_vo(vo)
-                if is_hanging_clause_vo(vo):
-                    vo = strip_hanging_clause_vo(vo)
-                if is_title_read_vo(vo, cited) or is_print_hole(vo) or is_hanging_clause_vo(vo):
+                if is_hanging_clause_vo(vo) or is_incomplete_vo(vo):
+                    vo = strip_incomplete_vo(vo)
+                if is_title_read_vo(vo, cited) or is_print_hole(vo) or is_hanging_clause_vo(vo) or is_incomplete_vo(vo):
                     spoken = speak_stamp_fact(fids, rows)
                     if spoken:
                         vo = spoken
@@ -2846,7 +3069,7 @@ def write_script(packet: Packet, writer=None) -> Packet:
         f
         for f in ((receipt.findings if receipt else []) or [])
         if _legal_spoken_finding(f)
-        and (f.id or "") not in {"cite-miss", "frame-miss"}
+        and not is_placeholder_finding_id(f.id)
         and f.stamp != "fringe"
     ]
     if (
