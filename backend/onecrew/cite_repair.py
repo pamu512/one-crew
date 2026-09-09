@@ -173,7 +173,13 @@ def _named_empty_cite_ids(packet: Packet) -> set[str]:
 
 def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
     """Named-entity miss, print skew, or pack/slot chrome VO on a cited stamp."""
-    from onecrew.script import has_tone_chrome, is_meta_frame, is_pack_chrome_vo, is_title_read_vo
+    from onecrew.script import (
+        has_tone_chrome,
+        is_pack_chrome_vo,
+        is_print_hole,
+        is_thin_frame,
+        is_title_read_vo,
+    )
     from onecrew.timeline import stamp_covers_vo, union_supports_prints, vo_proper_names
 
     receipt = packet.receipt
@@ -192,7 +198,12 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             if fid in by_id and by_id[fid].stamp == "timeline_event"
         ]
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
-        if has_tone_chrome(beat.vo) or is_title_read_vo(beat.vo, cited) or is_meta_frame(beat.frame or ""):
+        if (
+            has_tone_chrome(beat.vo)
+            or is_title_read_vo(beat.vo, cited)
+            or is_print_hole(vo)
+            or is_thin_frame(beat.frame or "", list(beat.finding_ids), list(receipt.findings))
+        ):
             out.append(beat)
             continue
         if is_pack_chrome_vo(vo) and tls:
@@ -450,6 +461,7 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
     pairs = _chain_pairs(packet)
     by_id = {f.id: f for f in receipt.findings}
     attached: list[str] = []
+    changed = False
     for beat in packet.beats:
         if (beat.kind or "vo") == "heading" or _is_hole(beat):
             continue
@@ -490,31 +502,50 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
             _drop_extra_cite_brackets,
             _refuse_forecast_theater,
             is_pack_chrome_vo,
+            is_print_hole,
+            is_thin_frame,
+            speak_stamp_fact,
             speak_stamps,
         )
         from onecrew.timeline import cap_beat_cites
 
         keep, new_vo = _align_vo_to_stamps(vo, keep, list(receipt.findings))
-        keep, new_frame = _align_vo_to_stamps(beat.frame or "", keep, list(receipt.findings))
+        _, new_frame = _align_vo_to_stamps(beat.frame or "", list(keep), list(receipt.findings))
         keep, new_vo, _ = _refuse_forecast_theater(new_vo, keep, list(receipt.findings), packet.tell or "")
-        keep, new_frame, _ = _refuse_forecast_theater(
+        _, new_frame, _ = _refuse_forecast_theater(
             new_frame, keep, list(receipt.findings), packet.tell or ""
         )
         keep = cap_beat_cites(new_vo, keep, list(receipt.findings))
         new_vo = _drop_extra_cite_brackets(new_vo, keep)
         new_frame = _drop_extra_cite_brackets(new_frame, keep)
-        if is_pack_chrome_vo(new_vo) or not (new_vo or "").strip():
-            spoken = speak_stamps(keep, list(receipt.findings))
+        if is_pack_chrome_vo(new_vo) or is_print_hole(new_vo) or not (new_vo or "").strip():
+            spoken = speak_stamp_fact(keep, list(receipt.findings)) or speak_stamps(
+                keep, list(receipt.findings)
+            )
             if spoken:
                 new_vo = spoken
+        if is_thin_frame(new_frame, keep, list(receipt.findings)) or not (new_frame or "").strip():
+            if keep:
+                new_frame = (
+                    speak_stamp_fact(keep, list(receipt.findings))
+                    or speak_stamps(keep, list(receipt.findings))
+                    or new_frame
+                )
         if new_vo != vo:
             beat.vo = f"NARRATOR\n{new_vo}" if (beat.vo or "").startswith("NARRATOR") else new_vo
-            for fid in list(keep):
-                if f"[{fid}]" not in beat.vo:
-                    beat.vo = f"{beat.vo} [{fid}]"
+            changed = True
+        for fid in list(keep):
+            if f"[{fid}]" not in beat.vo:
+                beat.vo = f"{beat.vo} [{fid}]"
+                changed = True
         if new_frame != (beat.frame or ""):
             beat.frame = new_frame
+            changed = True
+        if beat.finding_ids != keep:
+            changed = True
         beat.finding_ids = keep
+    if attached or changed:
+        rebuild_timed_vo(packet)
     return attached
 
 
@@ -849,8 +880,9 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         _strip_tone_chrome,
         _vo_lines,
         has_tone_chrome,
-        is_meta_frame,
         is_pack_chrome_vo,
+        is_print_hole,
+        is_thin_frame,
         is_title_read_vo,
         speak_stamp_fact,
         speak_stamps,
@@ -866,9 +898,9 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
             continue
         vo = _vo_lines(beat.vo)
         keep, new_vo = _align_vo_to_stamps(vo, list(beat.finding_ids), list(receipt.findings))
-        keep, new_frame = _align_vo_to_stamps(beat.frame or "", keep, list(receipt.findings))
+        _, new_frame = _align_vo_to_stamps(beat.frame or "", list(keep), list(receipt.findings))
         keep, new_vo, _ = _refuse_forecast_theater(new_vo, keep, list(receipt.findings), packet.tell or "")
-        keep, new_frame, _ = _refuse_forecast_theater(
+        _, new_frame, _ = _refuse_forecast_theater(
             new_frame, keep, list(receipt.findings), packet.tell or ""
         )
         keep = cap_beat_cites(new_vo, keep, list(receipt.findings))
@@ -876,19 +908,20 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         new_frame = _drop_extra_cite_brackets(new_frame, keep)
         new_vo, _ = _strip_tone_chrome(new_vo)
         cited = [f for f in receipt.findings if f.id in keep]
-        if is_title_read_vo(new_vo, cited):
+        if is_title_read_vo(new_vo, cited) or is_print_hole(new_vo):
             new_vo = speak_stamp_fact(keep, list(receipt.findings))
         elif has_tone_chrome(new_vo) or is_pack_chrome_vo(new_vo) or not (new_vo or "").strip():
             new_vo = speak_stamps(keep, list(receipt.findings))
-        if is_pack_chrome_vo(new_frame) or is_meta_frame(new_frame):
+        if is_pack_chrome_vo(new_frame) or is_thin_frame(new_frame, keep, list(receipt.findings)):
             new_frame = speak_stamp_fact(keep, list(receipt.findings)) or ""
         beat.finding_ids = keep
         if new_vo != vo:
             beat.vo = f"NARRATOR\n{new_vo}" if (beat.vo or "").startswith("NARRATOR") else new_vo
-            for fid in keep:
-                if f"[{fid}]" not in beat.vo:
-                    beat.vo = f"{beat.vo} [{fid}]"
             changed = True
+        for fid in keep:
+            if f"[{fid}]" not in beat.vo:
+                beat.vo = f"{beat.vo} [{fid}]"
+                changed = True
         if new_frame != (beat.frame or ""):
             beat.frame = new_frame
             changed = True

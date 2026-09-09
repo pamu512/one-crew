@@ -1273,25 +1273,77 @@ def _align_vo_to_stamps(
     return grounded, cleaned
 
 
+_PRINT_HOLE_LEAD = re.compile(r"^(?:by|over|under|from),", re.I)
+_PRINT_HOLE_ONLY = re.compile(
+    r"^(?:by|over|under|from|after|before|at|in|on|to),?\s*$",
+    re.I,
+)
+_PRINT_HOLE_UNIT = re.compile(r"\b(?:over|under|by)\s+[A-Za-z]+s\b", re.I)
+
+
+def is_print_hole(text: str) -> bool:
+    """Half-stripped number leftover. Not a cite-faithful sentence."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    if not body:
+        return False
+    if _PRINT_HOLE_LEAD.search(body) or _PRINT_HOLE_ONLY.match(body):
+        return True
+    return not pack_numbers(body) and bool(_PRINT_HOLE_UNIT.search(body))
+
+
+def is_thin_frame(text: str, fids: list[str] | None = None, findings: list | None = None) -> bool:
+    """Mute-test fail: truncated screen chrome, not the attached stamp print."""
+    if is_meta_frame(text):
+        return True
+    body = _tidy_vo(text or "")
+    if not body:
+        return False
+    if fids and findings:
+        printed = speak_stamp_fact(fids, findings) or speak_stamps(fids, findings)
+        if printed and _speech_norm(printed) in _speech_norm(body):
+            return False
+    if body.count("'") % 2 != 0 or body.count('"') % 2 != 0:
+        return True
+    return bool(re.match(r"on screen\b", body, re.I))
+
+
+def _clause_has_unsupported_print(part: str, have: set[str], have_m: set[str]) -> bool:
+    body = re.sub(r"\[[^\]]+\]", "", part or "")
+    for tok in pack_numbers(body):
+        if _YEAR_TOK.fullmatch(tok.replace("−", "-")):
+            continue
+        want = re.sub(r"[^\d.]+", "", tok.replace("−", "-"))
+        if want and want not in have:
+            return True
+    return any(m.group(0).lower() not in have_m for m in _MONTH_YEAR.finditer(body))
+
+
 def _strip_unsupported_prints(text: str, fids: list[str], findings: list[Finding]) -> str:
+    """Drop or rewrite clauses whose prints the attached stamps cannot cover. No token holes."""
     from onecrew.timeline import _event_nums, stamp_text
 
     blob = " ".join(stamp_text(f) for f in findings if f.id in fids)
     have = _event_nums(blob)
-    body = re.sub(r"\[[^\]]+\]", "", text or "")
-    bad = [n for n in pack_numbers(body) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
-    drop = []
-    for tok in bad:
-        want = re.sub(r"[^\d.]+", "", tok.replace("−", "-"))
-        if want and want not in have:
-            drop.append(tok)
-    cleaned = _strip_uncited_tokens(text, drop) if drop else (text or "")
     have_m = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob)}
-    spoken_m = [m.group(0) for m in _MONTH_YEAR.finditer(re.sub(r"\[[^\]]+\]", "", cleaned))]
-    for tok in spoken_m:
-        if tok.lower() not in have_m:
-            cleaned = re.sub(re.escape(tok), "", cleaned)
-    return _tidy_vo(cleaned) if cleaned != (text or "") else cleaned
+    keep: list[str] = []
+    for part in re.split(r"(?<=[.!?])\s+", text or ""):
+        if not part.strip():
+            continue
+        if not _clause_has_unsupported_print(part, have, have_m):
+            keep.append(part)
+            continue
+        bits = [b.strip() for b in re.split(r",\s*", part) if b.strip()]
+        clean = [b for b in bits if not _clause_has_unsupported_print(b, have, have_m)]
+        if clean and len(clean) < len(bits):
+            keep.append(_tidy_vo(", ".join(clean)))
+    cleaned = _tidy_vo(" ".join(keep))
+    if cleaned and not is_print_hole(cleaned):
+        return cleaned
+    if fids:
+        spoken = speak_stamp_fact(fids, findings) or speak_stamps(fids, findings)
+        if spoken:
+            return spoken
+    return cleaned
 
 
 def _org_span(name: str) -> bool:
@@ -1732,18 +1784,18 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             rows = packet.receipt.findings if packet.receipt else []
             fids = _link_pack_findings(vo, fids, rows, packet=packet)
             fids, vo = _align_vo_to_stamps(vo, fids, rows)
-            fids, eyes = _align_vo_to_stamps(eyes, fids, rows)
+            _, eyes = _align_vo_to_stamps(eyes, list(fids), rows)
             from onecrew.timeline import cap_beat_cites
 
             fids, vo, forecast_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
-            fids, eyes, frame_hold = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
+            _, eyes, frame_hold = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
             if forecast_hold or frame_hold:
                 slot_nits.append("forecast theater")
             fids = cap_beat_cites(vo, fids, rows)
             vo = _drop_extra_cite_brackets(vo, fids)
             eyes = _drop_extra_cite_brackets(eyes, fids)
             cited = [row for row in rows if row.id in fids]
-            if is_title_read_vo(vo, cited):
+            if is_title_read_vo(vo, cited) or is_print_hole(vo):
                 spoken = speak_stamp_fact(fids, rows)
                 if spoken:
                     vo = spoken
@@ -1751,12 +1803,13 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 spoken = speak_stamps(fids, rows)
                 if spoken:
                     vo = spoken
-            if is_meta_frame(eyes):
-                eyes = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows) or eyes
+            if is_thin_frame(eyes, fids, rows) or not (eyes or "").strip():
+                if fids:
+                    eyes = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows) or eyes
             if not _vo_lines(vo).strip() and fids:
                 vo = speak_stamps(fids, rows)
             fids, vo, after_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
-            fids, eyes, after_frame = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
+            _, eyes, after_frame = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
             if after_hold or after_frame:
                 slot_nits.append("forecast theater")
             fids = cap_beat_cites(vo, fids, rows)

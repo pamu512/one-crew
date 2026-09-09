@@ -355,17 +355,18 @@ def _action_line(window: str) -> str:
 
 def _tone_title_meta_hole(artifact: GradeArtifact) -> bool:
     """Tone chrome, title-read VO, or mute-test meta frames are not cite-faithful speech."""
-    from onecrew.script import has_tone_chrome, is_meta_frame, is_title_read_vo
+    from onecrew.script import has_tone_chrome, is_print_hole, is_thin_frame, is_title_read_vo
 
     by_id = {row.id: row for row in artifact.stamped_findings}
     for window in _cite_windows(artifact.script):
         vo = _vo_body(window)
         cited = [by_id[fid] for fid in _cited_ids(window) if fid in by_id]
-        if has_tone_chrome(vo):
+        fids = [row.id for row in cited]
+        if has_tone_chrome(vo) or is_print_hole(vo):
             return True
         if cited and is_title_read_vo(vo, cited):
             return True
-        if is_meta_frame(_action_line(window)):
+        if is_thin_frame(_action_line(window), fids, cited):
             return True
     return False
 
