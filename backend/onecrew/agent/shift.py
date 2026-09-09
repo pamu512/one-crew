@@ -47,7 +47,7 @@ from onecrew.pack import (
     write_research_pack,
 )
 from onecrew.research import extract_objective, search_objective, search_queries, task_research_prompt
-from onecrew.room import make_grade_artifact, run_room_loop
+from onecrew.room import grade_room, make_grade_artifact, run_room_loop
 from onecrew.script import pack_numbers
 from onecrew.script_writer import write_vo_from_pack
 from onecrew.store import store
@@ -268,7 +268,9 @@ def _apply_extract(findings: list, extracted: Any) -> list[Exclusion]:
         if finding and excerpts:
             # ponytail: first excerpt only. Gemini does not invent extract text.
             finding.note = f"{finding.note} Extract: {excerpts[0][:400]}".strip()
-            if title and (not finding.title or finding.title == MISSING):
+            from onecrew.script import is_generic_stamp_title
+
+            if title and (not finding.title or is_generic_stamp_title(finding.title)):
                 finding.title = title
     for err in getattr(extracted, "errors", None) or []:
         url = getattr(err, "url", None)
@@ -1033,14 +1035,31 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                 leftover = _write_closed_pack(fresh, leftover, hit_urls)
                 store.upsert_packet(fresh)
                 return fresh
-            if fresh.receipt is not None and fresh.receipt.disposition != "HOLD":
-                fresh.status = "ready"
-            else:
+            artifact = make_grade_artifact(fresh)
+            grade = grade_room(artifact, grader=getattr(shift, "room_grader", None))
+            fresh.grade_artifact = artifact
+            fresh.room_grade = grade
+            lingering = (
+                grade.vote == "recut"
+                and "cite-faithfulness" in (grade.recut_detail or "").lower()
+            )
+            if lingering or (fresh.receipt is not None and fresh.receipt.disposition == "HOLD"):
+                if fresh.receipt is not None:
+                    fresh.receipt.disposition = "HOLD"
+                    prior = (fresh.receipt.hold_reason or "").strip()
+                    if "cite-faithfulness" not in prior.lower():
+                        fresh.receipt.hold_reason = (
+                            f"{prior} room recut other: cite-faithfulness".strip()
+                            if prior
+                            else "room recut other: cite-faithfulness"
+                        )
+                fresh.status = "hold"
                 stamp_collisions(fresh, rails)
                 attach_frames(fresh, [], rails=rails)
                 leftover = _write_closed_pack(fresh, leftover, hit_urls)
                 store.upsert_packet(fresh)
                 return fresh
+            fresh.status = "ready"
         else:
             stamp_collisions(fresh, rails)
             attach_frames(fresh, [], rails=rails)

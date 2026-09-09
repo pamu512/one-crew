@@ -73,10 +73,11 @@ def test_two_tones_change_vo_not_stamps() -> None:
     stamps = lambda p: [(f.id, f.stamp, f.propaganda, f.lean) for f in p.receipt.findings]
     assert stamps(desk) == stamps(question) == stamps(record)
     assert desk.script != question.script
-    assert "From the news desk." in desk.script
-    assert "Question the decision" in question.script
+    assert "From the news desk." not in desk.script
+    assert "Question the decision that put this on the air" not in question.script
+    assert "News desk" in desk.script
+    assert "Question the decisions" in question.script
     assert "From the news desk." not in record.script
-    assert "Question the decision" not in record.script
     assert "[usrec-july-2026]" in desk.script
     assert len([b for b in question.beats if b.kind == "vo"]) == 8
 
