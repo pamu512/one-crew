@@ -712,12 +712,20 @@ def _research(
         findings = foundry_rows
     elif claimer_rows:
         findings = claimer_rows
-    elif foundry_exc is not None:
-        return _foundry_outcome(packet, rails, leftover, hit_urls, spine, foundry_exc, foundry_rows)
     else:
-        findings = foundry_rows
+        findings = list(foundry_rows or [])
+    empty_foundry_path = (
+        foundry_exc is not None
+        and not claimer_ready
+        and not fiction
+        and not (
+            foundry_rows
+            and not any(f.id in leftover_slot_ids() for f in foundry_rows if f.stamp == "grounded")
+        )
+        and not claimer_rows
+    )
     findings = [row for row in findings if row.id not in leftover_slot_ids()]
-    from onecrew.timeline import apply_timeline, plan_timeline
+    from onecrew.timeline import apply_timeline, empty_mint_hold_ok_to_clear, plan_timeline
 
     planned_timeline = plan_timeline(
         packet.research_pack or spine,
@@ -725,6 +733,12 @@ def _research(
         seen_urls={(f.parallel_url or "").strip() for f in findings if (f.parallel_url or "").strip()},
     )
     apply_timeline(findings, planned_timeline)
+    if empty_foundry_path and not empty_mint_hold_ok_to_clear(
+        str(foundry_exc),
+        findings,
+        spine or packet.research_pack or "",
+    ):
+        return _foundry_outcome(packet, rails, leftover, hit_urls, spine, foundry_exc, foundry_rows)
     if any(row.stamp == "timeline_event" for row in findings) and not any(
         row.parallel_status == "miss" for row in findings
     ):
