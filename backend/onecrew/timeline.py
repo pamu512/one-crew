@@ -1,4 +1,4 @@
-"""chronological_events → timeline_event findings. Fail-closed URL grounding."""
+"""chronological_events / chronological_event_chain → timeline_event findings."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Iterable
 from pydantic import BaseModel, Field
 
 from onecrew.foundry import leftover_slot_ids, _unique_id, _when, clean_cite_url
-from onecrew.models import Finding, TimelineMapRow
+from onecrew.models import Finding, Receipt, TimelineMapRow
 from onecrew.verify import CLOSED_SERIES
 
 log = logging.getLogger("onecrew.timeline")
@@ -21,20 +21,58 @@ TIMELINE_STAMP = "timeline_event"
 TIMELINE_SERIES = "timeline_event"
 _CLOSED = CLOSED_SERIES | {"ISM"}
 _LEFTOVER = leftover_slot_ids()
+_BEAT_SLOTS = frozenset(
+    {"cold-open", "promise", "gdp", "labor", "turn", "complication", "receipt", "close"}
+)
+_MACRO_SLUG = frozenset(
+    {"usrec", "payrolls", "gdp", "sahm", "lei", "ism", "unemployment", "u3", "nber", "payems"}
+)
+_CHAIN_KEY = r"chronological[_\s-]*events?(?:[_\s-]*chain)?"
+_MONTH_NUM = {
+    "january": "01",
+    "jan": "01",
+    "february": "02",
+    "feb": "02",
+    "march": "03",
+    "mar": "03",
+    "april": "04",
+    "apr": "04",
+    "may": "05",
+    "june": "06",
+    "jun": "06",
+    "july": "07",
+    "jul": "07",
+    "august": "08",
+    "aug": "08",
+    "september": "09",
+    "sep": "09",
+    "sept": "09",
+    "october": "10",
+    "oct": "10",
+    "november": "11",
+    "nov": "11",
+    "december": "12",
+    "dec": "12",
+}
 
 _URL = re.compile(r"https?://[^\s\]\)<>\"']+")
 _CITE_LABEL = re.compile(
-    r"(?:basis|cite_url|cite\s*url|source)\s*[:=]\s*(https?://[^\s\]\)<>\"']+)",
+    r"(?:high[- ]confidence\s+basis|basis|cite_url|cite\s*url|source)"
+    r"\s*[:=]\s*(https?://[^\s\]\)<>\"']+)",
     re.I,
 )
-_HEADING = re.compile(r"(?im)^chronological[_\s-]*events\s*:?\s*$")
-_INDEXED = re.compile(r"(?im)^chronological[_\s-]*events\[(\d+)\]\s*:\s*(.+)$")
-_BASIS_FIELD = re.compile(r"(?im)Task basis chronological[_\s-]*events\s*:\s*(.+)$")
+_HIGH_BASIS = re.compile(
+    r"high[- ]confidence\s+basis\s*[:=]\s*(https?://[^\s\]\)<>\"']+)",
+    re.I,
+)
+_HEADING = re.compile(rf"(?im)^(?:argument\s+)?{_CHAIN_KEY}\s*:?\s*$")
+_INDEXED = re.compile(rf"(?im)^(?:argument\s+)?{_CHAIN_KEY}\[(\d+)\]\s*:\s*(.+)$")
+_BASIS_FIELD = re.compile(rf"(?im)Task basis {_CHAIN_KEY}\s*:\s*(.+)$")
 _BULLET = re.compile(r"(?m)^\s*(?:[-*•]|\d+[.)])\s+(.+)$")
-_NEXT_HEAD = re.compile(r"(?m)^[A-Za-z][\w ]{0,48}:\s*$")
+_NEXT_HEAD = re.compile(r"(?m)^(?:#{1,3}\s+)?[A-Za-z][\w ]{0,48}:\s*$")
 _DICT_EVENTS = re.compile(
-    r"['\"]chronological_events['\"]\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])",
-    re.S,
+    rf"['\"]{_CHAIN_KEY}['\"]\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])",
+    re.S | re.I,
 )
 _WORD = re.compile(r"[A-Za-z]{5,}")
 _MONTH_YEAR = re.compile(
@@ -44,6 +82,19 @@ _MONTH_YEAR = re.compile(
     re.I,
 )
 _YEAR_TOK = re.compile(r"^20\d{2}$")
+_BIBLIO_ID = re.compile(
+    r"\[?(?:cold-open|promise|gdp|labor|turn|complication|receipt|close)"
+    r"-(?:january|february|march|april|may|june|july|august|september|"
+    r"october|november|december)-20\d{2}\]?",
+    re.I,
+)
+_PACK_CHROME = re.compile(
+    r"official series cards only|three pack objects|leftover map|"
+    r"bibliography|executive_summary|scrape title",
+    re.I,
+)
+_SOURCES_HEAD = re.compile(r"(?im)^#{0,3}\s*sources\b")
+_EMPTY_MINT = "foundry minted nothing"
 
 
 class TimelinePlan(BaseModel):
@@ -56,6 +107,10 @@ def _clean_url(raw: str) -> str:
 
 
 def _urls_in(text: str) -> list[str]:
+    high = [_clean_url(m.group(1)) for m in _HIGH_BASIS.finditer(text or "")]
+    high = [u for u in high if u]
+    if high:
+        return list(dict.fromkeys(high))
     labeled = [_clean_url(m.group(1)) for m in _CITE_LABEL.finditer(text or "")]
     labeled = [u for u in labeled if u]
     if labeled:
@@ -104,11 +159,12 @@ def _structured_events(text: str) -> list[str]:
 
 def _events_from_obj(data: object) -> list[str]:
     if isinstance(data, dict):
-        raw = data.get("chronological_events")
-        if isinstance(raw, list):
-            return [str(x).strip() for x in raw if str(x).strip()]
-        if isinstance(raw, str) and raw.strip():
-            return [raw.strip()]
+        for key in ("chronological_event_chain", "chronological_events"):
+            raw = data.get(key)
+            if isinstance(raw, list):
+                return [str(x).strip() for x in raw if str(x).strip()]
+            if isinstance(raw, str) and raw.strip():
+                return [raw.strip()]
     if isinstance(data, list):
         return [str(x).strip() for x in data if str(x).strip()]
     return []
@@ -124,16 +180,33 @@ def _bullets(body: str) -> list[str]:
     return []
 
 
+def _drop_sources(text: str) -> str:
+    """Bibliography leftover slots are not the event chain."""
+    match = _SOURCES_HEAD.search(text or "")
+    return (text or "")[: match.start()] if match else (text or "")
+
+
+def _chrome_thesis(thesis: str) -> bool:
+    blob = (thesis or "").strip()
+    if not blob:
+        return True
+    if _BIBLIO_ID.search(blob) or _PACK_CHROME.search(blob):
+        return True
+    stripped = _CITE_LABEL.sub("", _URL.sub("", blob))
+    stripped = re.sub(r"\[[^\]]+\]", "", stripped).strip(" -—.:;")
+    return len(stripped.split()) < 4
+
+
 def parse_chronological_events(text: str) -> list[tuple[str, str]]:
-    """(thesis, url) pairs. Drop any bullet without a valid cite URL."""
-    blob = text or ""
+    """(thesis, url) pairs. Prefer event-chain High-confidence basis URLs."""
+    blob = _drop_sources(text or "")
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
     def _add(thesis: str, url: str) -> None:
         thesis = (thesis or "").strip()
         url = _clean_url(url)
-        if not thesis or not url:
+        if not thesis or not url or _chrome_thesis(thesis):
             return
         key = (thesis, url)
         if key in seen:
@@ -166,23 +239,44 @@ def parse_chronological_events(text: str) -> list[tuple[str, str]]:
     for match in _BULLET.finditer(blob):
         thesis = match.group(1).strip()
         urls = _urls_in(thesis)
-        if urls and _CITE_LABEL.search(thesis):
+        if urls and (_HIGH_BASIS.search(thesis) or _CITE_LABEL.search(thesis)):
             _add(thesis, urls[0])
     return pairs
 
 
+def _yyyy_mm(thesis: str) -> str:
+    month = _MONTH_YEAR.search(thesis or "")
+    if month:
+        return f"{month.group(0)[-4:]}-{_MONTH_NUM[month.group(1).lower()]}"
+    year = re.search(r"\b(20\d{2})\b", thesis or "")
+    return f"{year.group(1)}-01" if year else ""
+
+
 def _tl_id(thesis: str, url: str, used: set[str]) -> str:
-    words = re.findall(r"[a-z0-9]+", (thesis or "").lower())[:6]
-    base = "tl-" + ("-".join(words) or "event")
-    digest = hashlib.sha1((url or "").encode()).hexdigest()[:6]
-    cand = f"{base}-{digest}"[:80]
-    if cand in _LEFTOVER:
-        cand = f"tl-event-{digest}"
+    raw = _CITE_LABEL.sub("", _URL.sub("", thesis or ""))
+    words = [
+        w
+        for w in re.findall(r"[a-z0-9]+", raw.lower())
+        if w not in _MACRO_SLUG
+        and w not in _BEAT_SLOTS
+        and w not in {"high", "confidence", "basis", "a", "an", "the", "and", "of", "in"}
+    ][:4]
+    slug = "-".join(words) or "event"
+    stamp = _yyyy_mm(thesis)
+    cand = f"te-{slug}-{stamp}" if stamp else f"te-{slug}"
+    cand = cand.strip("-")[:80]
+    if cand in _LEFTOVER or _BIBLIO_ID.fullmatch(cand) or cand.split("-")[0] in _BEAT_SLOTS:
+        digest = hashlib.sha1((url or "").encode()).hexdigest()[:6]
+        cand = f"te-event-{stamp or digest}"
     return _unique_id(cand, used)
 
 
 def _event_print(thesis: str) -> str:
-    return _CITE_LABEL.sub("", _URL.sub("", thesis or "")).strip(" -—.:;")
+    cleaned = _HIGH_BASIS.sub("", thesis or "")
+    cleaned = _CITE_LABEL.sub("", cleaned)
+    cleaned = _URL.sub("", cleaned)
+    cleaned = re.sub(r"high[- ]confidence\s+basis\s*[:=]?\s*", "", cleaned, flags=re.I)
+    return cleaned.strip(" -—.:;")
 
 
 def plan_timeline(
@@ -261,3 +355,48 @@ def spoken_match(vo: str, finding: Finding) -> bool:
     vo_toks = {w.lower() for w in _WORD.findall(vo or "")}
     ev_toks = {w.lower() for w in _WORD.findall(blob)}
     return len(vo_toks & ev_toks) >= 2
+
+
+def has_timeline_url(findings: Iterable[Finding]) -> bool:
+    return any(
+        getattr(f, "stamp", "") == TIMELINE_STAMP
+        and bool(clean_cite_url(getattr(f, "parallel_url", None) or ""))
+        for f in findings or []
+    )
+
+
+def empty_mint_hold_ok_to_clear(reason: str, findings: Iterable[Finding], notes: str = "") -> bool:
+    """Timeline-only is not empty-macro HOLD. Named-series demand still HOLDs."""
+    if not has_timeline_url(findings):
+        return False
+    low = (reason or "").lower()
+    if "leftover 3-slot" in low or "dropped named series" in low:
+        return False
+    if _EMPTY_MINT not in low:
+        return False
+    from onecrew.foundry import _has_usrec_and_payrolls
+
+    if _has_usrec_and_payrolls(notes or ""):
+        rows = list(findings or [])
+        minted_usrec = any(getattr(f, "series", "") == "USREC" for f in rows)
+        minted_pay = any(getattr(f, "series", "") == "BLS payrolls" for f in rows)
+        if not (minted_usrec and minted_pay):
+            return False
+    return True
+
+
+def clear_empty_mint_hold(receipt: Receipt, notes: str = "") -> Receipt:
+    """Drop HOLD that exists only because Foundry minted no closed macros."""
+    if receipt.disposition != "HOLD":
+        return receipt
+    if not empty_mint_hold_ok_to_clear(receipt.hold_reason or "", receipt.findings, notes):
+        return receipt
+    kept = [
+        part.strip()
+        for part in (receipt.hold_reason or "").replace("\n", ";").split(";")
+        if part.strip() and _EMPTY_MINT not in part.lower()
+    ]
+    receipt.hold_reason = "; ".join(kept) or None
+    if not receipt.hold_reason:
+        receipt.disposition = "READY"
+    return receipt

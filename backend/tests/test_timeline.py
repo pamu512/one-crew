@@ -359,3 +359,337 @@ def test_production_timeline_path_is_not_topic_hardcoded() -> None:
         if banned.search(text):
             hits.append(str(path.relative_to(root.parent)))
     assert hits == []
+
+
+# Live packet oc-data-centers-are-going-to-cause-the--af844e08 after #46:
+# timeline_event stamps existed, HOLD stayed `foundry minted nothing`,
+# finding ids were bibliography chrome, cites preferred scrape hosts,
+# cite_recheck_attempts=0, VO kept pack leftover chrome.
+OPENAI = "https://openai.com/index/compute-campus-announcement"
+REUTERS = "https://www.reuters.com/technology/cloud-vendor-lease-scaleback-2026"
+GUARDIAN_DC = "https://www.theguardian.com/technology/2026/aug/compute-campus-boom-bubble"
+NOAH = "https://www.noahpinion.blog/p/compute-campus-scrape"
+PBS = "https://www.pbs.org/newshour/cloud-vendor-leases"
+
+_CHAIN_AND_BIBLIO = (
+    "## Argument\n"
+    "chronological_event_chain:\n"
+    f"- A consortium announced a $200B compute campus in January 2025. High-confidence basis: {OPENAI}\n"
+    f"- A cloud vendor scaled back leases in August 2026. High-confidence basis: {REUTERS}\n"
+    f"- A newspaper asked whether the boom is already a bubble. High-confidence basis: {GUARDIAN_DC}\n"
+    "\n"
+    "## Sources\n"
+    f"- [promise-january-2025] Compute campus scrape title. source: {NOAH}\n"
+    f"- [gdp-february-2025] Cloud vendor lease scrape title. source: {PBS}\n"
+    "- [labor-march-2020] Labor bibliography leftover.\n"
+    "- [turn-november-2025] Turn bibliography leftover.\n"
+    "- [complication-march-2020] Complication bibliography leftover.\n"
+    "- [receipt-june-2026] Receipt bibliography leftover.\n"
+)
+
+_BIBLIO_ONLY = (
+    "## Sources\n"
+    f"- [promise-january-2025] Compute campus scrape title. source: {NOAH}\n"
+    f"- [gdp-february-2025] Cloud vendor lease scrape title. source: {PBS}\n"
+)
+
+_BIBLIO_IDS = {
+    "promise-january-2025",
+    "gdp-february-2025",
+    "labor-march-2020",
+    "turn-november-2025",
+    "complication-march-2020",
+    "receipt-june-2026",
+}
+
+
+def test_prefer_event_chain_basis_over_bibliography_chrome() -> None:
+    """Forbidden wrap: preferring bibliography chrome over chronological_event_chain basis URLs."""
+    from onecrew.timeline import plan_timeline
+
+    planned = plan_timeline(_CHAIN_AND_BIBLIO)
+    assert all("high-confidence" not in (f.claim or "").lower() for f in planned.findings)
+    assert all("http" not in (f.claim or "").lower() for f in planned.findings)
+    urls = {row.url for row in planned.mapping}
+    assert OPENAI in urls
+    assert REUTERS in urls
+    assert GUARDIAN_DC in urls
+    assert NOAH not in urls
+    assert PBS not in urls
+    theses = " ".join(row.thesis for row in planned.mapping)
+    assert "consortium announced" in theses
+    assert "cloud vendor scaled" in theses
+    assert "scrape title" not in theses
+    assert "promise-january-2025" not in theses
+
+
+def test_never_stamp_bibliography_slot_or_scrape_title() -> None:
+    from onecrew.timeline import plan_timeline
+
+    planned = plan_timeline(_BIBLIO_ONLY)
+    assert planned.findings == []
+    assert planned.mapping == []
+
+
+def test_finding_ids_are_te_slug_yyyy_mm_not_biblio_or_macro() -> None:
+    from onecrew.timeline import plan_timeline
+
+    planned = plan_timeline(_CHAIN_AND_BIBLIO)
+    assert planned.findings
+    ids = {f.id for f in planned.findings}
+    assert ids.isdisjoint(_BIBLIO_IDS)
+    assert ids.isdisjoint({"gdp", "payrolls", "usrec", "sahm", "lei", "ism"})
+    for fid in ids:
+        assert fid.startswith("te-"), fid
+        assert not re.match(
+            r"^(promise|gdp|labor|turn|complication|receipt)-",
+            fid,
+        ), fid
+    assert any(re.search(r"20\d{2}-\d{2}$", fid) for fid in ids)
+
+
+def test_thesis_url_log_maps_event_bullet_to_basis_url(caplog) -> None:
+    from onecrew.timeline import plan_timeline
+
+    with caplog.at_level(logging.INFO, logger="onecrew.timeline"):
+        planned = plan_timeline(_CHAIN_AND_BIBLIO)
+    logged = " ".join(r.getMessage() for r in caplog.records)
+    assert "consortium announced a $200B compute campus" in logged
+    assert OPENAI in logged
+    assert NOAH not in logged
+    assert PBS not in logged
+    campus = next(row for row in planned.mapping if OPENAI in row.url)
+    assert "consortium announced" in campus.thesis
+    assert campus.url == OPENAI
+
+
+def test_empty_mint_hold_clears_when_timeline_event_url_exists() -> None:
+    """Forbidden wrap: HOLD solely for foundry minted nothing when timeline_event URLs exist."""
+    from onecrew.timeline import apply_timeline, clear_empty_mint_hold, plan_timeline
+
+    planned = plan_timeline(_CHAIN_AND_BIBLIO)
+    receipt = Receipt(
+        packet_id="oc-dc-empty-mint",
+        written=False,
+        disposition="HOLD",
+        hold_reason="foundry minted nothing",
+        findings=[],
+    )
+    apply_timeline(receipt.findings, planned)
+    receipt.timeline_map = list(planned.mapping)
+    assert any(f.stamp == "timeline_event" and (f.parallel_url or "").startswith("http") for f in receipt.findings)
+    clear_empty_mint_hold(receipt, notes="Narrative compute-campus topic. No USREC table.")
+    assert receipt.disposition == "READY"
+    assert "foundry minted nothing" not in (receipt.hold_reason or "")
+
+
+def test_empty_mint_hold_stays_when_named_series_demanded() -> None:
+    from onecrew.timeline import apply_timeline, clear_empty_mint_hold, plan_timeline
+
+    planned = plan_timeline(_CHAIN_AND_BIBLIO)
+    receipt = Receipt(
+        packet_id="oc-dc-named-hold",
+        written=False,
+        disposition="HOLD",
+        hold_reason="foundry minted nothing",
+        findings=list(planned.findings),
+        timeline_map=list(planned.mapping),
+    )
+    notes = (
+        "USREC July 2026 = 0. "
+        "Nonfarm payrolls July 2026 fell −23,000 on the CES table."
+    )
+    clear_empty_mint_hold(receipt, notes=notes)
+    assert receipt.disposition == "HOLD"
+    assert "foundry minted nothing" in (receipt.hold_reason or "")
+
+
+def test_leftover_slot_rename_to_biblio_ids_does_not_pass() -> None:
+    """Forbidden wrap: leftover-slot rename pass onto bibliography keys."""
+    from onecrew.foundry import FoundryHold, leftover_three_slot, leftover_wrap, require_minted
+
+    renamed = leftover_three_slot(
+        hit_url=NOAH,
+        hit_claim="Grounded event inside 2-3y: Compute campuses are going to cause the next economic bubble",
+        mainstream_claim="Widely repeated frame about Compute campuses",
+        miss_claim="Fringe claim about Compute campuses",
+    )
+    renamed[0].id = "promise-january-2025"
+    renamed[1].id = "gdp-february-2025"
+    renamed[2].id = "labor-march-2020"
+    assert leftover_wrap(renamed)
+    with pytest.raises(FoundryHold, match="leftover"):
+        require_minted(renamed, "Compute campuses are going to cause the next economic bubble.")
+
+
+def test_cite_repair_runs_when_all_beats_empty_and_hold_is_empty_mint() -> None:
+    """Forbidden wrap: skipping cite-repair when all beats have empty cites."""
+    packet = _packet(_CHAIN_AND_BIBLIO)
+    packet.receipt.hold_reason = "foundry minted nothing"
+    packet.receipt.findings = []
+    for beat in packet.beats:
+        beat.finding_ids = []
+    result = run_cite_recheck_loop(
+        packet,
+        search_fn=lambda **_k: (_ for _ in ()).throw(AssertionError("pack already has basis URLs")),
+    )
+    assert packet.cite_recheck_attempts >= 1
+    assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
+    tls = [f for f in packet.receipt.findings if f.stamp == "timeline_event"]
+    assert tls
+    assert {f.id for f in tls}.isdisjoint(_BIBLIO_IDS)
+    assert all(f.id.startswith("te-") for f in tls)
+    sourced = [b for b in packet.beats if any(ch.isdigit() for ch in b.vo)]
+    for beat in sourced:
+        assert beat.finding_ids, f"{beat.id} shipped untagged factual VO"
+    if result.ok:
+        assert packet.receipt.disposition == "READY"
+        assert "foundry minted nothing" not in (packet.receipt.hold_reason or "")
+    else:
+        assert "cite-repair loop exhausted" in (packet.receipt.hold_reason or "")
+
+
+def test_credit_hold_does_not_requery_parallel() -> None:
+    """Forbidden wrap: Parallel re-query after credit/402 HOLD."""
+    packet = _packet(_CHAIN_AND_BIBLIO)
+    packet.receipt.hold_reason = "Fail-closed: Parallel credit — Parallel 402. No invented pack."
+    packet.receipt.findings = []
+    packet.receipt.disposition = "HOLD"
+    for beat in packet.beats:
+        beat.finding_ids = []
+
+    def boom(**_k):
+        raise AssertionError("credit HOLD must not re-query Parallel")
+
+    result = run_cite_recheck_loop(packet, search_fn=boom)
+    assert result.ok is False
+    assert packet.receipt.disposition == "HOLD"
+    assert "402" in (packet.receipt.hold_reason or "") or "credit" in (packet.receipt.hold_reason or "").lower()
+    assert not any(f.stamp == "timeline_event" for f in packet.receipt.findings)
+
+
+def test_research_empty_mint_with_chain_is_ready(monkeypatch) -> None:
+    """_research must attach timeline_event URLs instead of HOLD-empty on empty mint."""
+    from types import SimpleNamespace
+
+    from onecrew.agent.shift import _research
+    from onecrew.foundry import FoundryHold
+    from onecrew.models import Rails
+
+    hit = OPENAI
+    packet = Packet(
+        id="oc-research-empty-mint",
+        topic="Compute campuses are going to cause the next economic bubble",
+        hook="Compute campuses are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+    )
+
+    def search(*, objective, search_queries):
+        blob = f"{objective} {' '.join(search_queries)}".lower()
+        if "hidden" in blob or "fringe" in blob:
+            return SimpleNamespace(
+                results=[SimpleNamespace(url="https://example.com/fringe", title="miss", excerpts=["fringe offtake"])]
+            )
+        return SimpleNamespace(
+            results=[SimpleNamespace(url=hit, title="campus", excerpts=["A consortium announced a $200B compute campus."])]
+        )
+
+    def extract(*, urls, objective):
+        return SimpleNamespace(
+            results=[SimpleNamespace(url=hit, title="campus", excerpts=["A consortium announced a $200B compute campus."])],
+            errors=[],
+        )
+
+    def task(*, prompt, processor="pro", task_spec=None):
+        return SimpleNamespace(output=SimpleNamespace(content=_CHAIN_AND_BIBLIO, basis=[]))
+
+    def boom_mint(*_a, **_k):
+        raise FoundryHold("foundry minted nothing")
+
+    monkeypatch.setattr("onecrew.agent.shift.search", search)
+    monkeypatch.setattr("onecrew.agent.shift.extract", extract)
+    monkeypatch.setattr("onecrew.agent.shift.run_task", task)
+    monkeypatch.setattr("onecrew.agent.shift.mint", boom_mint)
+    monkeypatch.setattr("onecrew.config.has_vertex", lambda: False)
+    receipt, _leftover, _urls, spine = _research(
+        packet, Rails(parallel=True, vertex=False, imagen=False), "2-3y"
+    )
+    assert spine
+    assert receipt.disposition == "READY"
+    assert "foundry minted nothing" not in (receipt.hold_reason or "").lower()
+    tls = [f for f in receipt.findings if f.stamp == "timeline_event"]
+    assert tls
+    assert all((f.parallel_url or "").startswith("http") for f in tls)
+    assert {f.parallel_url for f in tls} >= {OPENAI, REUTERS}
+    assert {f.id for f in tls}.isdisjoint(_BIBLIO_IDS)
+    assert all(f.id.startswith("te-") for f in tls)
+
+
+def test_writer_and_board_strip_leftover_vo_chrome() -> None:
+    from onecrew.script import _assemble
+
+    finding = Finding(
+        id="te-consortium-announced-2025-01",
+        claim="A consortium announced a $200B compute campus in January 2025.",
+        stamp="timeline_event",
+        title="timeline_event",
+        series="timeline_event",
+        print="A consortium announced a $200B compute campus in January 2025.",
+        when="January 2025",
+        parallel_url=OPENAI,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    packet = Packet(
+        id="oc-tl-chrome",
+        topic="Compute campuses are going to cause the next economic bubble",
+        hook="Compute campuses are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+        research_pack=_CHAIN_AND_BIBLIO,
+        receipt=Receipt(
+            packet_id="oc-tl-chrome",
+            written=False,
+            disposition="READY",
+            findings=[finding],
+        ),
+    )
+    units = [
+        {
+            "id": "cold-open",
+            "vo": "A consortium announced a $200B compute campus. Official series cards only",
+            "eyes": "Official series cards only. No leftover map.",
+            "finding_ids": [],
+        },
+        {
+            "id": "promise",
+            "vo": "Three pack objects on screen. The title stays a question.",
+            "eyes": "Three pack objects on screen. No leftover map.",
+            "finding_ids": [],
+        },
+        {"id": "gdp", "vo": "A cloud vendor scaled back leases in August 2026.", "eyes": "card", "finding_ids": []},
+        {"id": "labor", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "turn", "vo": "Hold on the cited print.", "eyes": "hold", "finding_ids": []},
+        {"id": "complication", "vo": "Those are not the same object.", "eyes": "gap", "finding_ids": []},
+        {"id": "receipt", "vo": "Receipt board: named series from the pack.", "eyes": "board", "finding_ids": []},
+        {"id": "close", "vo": "Near is not a switch.", "eyes": "close", "finding_ids": []},
+    ]
+    written = _assemble(packet, units)
+    spoken = written.script + "".join(f"{b.vo} {b.frame}" for b in written.beats)
+    assert "Official series cards only" not in spoken
+    assert "Three pack objects on screen" not in spoken
+    assert "leftover map" not in spoken.lower()
+    assert "promise-january-2025" not in spoken
+    cold = next(b for b in written.beats if b.id == "cold-open")
+    assert "te-consortium-announced-2025-01" in cold.finding_ids

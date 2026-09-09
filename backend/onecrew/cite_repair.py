@@ -12,8 +12,6 @@ from onecrew.foundry import (
     complete_print,
     clean_cite_url,
     _when,
-    _slug,
-    _unique_id,
 )
 from onecrew.models import MISSING, Finding, Packet, Receipt, ScriptBeat
 from onecrew.parallel_client import ParallelCreditError, ParallelDownError, search
@@ -172,10 +170,15 @@ def empty_cite_beats(packet: Packet) -> list[ScriptBeat]:
         if f.id not in _LEFTOVER
     }
     named = _named_empty_cite_ids(packet)
+    vo_beats = [
+        beat
+        for beat in packet.beats
+        if (beat.kind or "vo") != "heading" and not _is_hole(beat)
+    ]
+    if vo_beats and all(not [fid for fid in b.finding_ids if fid in known] for b in vo_beats):
+        return vo_beats
     out: list[ScriptBeat] = []
-    for beat in packet.beats:
-        if (beat.kind or "vo") == "heading" or _is_hole(beat):
-            continue
+    for beat in vo_beats:
         fids = [fid for fid in beat.finding_ids if fid in known]
         if fids:
             continue
@@ -236,7 +239,9 @@ def _finding_from_beat(beat: ScriptBeat, bag: CiteBag, used: set[str]) -> Findin
         when = _when(blob) or _when(vo)
         if not (when or "").strip():
             continue
-        fid = _unique_id(_slug(beat.id or "event", when), used)
+        from onecrew.timeline import _tl_id
+
+        fid = _tl_id(blob or vo, url, used)
         return Finding(
             id=fid,
             claim=(blob or vo)[:400],
@@ -583,6 +588,14 @@ def _clear_cite_only_hold(packet: Packet, bag: CiteBag | None = None) -> None:
     if receipt is None:
         packet.status = "ready"
         return
+    from onecrew.timeline import clear_empty_mint_hold
+
+    clear_empty_mint_hold(
+        receipt,
+        notes="\n".join(
+            p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p
+        ),
+    )
     # ponytail: print/when stays HOLD until a CiteBag proves remaining spoken beats.
     markers = _CITE_HOLD_MARKERS if bag is not None else tuple(
         m for m in _CITE_HOLD_MARKERS if m not in {"print not in cite", "when not in cite"}
@@ -658,6 +671,11 @@ def _hold_exhausted(packet: Packet, attempts: int) -> CiteRepairResult:
     )
 
 
+def _credit_hold(packet: Packet) -> bool:
+    reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
+    return "credit" in reason.lower() or "402" in reason
+
+
 def run_cite_recheck_loop(
     packet: Packet,
     *,
@@ -673,13 +691,29 @@ def run_cite_recheck_loop(
     dropped_all: list[str] = []
     hit_urls: list[str] = []
     current_bag = _packet_bag(packet, bag)
+    if _credit_hold(packet):
+        packet.cite_recheck_attempts = attempts
+        return CiteRepairResult(
+            ok=False,
+            attempts=attempts,
+            hold_reason=(packet.receipt.hold_reason if packet.receipt else None),
+        )
     entered_empty = bool(empty_cite_beats(packet))
     stamped = _stamp_pack_timeline(packet)
     attached_all.extend(stamped)
     attached_all.extend(_attach_timeline_beats(packet))
-    if entered_empty and (stamped or attached_all):
+    if entered_empty:
         attempts = max(attempts, 1)
         packet.cite_recheck_attempts = attempts
+    if packet.receipt is not None:
+        from onecrew.timeline import clear_empty_mint_hold
+
+        clear_empty_mint_hold(
+            packet.receipt,
+            notes="\n".join(
+                p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p
+            ),
+        )
     while True:
         if current_bag and (current_bag.hit_urls or current_bag.excerpts):
             attached_all.extend(_attach_from_bag(packet, current_bag))

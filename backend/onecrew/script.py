@@ -705,18 +705,22 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             and {first.series, second.series} == {"USREC", "BLS payrolls"}
             and _same_month(first.when, second.when)
         )
+        timeline_row = first is not None and (first.stamp or "") == "timeline_event"
         if smash_ok:
             smash = f"{first.series}={first.print} smashed into {second.series} {second.print}."
             eyes = f"{first.series}={first.print} and {second.series} {second.print} on screen. Official series cards only."
+        elif timeline_row:
+            smash = (first.claim or first.print or packet.tell or packet.topic or "").strip()
+            eyes = "Cited event on screen."
         elif first and first.print not in {MISSING, "", None} and leftover_costume.isdisjoint({"hormuz", "jcpoa"}):
             smash = f"{first.series}={first.print}."
             eyes = f"{first.series}={first.print} on screen. Official series cards only."
         elif first:
             smash = (first.claim or packet.tell or packet.topic or "").strip()
-            eyes = "Cited print on screen. No leftover map."
+            eyes = "Cited print on screen."
         else:
             smash = (packet.tell or packet.topic or "").strip()
-            eyes = "Official series cards only."
+            eyes = "Cited event on screen."
         units = [
         {
             "id": "cold-open",
@@ -730,30 +734,38 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
                 _promise_trigger_vo(packet, trigger)
                 if trigger
                 else _voice(
-                    "Three objects from the pack. The title is a question we will not answer with a forecast.",
+                    (
+                        "The title is a question we will not answer with a forecast."
+                        if timeline_row
+                        else "Three objects from the pack. The title is a question we will not answer with a forecast."
+                    ),
                     packet,
                 )
             ),
             "eyes": (
                 "Dated first-trigger from the pack. Official series stay on later cards."
                 if trigger
-                else "Three pack objects on screen. No leftover map."
+                else ("Cited events on later cards." if timeline_row else "Three objects labeled from the pack.")
             ),
             "finding_ids": [first.id] if first else [],
         },
         {
             "id": "gdp",
             "vo": _voice(f"{(third or first).claim}{_cite(third)}" if (third or first) else smash, packet),
-            "eyes": "New art from the cited print. Not a leftover map.",
+            "eyes": "New art from the cited print." if timeline_row else "New art from the cited print. Not a leftover map.",
             "finding_ids": [third.id] if third else [],
         },
         {
             "id": "labor",
             "vo": _voice(f"{(second or first).claim}{_cite(second or first)}" if (second or first) else smash, packet),
             "eyes": (
-                f"Named official series: {(second or first).claim}. Official page only."
-                if (second or first)
-                else "Official series cards only."
+                f"Cited event: {(second or first).claim}."
+                if timeline_row and (second or first)
+                else (
+                    f"Named official series: {(second or first).claim}. Official page only."
+                    if (second or first)
+                    else "Cited event on screen."
+                )
             ),
             "finding_ids": [(second or first).id] if (second or first) else [],
         },
@@ -761,16 +773,24 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
             "id": "turn",
             "vo": _voice(
                 (
-                    f"{first.series}={first.print}."
-                    if first and first.print not in {MISSING, "", None}
-                    else "The official series stay on the cards."
+                    (first.claim or "").strip() or "The cited event stays on the card."
+                    if timeline_row
+                    else (
+                        f"{first.series}={first.print}."
+                        if first and first.print not in {MISSING, "", None}
+                        else "The official series stay on the cards."
+                    )
                 ),
                 packet,
             ),
             "eyes": (
-                f"{first.series}={first.print} on screen."
-                if first and first.print not in {MISSING, "", None}
-                else "Official series cards only."
+                "Cited event on screen."
+                if timeline_row
+                else (
+                    f"{first.series}={first.print} on screen."
+                    if first and first.print not in {MISSING, "", None}
+                    else "Cited event on screen."
+                )
             ),
             "finding_ids": [first.id] if first else [],
         },
@@ -782,8 +802,19 @@ def _eight_from_pack(packet: Packet) -> list[dict]:
         },
         {
             "id": "receipt",
-            "vo": _voice("Receipt board: named series from the pack. Holes labeled.", packet),
-            "eyes": "Receipt board. Named series. Holes labeled.",
+            "vo": _voice(
+                (
+                    "Receipt board: cited events from the pack. Holes labeled."
+                    if timeline_row
+                    else "Receipt board: named series from the pack. Holes labeled."
+                ),
+                packet,
+            ),
+            "eyes": (
+                "Receipt board. Cited events. Holes labeled."
+                if timeline_row
+                else "Receipt board. Named series. Holes labeled."
+            ),
             "finding_ids": [f.id for f in findings[:4] if f.id not in _LEFTOVER_IDS],
         },
         {
@@ -999,12 +1030,28 @@ _HOLD_META = re.compile(
 _SPEAKABLE_FALLBACK = "The named print stays on the card."
 
 
+_VO_CHROME = re.compile(
+    r"official series cards only\.?|"
+    r"three pack objects on screen\.?|"
+    r"(?:new art,?\s+)?not a leftover map\.?|"
+    r"no leftover map\.?",
+    re.I,
+)
+
+
 def _strip_hold_meta(text: str) -> tuple[str, list[str]]:
     """Drop production/hold notes. Same class as pack slot-token strip."""
     cleaned, n = _HOLD_META.subn("", text or "")
     if not n:
         return text or "", []
     return cleaned, ["hold meta stripped from VO"]
+
+
+def _strip_vo_chrome(text: str) -> tuple[str, list[str]]:
+    cleaned, n = _VO_CHROME.subn("", text or "")
+    if not n:
+        return text or "", []
+    return _tidy_vo(cleaned), ["leftover VO chrome stripped"]
 
 
 def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
@@ -1041,12 +1088,13 @@ def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[
 
     cleaned = _RISK_TOPIC.sub(drop_topic, cleaned)
     cleaned, meta_nits = _strip_hold_meta(cleaned)
-    if not nits and not meta_nits:
+    cleaned, chrome_nits = _strip_vo_chrome(cleaned)
+    if not nits and not meta_nits and not chrome_nits:
         return text or "", []
     cleaned = _tidy_vo(cleaned)
     if not cleaned:
         cleaned = _SPEAKABLE_FALLBACK
-    # ponytail: hold-meta is cleaned, not a HOLD nit. Slot/topic nits still warn.
+    # ponytail: hold-meta/chrome is cleaned, not a HOLD nit. Slot/topic nits still warn.
     return cleaned, list(dict.fromkeys(nits))
 
 
