@@ -260,20 +260,16 @@ def _spoken_window(window: str) -> str:
 
 
 def _row_covers_names(vo: str, rows: list) -> bool:
-    from onecrew.timeline import host_labels, pair_covers_vo, stamp_text, vo_proper_names
+    from onecrew.timeline import pair_covers_vo, stamp_text, vo_proper_names
 
     names = vo_proper_names(vo)
     if not names or not rows:
         return not names
-    blob = " ".join(stamp_text(row) for row in rows)
-    labels: set[str] = set()
     for row in rows:
         url = getattr(row, "url", None) or getattr(row, "parallel_url", None) or ""
-        labels |= {lab.lower() for lab in host_labels(url)}
-        if pair_covers_vo(vo, stamp_text(row), url):
-            return True
-    blob_l = f"{blob} {' '.join(getattr(r, 'url', '') or '' for r in rows)}".lower()
-    return all(name in blob_l or name in labels for name in names)
+        if not pair_covers_vo(vo, stamp_text(row), url):
+            return False
+    return True
 
 
 def _row_supports_prints(vo: str, rows: list) -> bool:

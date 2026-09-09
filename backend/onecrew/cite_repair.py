@@ -199,10 +199,12 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
             out.append(beat)
             continue
         names = vo_proper_names(spoken)
-        if names and tls and not any(stamp_covers_vo(spoken, finding) for finding in tls):
+        name_ok = [f for f in tls if stamp_covers_vo(spoken, f)]
+        if names and tls and (not name_ok or len(name_ok) != len(tls)):
             out.append(beat)
             continue
-        if tls and not union_supports_prints(spoken, tls):
+        print_rows = name_ok or tls
+        if print_rows and not union_supports_prints(spoken, print_rows):
             from onecrew.timeline import _event_nums
 
             if _event_nums(spoken):

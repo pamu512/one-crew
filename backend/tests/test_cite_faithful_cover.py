@@ -1,7 +1,7 @@
 """Cite-faithfulness: named-entity ALL-cover, chrome VO, print skew, repair loop.
 
-Fixtures use invented orgs/prints (Helios / Meridian Desk / 14.2%). Production
-code must stay free of these names and of live office-vacancy topic strings.
+Fixtures use invented orgs/prints (Helios / Meridian Desk / Polaris / 14.2% / −18%).
+Production must stay free of these names and of live topic strings.
 """
 
 from __future__ import annotations
@@ -17,12 +17,20 @@ from onecrew.room import grade_room, make_grade_artifact, run_room_loop
 HELIOS_WIRE = "https://www.helios-wire.test/2026/06/helios-paused-leases"
 MERIDIAN_DESK = "https://www.meridian-desk.test/insights/campus-power-2026"
 HELIOS_PRINT = "https://www.helios-wire.test/2026/06/helios-occupancy-14-2"
+HELIOS_RATE_A = "https://www.helios-wire.test/2026/06/helios-lane-18"
+HELIOS_RATE_B = "https://www.helios-wire.test/2026/06/helios-lane-7"
+POLARIS_DESK = "https://www.polaris-desk.test/insights/lane-rates-2026"
 
 _LIVE_TOPIC = (
     r"office[- ]vacancy|cushman|yardi|\baxios\b|\bamazon\b|"
-    r"data[- ]centers?|stargate|\bmicrosoft\b|\bguardian\b"
+    r"data[- ]centers?|stargate|\bmicrosoft\b|\bguardian\b|"
+    r"red[- ]sea|xeneta|suaidglobal|freightos|"
+    r"−25%|−10%|-25%|-10%"
 )
-_FIXTURE = r"helios|meridian-desk|meridian desk|\b14\.2\b"
+_FIXTURE = (
+    r"helios|meridian-desk|meridian desk|\b14\.2\b|"
+    r"polaris-desk|polaris desk|−18%|−7%"
+)
 
 
 def _finding(
@@ -76,6 +84,46 @@ def _helios_print_stamp() -> Finding:
         url=HELIOS_PRINT,
         printed="14.2%",
         title="Helios occupancy 14.2%",
+    )
+
+
+def _helios_rate_a() -> Finding:
+    return _finding(
+        fid="te-helios-lane-18",
+        claim="Helios lane rates printed −18% in June 2026.",
+        url=HELIOS_RATE_A,
+        printed="−18%",
+        title="Helios lane rates −18%",
+    )
+
+
+def _helios_rate_b() -> Finding:
+    return _finding(
+        fid="te-helios-lane-7",
+        claim="Helios lane rates printed −7% in June 2026.",
+        url=HELIOS_RATE_B,
+        printed="−7%",
+        title="Helios lane rates −7%",
+    )
+
+
+def _helios_rate_full() -> Finding:
+    return _finding(
+        fid="te-helios-lane-full",
+        claim="Helios lane rates printed −18% and −7% in June 2026.",
+        url=HELIOS_RATE_A,
+        printed="−18% −7%",
+        title="Helios lane rates −18% −7%",
+    )
+
+
+def _polaris_print_only() -> Finding:
+    return _finding(
+        fid="te-polaris-lanes",
+        claim="Lane rates printed −18% and −7% on the survey.",
+        url=POLARIS_DESK,
+        printed="−18% −7%",
+        title="Lane rate survey",
     )
 
 
@@ -400,6 +448,170 @@ def test_room_loop_cite_faithfulness_still_holds_without_inventing() -> None:
     )
     assert loop.disposition == "HOLD"
     assert "cite-faithfulness" in (loop.hold_reason or "").lower()
+
+
+def test_org_plus_prints_reattach_covering_host_not_print_only_stamp() -> None:
+    """Org + two prints cannot stay on a host that lacks the org when covering hosts exist."""
+    from onecrew.script import _assemble
+    from onecrew.timeline import stamp_covers_vo, url_host
+
+    cover_a = _helios_rate_a()
+    cover_b = _helios_rate_b()
+    wrong = _polaris_print_only()
+    vo = "Helios printed −18% and −7%."
+    assert stamp_covers_vo(vo, cover_a) is True
+    assert stamp_covers_vo(vo, cover_b) is True
+    assert stamp_covers_vo(vo, wrong) is False
+    packet = _packet(
+        _pack(
+            (cover_a.claim, HELIOS_RATE_A),
+            (cover_b.claim, HELIOS_RATE_B),
+            (wrong.claim, POLARIS_DESK),
+        ),
+        [wrong, cover_a, cover_b],
+    )
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "turn": {
+                    "vo": vo,
+                    "eyes": "card",
+                    "finding_ids": [wrong.id],
+                }
+            }
+        ),
+    )
+    beat = next(b for b in written.beats if b.id == "turn")
+    cited = [f for f in written.receipt.findings if f.id in beat.finding_ids]
+    assert wrong.id not in beat.finding_ids
+    assert cited
+    assert all(url_host(f.parallel_url or "") == "helios-wire.test" for f in cited)
+    spoken = f"{beat.vo} {beat.frame or ''}"
+    assert re.search(r"helios", spoken, re.I)
+    assert "18" in spoken and "7" in spoken
+
+
+def test_org_plus_prints_prefer_full_cover_over_partial_plus_wrong_host() -> None:
+    """A name+print stamp wins over leftover attach of a print-only host."""
+    from onecrew.script import _assemble
+    from onecrew.timeline import stamp_covers_vo, stamp_supports_prints, stamps_for_vo, url_host
+
+    full = _helios_rate_full()
+    partial = _helios_rate_b()
+    wrong = _polaris_print_only()
+    vo = "Helios printed −18% and −7%."
+    assert stamp_covers_vo(vo, full) is True
+    assert stamp_supports_prints(vo, full) is True
+    assert stamp_covers_vo(vo, wrong) is False
+    chosen = stamps_for_vo(vo, [wrong, full, partial], [])
+    assert {f.id for f in chosen} == {full.id}
+    packet = _packet(
+        _pack(
+            (full.claim, HELIOS_RATE_A),
+            (partial.claim, HELIOS_RATE_B),
+            (wrong.claim, POLARIS_DESK),
+        ),
+        [wrong, full, partial],
+    )
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "turn": {
+                    "vo": vo,
+                    "eyes": "card",
+                    "finding_ids": [wrong.id],
+                }
+            }
+        ),
+    )
+    beat = next(b for b in written.beats if b.id == "turn")
+    cited = [f for f in written.receipt.findings if f.id in beat.finding_ids]
+    assert wrong.id not in beat.finding_ids
+    assert cited
+    assert all(url_host(f.parallel_url or "") == "helios-wire.test" for f in cited)
+    assert any(stamp_covers_vo(vo, f) and stamp_supports_prints(vo, f) for f in cited)
+
+
+def test_org_plus_prints_drop_named_claim_without_covering_host() -> None:
+    """No covering host → drop the named claim. Do not keep the print-only host."""
+    from onecrew.script import _assemble
+
+    wrong = _polaris_print_only()
+    packet = _packet(_pack((wrong.claim, POLARIS_DESK)), [wrong])
+    written = _assemble(
+        packet,
+        _eight_units(
+            {
+                "turn": {
+                    "vo": "Helios printed −18% and −7%.",
+                    "eyes": "card",
+                    "finding_ids": [wrong.id],
+                }
+            }
+        ),
+    )
+    beat = next(b for b in written.beats if b.id == "turn")
+    assert wrong.id not in beat.finding_ids
+    assert not re.search(r"helios", beat.vo, re.I)
+
+
+def test_cite_repair_reattaches_covering_host_for_org_plus_prints() -> None:
+    cover_a = _helios_rate_a()
+    cover_b = _helios_rate_b()
+    wrong = _polaris_print_only()
+    packet = _packet(
+        _pack(
+            (cover_a.claim, HELIOS_RATE_A),
+            (cover_b.claim, HELIOS_RATE_B),
+            (wrong.claim, POLARIS_DESK),
+        ),
+        [wrong, cover_a, cover_b],
+    )
+    packet.beats[4].vo = "NARRATOR\nHelios printed −18% and −7%."
+    packet.beats[4].finding_ids = [wrong.id]
+    packet.receipt.disposition = "HOLD"
+    packet.receipt.hold_reason = "room recut other: cite-faithfulness"
+    packet.status = "hold"
+
+    def _no_search(**_k):
+        return SimpleNamespace(results=[])
+
+    result = run_cite_recheck_loop(packet, search_fn=_no_search)
+    assert packet.cite_recheck_attempts >= 1
+    assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
+    turn = next(b for b in packet.beats if b.id == "turn")
+    cited = [f for f in packet.receipt.findings if f.id in turn.finding_ids]
+    assert wrong.id not in turn.finding_ids
+    spoken = f"{turn.vo} {turn.frame or ''}"
+    if re.search(r"helios", spoken, re.I):
+        assert cited
+        from onecrew.timeline import url_host
+
+        assert all(url_host(f.parallel_url or "") == "helios-wire.test" for f in cited)
+        assert "18" in spoken and "7" in spoken
+    else:
+        assert not result.ok or not cited
+        reason = (packet.receipt.hold_reason or "").lower()
+        assert "cite-faithfulness" in reason or "empty beat" in reason
+
+
+def test_room_flags_print_only_host_on_named_org_vo() -> None:
+    wrong = _polaris_print_only()
+    packet = _packet(_pack((wrong.claim, POLARIS_DESK)), [wrong])
+    packet.script = (
+        "Timed VO · youtube · one_time_short_episode\n\n"
+        "BEAT 5 — turn\n"
+        "00:80–01:00\n"
+        "NARRATOR\n"
+        f"Helios printed −18% and −7%. [{wrong.id}]\n"
+    )
+    packet.beats[4].vo = f"NARRATOR\nHelios printed −18% and −7%. [{wrong.id}]"
+    packet.beats[4].finding_ids = [wrong.id]
+    grade = grade_room(make_grade_artifact(packet), grader=lambda _a: RoomGrade(vote="ship"))
+    assert grade.vote == "recut"
+    assert "cite-faithfulness" in (grade.recut_detail or "").lower()
 
 
 def test_production_grep_stays_clear_of_fixtures_and_live_topic() -> None:
