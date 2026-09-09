@@ -104,6 +104,8 @@ _PACK_CHROME = re.compile(
     re.I,
 )
 _URL_REUSE_CAP = 2
+URL_REUSE_CAP = _URL_REUSE_CAP
+MAX_CITES_PER_BEAT = 2
 _SOURCES_HEAD = re.compile(r"(?im)^#{0,3}\s*sources\b")
 _LEFT_OUT = re.compile(
     r"(?im)^Left out:\s*(.+?)\.\s*URL:\s*(https?://[^\s]+?)\.\s*reason=(\w+)"
@@ -806,17 +808,68 @@ def stamps_for_vo(
         want_n -= give_n
         want_m -= give_m
     if not _event_nums(vo):
-        return out
+        return out[:MAX_CITES_PER_BEAT]
     num_rows = [f for f in out if _event_nums(vo) & _event_nums(stamp_text(f))]
     month_need = _months(vo) - _months(" ".join(stamp_text(f) for f in num_rows))
     when_rows = [f for f in out if month_need & _months(stamp_text(f))]
-    return list({f.id: f for f in [*num_rows, *when_rows]}.values()) or out
+    picked = list({f.id: f for f in [*num_rows, *when_rows]}.values()) or out
+    return picked[:MAX_CITES_PER_BEAT]
+
+
+def _reuse_capped(finding: Finding) -> bool:
+    """Parallel/cite rows share the host cap. CLOSED_SERIES official stamps do not."""
+    if not (getattr(finding, "parallel_url", None) or "").strip():
+        return False
+    series = (getattr(finding, "series", None) or "").strip()
+    return series not in CLOSED_SERIES
+
+
+def cap_beat_cites(
+    vo: str,
+    fids: list[str],
+    findings: Iterable[Finding],
+    *,
+    cap: int = MAX_CITES_PER_BEAT,
+) -> list[str]:
+    """Keep CLOSED_SERIES. Cap other board cites to covering stamps that support the VO."""
+    rows = list(findings or [])
+    by_id = {f.id: f for f in rows}
+    closed = [
+        fid
+        for fid in fids
+        if fid in by_id and (by_id[fid].series or "").strip() in CLOSED_SERIES
+    ]
+    other = [fid for fid in fids if fid in by_id and fid not in closed]
+    if len(other) <= cap:
+        keep = set(closed) | set(other)
+        return [fid for fid in fids if fid in keep]
+    load = host_load(rows)
+
+    def _score(fid: str) -> tuple:
+        finding = by_id[fid]
+        cover = stamp_covers_vo(vo, finding)
+        support = stamp_supports_prints(vo, finding)
+        printed = _print_bearing(finding)
+        host = url_host(finding.parallel_url or "")
+        return (
+            -(1 if cover and support else 0),
+            -(1 if cover else 0),
+            -(1 if printed else 0),
+            load[host],
+            fid,
+        )
+
+    covering = [fid for fid in other if stamp_covers_vo(vo, by_id[fid])]
+    pool = covering or other
+    picked = sorted(pool, key=_score)[:cap]
+    keep = set(closed) | set(picked)
+    return [fid for fid in fids if fid in keep]
 
 
 def host_load(findings: Iterable[Finding]) -> Counter[str]:
     used: Counter[str] = Counter()
     for finding in findings or []:
-        if getattr(finding, "stamp", "") != TIMELINE_STAMP:
+        if not _reuse_capped(finding):
             continue
         host = url_host(getattr(finding, "parallel_url", None) or "")
         if host:
@@ -845,17 +898,14 @@ def cap_url_reuse(
     findings: list[Finding],
     pairs: Iterable[tuple[str, str]],
 ) -> list[Finding]:
-    """Same URL or host on >2 timeline_event rows is a smell unless that exact basis repeats."""
+    """Same URL or host on >2 Parallel/cite rows is a smell unless that exact basis repeats."""
     basis_n = Counter(u for _t, u in (pairs or []) if u)
     used: Counter[str] = Counter()
     used_host: Counter[str] = Counter()
     kept: list[Finding] = []
     for finding in findings:
-        if getattr(finding, "stamp", "") != TIMELINE_STAMP:
-            kept.append(finding)
-            continue
         url = (finding.parallel_url or "").strip()
-        if not url:
+        if not _reuse_capped(finding):
             kept.append(finding)
             continue
         cap = basis_n[url] if basis_n[url] else _URL_REUSE_CAP

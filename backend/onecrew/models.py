@@ -299,6 +299,7 @@ class GradeArtifact(BaseModel):
     stamped_findings: list[StampedFinding] = Field(default_factory=list)
     parallel_cites: str = ""
     timeline_map: list[TimelineMapRow] = Field(default_factory=list)
+    tell: str = ""
 
     def findings_block(self) -> str:
         return "\n".join(row.line() for row in self.stamped_findings)

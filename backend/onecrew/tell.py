@@ -40,6 +40,23 @@ def invents_frame(*, cut: Cut | None, tell: str) -> bool:
     return _wants_story(tell)
 
 
+def wants_no_forecast_theater(tell: str) -> bool:
+    """Tell asked for cite-faithful realized prints. Forecast/outlook is not the spine."""
+    text = (tell or "").lower()
+    return any(
+        cue in text
+        for cue in (
+            "no forecast theater",
+            "forecast theater",
+            "no forecast",
+            "realized print",
+            "cited print",
+            "cite-faithful",
+            "cite faithful",
+        )
+    )
+
+
 def tell_lane(tell: str) -> str:
     """Craft hint from free text. Not an enum and not a validator."""
     text = (tell or "").lower()

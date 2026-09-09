@@ -84,6 +84,61 @@ def pack_numbers(text: str) -> list[str]:
     return _numbers_in(text)
 
 
+_FORECAST_SPINE = re.compile(
+    r"\boutlook\s+forecast\b|"
+    r"\bforecasts?\s+from\b|"
+    r"\bforecast(?:ed|s)?\s+a\b|"
+    r"\bprojects?\s+a\b",
+    re.I,
+)
+_FORECAST_META = re.compile(r"will not answer with a forecast", re.I)
+
+
+def is_forecast_theater_vo(text: str) -> bool:
+    """Agency forecast/outlook as the spoken spine. Meta 'no forecast' lines are not theater."""
+    body = _FORECAST_META.sub("", _vo_lines(text) or text or "")
+    return bool(_FORECAST_SPINE.search(body))
+
+
+def _strip_forecast_spine(text: str) -> str:
+    parts = re.split(r"(?<=[.!?])\s+", text or "")
+    keep = [
+        part
+        for part in parts
+        if part.strip() and (bool(_FORECAST_META.search(part)) or not _FORECAST_SPINE.search(part))
+    ]
+    return _tidy_vo(" ".join(keep))
+
+
+def _refuse_forecast_theater(
+    vo: str,
+    fids: list[str],
+    findings: list[Finding],
+    tell: str,
+) -> tuple[list[str], str, bool]:
+    from onecrew.tell import wants_no_forecast_theater
+
+    if not wants_no_forecast_theater(tell) or not is_forecast_theater_vo(vo):
+        return fids, vo, False
+    cleaned = _strip_forecast_spine(vo)
+    if cleaned and not is_forecast_theater_vo(cleaned):
+        return fids, cleaned, False
+    spoken = speak_stamp_fact(fids, findings) or speak_stamps(fids, findings)
+    if spoken and not is_forecast_theater_vo(spoken):
+        return fids, spoken, False
+    return fids, vo, True
+
+
+def _drop_extra_cite_brackets(text: str, fids: list[str]) -> str:
+    keep = set(fids)
+
+    def _keep(match: re.Match[str]) -> str:
+        token = (match.group(1) or "").strip()
+        return match.group(0) if token in keep else ""
+
+    return re.sub(r"\s*\[([^\[\]]+)\]", _keep, text or "")
+
+
 _LEFTOVER_IDS = frozenset({"timeline-hit", "timeline-frame", "timeline-miss"})
 _SHORT_IDS = {
     "USREC": frozenset({"usrec", "usrec-july-2026"}),
@@ -236,13 +291,27 @@ def _link_pack_findings(
             keep_ids.add(finding.id)
     timeline_ids = {f.id for f in findings if f.stamp == "timeline_event"}
     by_id = {f.id: f for f in findings}
-    return [
+    from onecrew.timeline import cap_beat_cites, vo_proper_names
+
+    names = vo_proper_names(vo)
+    kept = [
         fid
         for fid in out
         if fid not in timeline_ids
         or fid in keep_ids
         or (fid in by_id and stamp_covers_vo(vo, by_id[fid]))
     ]
+    covering = [fid for fid in kept if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
+    if names and covering:
+        from onecrew.verify import CLOSED_SERIES
+
+        closed = [
+            fid
+            for fid in kept
+            if fid in by_id and (by_id[fid].series or "").strip() in CLOSED_SERIES
+        ]
+        kept = list(dict.fromkeys([*covering, *closed]))
+    return cap_beat_cites(vo, kept, findings)
 
 
 def _fail_closed(packet: Packet, holes: list[str]) -> Packet:
@@ -1129,7 +1198,14 @@ def _align_vo_to_stamps(
     findings: list[Finding],
 ) -> tuple[list[str], str]:
     """Named-entity / print VO may only keep a timeline stamp that covers it. Else drop."""
-    from onecrew.timeline import _event_nums, stamp_covers_vo, stamp_text, stamps_for_vo, vo_proper_names
+    from onecrew.timeline import (
+        _event_nums,
+        cap_beat_cites,
+        stamp_covers_vo,
+        stamp_text,
+        stamps_for_vo,
+        vo_proper_names,
+    )
 
     by_id = {f.id: f for f in findings}
     timeline = {f.id for f in findings if f.stamp == "timeline_event"}
@@ -1146,9 +1222,9 @@ def _align_vo_to_stamps(
             keep = [f.id for f in chosen]
             spoken = speak_stamps(keep, findings)
             if spoken and keep:
-                return grounded + keep, spoken
-            return grounded, ""
-        return fids, vo
+                return cap_beat_cites(vo, grounded + keep, findings), spoken
+            return cap_beat_cites(vo, grounded, findings), ""
+        return cap_beat_cites(vo, fids, findings), vo
     covered = [fid for fid in tl_fids if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
     chosen = stamps_for_vo(vo, findings, [])
     if chosen:
@@ -1162,23 +1238,33 @@ def _align_vo_to_stamps(
             if spoken and printed:
                 return grounded + [f.id for f in printed], spoken
             return grounded, ""
-        keep_ids = grounded + [f.id for f in chosen]
+        keep_ids = cap_beat_cites(cleaned, grounded + [f.id for f in chosen], findings)
         return keep_ids, _strip_unsupported_prints(cleaned, keep_ids, findings)
     if covered:
         cleaned = vo
         for fid in tl_fids:
             if fid not in covered:
                 cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
-        keep_ids = grounded + covered
+        keep_ids = cap_beat_cites(cleaned, grounded + covered, findings)
         return keep_ids, _strip_unsupported_prints(cleaned, keep_ids, findings)
     for finding in findings:
         if finding.stamp == "timeline_event" and stamp_covers_vo(vo, finding):
             cleaned = vo
             for fid in tl_fids:
                 cleaned = re.sub(rf"\s*\[{re.escape(fid)}\]", "", cleaned).strip()
-            return grounded + [finding.id], cleaned
+            return cap_beat_cites(cleaned, grounded + [finding.id], findings), cleaned
     if not tl_fids and grounded:
-        return grounded, vo
+        covering = [fid for fid in grounded if fid in by_id and stamp_covers_vo(vo, by_id[fid])]
+        if covering:
+            from onecrew.verify import CLOSED_SERIES
+
+            closed = [
+                fid
+                for fid in grounded
+                if fid in by_id and (by_id[fid].series or "").strip() in CLOSED_SERIES
+            ]
+            return cap_beat_cites(vo, list(dict.fromkeys([*covering, *closed])), findings), vo
+        return cap_beat_cites(vo, grounded, findings), vo
     cleaned = _drop_named_claims(vo, names)
     cleaned = _strip_unsupported_prints(cleaned, grounded, findings)
     for fid in tl_fids:
@@ -1646,6 +1732,15 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             fids = _link_pack_findings(vo, fids, rows, packet=packet)
             fids, vo = _align_vo_to_stamps(vo, fids, rows)
             fids, eyes = _align_vo_to_stamps(eyes, fids, rows)
+            from onecrew.timeline import cap_beat_cites
+
+            fids, vo, forecast_hold = _refuse_forecast_theater(vo, fids, rows, packet.tell or "")
+            fids, eyes, frame_hold = _refuse_forecast_theater(eyes, fids, rows, packet.tell or "")
+            if forecast_hold or frame_hold:
+                slot_nits.append("forecast theater")
+            fids = cap_beat_cites(vo, fids, rows)
+            vo = _drop_extra_cite_brackets(vo, fids)
+            eyes = _drop_extra_cite_brackets(eyes, fids)
             cited = [row for row in rows if row.id in fids]
             if is_title_read_vo(vo, cited):
                 spoken = speak_stamp_fact(fids, rows)
@@ -1783,6 +1878,9 @@ def _prompt(packet: Packet, units: list[dict]) -> str:
         "Uncited LEI/ISM is a warning, not a blank draft.\n"
         "Nonfiction: nothing uncited from Parallel cites. "
         "Every sourced beat must attach real finding ids or pack cite URLs. "
+        "When the tell asks for cite-faithful realized prints and no forecast theater, "
+        "do not speak agency forecasts or outlooks as the spine — realized prints only. "
+        "Cap each beat at one or two covering stamps. Diversify hosts. "
         "Fiction: research is reference only; no real person names from the cites.\n"
         "Host/reporter only on news cuts. No Leila, no Reza, no Gulf chart leftover.\n"
         "Return 8-beat JSON from the pack.\n"
