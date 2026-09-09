@@ -167,6 +167,25 @@ def is_cite_faithfulness_hold(reason: str) -> bool:
     )
 
 
+def stamp_cite_recheck_attempts(packet: Packet, attempts: int | None = None) -> int:
+    """Write the counter on packet AND receipt. Shift persist reads the receipt."""
+    n = int(getattr(packet, "cite_recheck_attempts", 0) or 0)
+    receipt = packet.receipt
+    if receipt is not None:
+        n = max(n, int(getattr(receipt, "cite_recheck_attempts", 0) or 0))
+    if attempts is not None:
+        n = max(n, int(attempts or 0))
+    reason = (receipt.hold_reason or "") if receipt else ""
+    grade = getattr(packet, "room_grade", None)
+    detail = getattr(grade, "recut_detail", "") or ""
+    if is_cite_faithfulness_hold(f"{reason} {detail}"):
+        n = max(n, 1)
+    packet.cite_recheck_attempts = n
+    if receipt is not None:
+        receipt.cite_recheck_attempts = n
+    return n
+
+
 def _named_empty_cite_ids(packet: Packet) -> set[str]:
     reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
     ids: set[str] = set()
@@ -190,11 +209,13 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
         has_tone_chrome,
         is_action_chrome_vo,
         is_broad_scope_vo,
+        is_hanging_clause_vo,
         is_pack_chrome_vo,
         is_print_hole,
         is_thin_frame,
         is_thin_title_read_vo,
         is_title_read_vo,
+        is_unverified_meta_vo,
         stamp_scope,
     )
     from onecrew.timeline import (
@@ -236,6 +257,8 @@ def faithless_cite_beats(packet: Packet) -> list[ScriptBeat]:
         ) and any(stamp_scope(f) == "broad" for f in receipt.findings)
         if (
             has_tone_chrome(beat.vo)
+            or is_unverified_meta_vo(beat.vo)
+            or is_hanging_clause_vo(beat.vo)
             or is_title_read_vo(beat.vo, cited)
             or is_thin_title_read_vo(beat.vo, cited, prior_prints=prior)
             or is_action_chrome_vo(beat.vo, beat.frame or "")
@@ -953,11 +976,15 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         drop_thin_title_read_beats,
         has_tone_chrome,
         is_action_chrome_vo,
+        is_hanging_clause_vo,
         is_pack_chrome_vo,
         is_print_hole,
         is_thin_frame,
         is_thin_title_read_vo,
         is_title_read_vo,
+        is_unverified_meta_vo,
+        strip_hanging_clause_vo,
+        strip_unverified_meta_vo,
         prefer_covering_print,
         prefer_covering_scope,
         speak_stamp_fact,
@@ -991,6 +1018,10 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         new_vo = _drop_extra_cite_brackets(new_vo, keep)
         new_frame = _drop_extra_cite_brackets(new_frame, keep)
         new_vo, _ = _strip_tone_chrome(new_vo)
+        if is_unverified_meta_vo(new_vo):
+            new_vo = strip_unverified_meta_vo(new_vo)
+        if is_hanging_clause_vo(new_vo):
+            new_vo = strip_hanging_clause_vo(new_vo)
         cited = [f for f in receipt.findings if f.id in keep]
         prior = [_vo_lines(p.vo) for p in packet.beats[: packet.beats.index(beat)] if (p.kind or "vo") != "heading"]
         if is_title_read_vo(new_vo, cited) or is_print_hole(new_vo):
@@ -1000,7 +1031,13 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
             elif is_thin_title_read_vo(new_vo, cited, prior_prints=prior):
                 new_vo = ""
                 keep = []
-        elif has_tone_chrome(new_vo) or is_pack_chrome_vo(new_vo) or is_action_chrome_vo(new_vo, beat.frame or ""):
+        elif (
+            has_tone_chrome(new_vo)
+            or is_unverified_meta_vo(new_vo)
+            or is_hanging_clause_vo(new_vo)
+            or is_pack_chrome_vo(new_vo)
+            or is_action_chrome_vo(new_vo, beat.frame or "")
+        ):
             new_vo = speak_stamps(keep, list(receipt.findings))
         elif not (new_vo or "").strip():
             new_vo = speak_stamps(keep, list(receipt.findings))
@@ -1165,7 +1202,7 @@ def _board_gate_reason(packet: Packet) -> str | None:
 
 
 def _hold_reason(packet: Packet, attempts: int, reason: str) -> CiteRepairResult:
-    packet.cite_recheck_attempts = attempts
+    stamp_cite_recheck_attempts(packet, attempts)
     receipt = packet.receipt
     if receipt is None:
         receipt = Receipt(
@@ -1187,7 +1224,7 @@ def _hold_reason(packet: Packet, attempts: int, reason: str) -> CiteRepairResult
 
 
 def _hold_cite_faithfulness(packet: Packet, attempts: int) -> CiteRepairResult:
-    packet.cite_recheck_attempts = attempts
+    stamp_cite_recheck_attempts(packet, attempts)
     receipt = packet.receipt
     reason = "cite-faithfulness"
     if receipt is None:
@@ -1210,7 +1247,7 @@ def _hold_cite_faithfulness(packet: Packet, attempts: int) -> CiteRepairResult:
 
 
 def _hold_empty_beats(packet: Packet, attempts: int) -> CiteRepairResult:
-    packet.cite_recheck_attempts = attempts
+    stamp_cite_recheck_attempts(packet, attempts)
     receipt = packet.receipt
     if receipt is None:
         receipt = Receipt(
@@ -1234,7 +1271,7 @@ def _hold_empty_beats(packet: Packet, attempts: int) -> CiteRepairResult:
 
 
 def _hold_exhausted(packet: Packet, attempts: int) -> CiteRepairResult:
-    packet.cite_recheck_attempts = attempts
+    stamp_cite_recheck_attempts(packet, attempts)
     receipt = packet.receipt
     if receipt is None:
         receipt = Receipt(
@@ -1296,7 +1333,7 @@ def _hold_if_hits_unstamped(packet: Packet, attempts: int) -> CiteRepairResult |
     if UNSTAMPED_HITS not in prior:
         receipt.hold_reason = f"{prior}; {UNSTAMPED_HITS}".strip("; ") if prior else UNSTAMPED_HITS
     packet.status = "hold"
-    packet.cite_recheck_attempts = attempts
+    stamp_cite_recheck_attempts(packet, attempts)
     return CiteRepairResult(ok=False, attempts=attempts, hold_reason=UNSTAMPED_HITS)
 
 
@@ -1308,19 +1345,16 @@ def run_cite_recheck_loop(
 ) -> CiteRepairResult:
     """Scan missing URLs, print/when misses, and empty-cite sourced beats. Re-query up to 3. Attach or drop. HOLD on 4th."""
     if invents_frame(cut=packet.cut, tell=packet.tell or ""):
-        return CiteRepairResult(ok=True, attempts=int(getattr(packet, "cite_recheck_attempts", 0) or 0))
+        n = stamp_cite_recheck_attempts(packet)
+        return CiteRepairResult(ok=True, attempts=n)
     search_fn = search_fn or search
-    attempts = int(getattr(packet, "cite_recheck_attempts", 0) or 0)
-    reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
-    if is_cite_faithfulness_hold(reason):
-        attempts = max(attempts, 1)
-        packet.cite_recheck_attempts = attempts
+    attempts = stamp_cite_recheck_attempts(packet)
     attached_all: list[str] = []
     dropped_all: list[str] = []
     hit_urls: list[str] = []
     current_bag = _packet_bag(packet, bag)
     if _credit_hold(packet):
-        packet.cite_recheck_attempts = attempts
+        stamp_cite_recheck_attempts(packet, attempts)
         return CiteRepairResult(
             ok=False,
             attempts=attempts,
@@ -1340,7 +1374,7 @@ def run_cite_recheck_loop(
         dropped_all.extend(drop_empty_cite_beats(packet))
     if entered_empty or entered_faithless or faithless_cite_beats(packet) or dropped_all:
         attempts = max(attempts, 1)
-        packet.cite_recheck_attempts = attempts
+        stamp_cite_recheck_attempts(packet, attempts)
     hollow = _hollow_uncited_beats(packet)
     if hollow and not any(_attachable_claim(b) for b in empty_cite_beats(packet)):
         early_empty = _hold_empty_beats(packet, attempts)
@@ -1389,7 +1423,7 @@ def run_cite_recheck_loop(
                 result.dropped_beat_ids = dropped_all
                 result.hit_urls = hit_urls
                 return result
-            packet.cite_recheck_attempts = attempts
+            stamp_cite_recheck_attempts(packet, attempts)
             _clear_cite_only_hold(packet, current_bag)
             return CiteRepairResult(
                 ok=True,
@@ -1405,7 +1439,7 @@ def run_cite_recheck_loop(
             result.hit_urls = hit_urls
             return result
         attempts += 1
-        packet.cite_recheck_attempts = attempts
+        stamp_cite_recheck_attempts(packet, attempts)
         fresh_bag, status = _recheck_parallel(
             missing, search_fn, [b for b in empty if _attachable_claim(b)]
         )

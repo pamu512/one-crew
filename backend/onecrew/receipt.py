@@ -228,6 +228,9 @@ def write_receipt(packet: Packet, receipt: Receipt) -> Packet:
     receipt.written = True
     receipt.packet_id = packet.id
     packet.receipt = receipt
+    from onecrew.cite_repair import stamp_cite_recheck_attempts
+
+    stamp_cite_recheck_attempts(packet)
     packet.status = "ready" if receipt.disposition == "READY" else "hold"
     return packet
 

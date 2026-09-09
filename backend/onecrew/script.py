@@ -1428,6 +1428,21 @@ _TONE_CHROME = re.compile(
     r"personal take:",
     re.I,
 )
+_UNVERIFIED_META_VO = re.compile(
+    r"premise cannot be verified|"
+    r"cannot be verified|"
+    r"our research indicates|"
+    r"(?:a )?common question circulating|"
+    r"\bunverified\b|"
+    r"we (?:could not|cannot) (?:verify|confirm)",
+    re.I,
+)
+_HANGING_CLAUSE = re.compile(
+    r"(?:^|(?<=[.!?])\s+)(?:for instance|for example|such as|including|namely|"
+    r"specifically|in particular)\s*[.,;:]?\s*$",
+    re.I,
+)
+_HEADLINE_SUFFIX = re.compile(r"\s+[-–—]\s+[A-Z][A-Za-z.]{0,24}\s*$")
 _META_FRAME = re.compile(
     r"cited events? on (?:screen|later cards)\.?|"
     r"cited print on screen\.?|"
@@ -1448,14 +1463,62 @@ def _strip_hold_meta(text: str) -> tuple[str, list[str]]:
 
 def _strip_tone_chrome(text: str) -> tuple[str, list[str]]:
     """Tone is stance for the writer. Never narrate it as VO filler."""
+    nits: list[str] = []
     cleaned, n = _TONE_CHROME.subn("", text or "")
-    if not n:
+    if n:
+        nits.append("tone chrome stripped from VO")
+    meta = strip_unverified_meta_vo(cleaned)
+    if meta != _tidy_vo(cleaned) and _UNVERIFIED_META_VO.search(cleaned or ""):
+        nits.append("unverified meta stripped from VO")
+        cleaned = meta
+    elif n:
+        cleaned = _tidy_vo(cleaned)
+    hung = strip_hanging_clause_vo(cleaned)
+    if hung != _tidy_vo(cleaned) and is_hanging_clause_vo(cleaned):
+        nits.append("hanging clause stripped from VO")
+        cleaned = hung
+    if not nits:
         return text or "", []
-    return _tidy_vo(cleaned), ["tone chrome stripped from VO"]
+    return _tidy_vo(cleaned), nits
 
 
 def has_tone_chrome(text: str) -> bool:
     return bool(_TONE_CHROME.search(_vo_lines(text) or text or ""))
+
+
+def is_unverified_meta_vo(text: str) -> bool:
+    """Research-meta / unverified chrome. Speak a stamp or drop the beat."""
+    return bool(_UNVERIFIED_META_VO.search(_vo_lines(text) or text or ""))
+
+
+def strip_unverified_meta_vo(text: str) -> str:
+    return _tidy_vo(_UNVERIFIED_META_VO.sub("", text or ""))
+
+
+def is_hanging_clause_vo(text: str) -> bool:
+    """Incomplete trailing clause. Not a cite-faithful sentence."""
+    body = _tidy_vo(re.sub(r"\[[^\]]+\]", "", _vo_lines(text) or text or ""))
+    return bool(body) and bool(_HANGING_CLAUSE.search(body))
+
+
+def strip_hanging_clause_vo(text: str) -> str:
+    return _tidy_vo(
+        re.sub(
+            r"(?:[.!?]\s+)?(?:for instance|for example|such as|including|namely|"
+            r"specifically|in particular)\s*[.,;:]?\s*$",
+            "",
+            text or "",
+            flags=re.I,
+        )
+    )
+
+
+def is_topic_prompt_frame(text: str, packet) -> bool:
+    """Mute-test fail: on_screen is the topic/prompt, not a stamp print."""
+    shown = _speech_norm(text)
+    if not shown:
+        return False
+    return any(shown == _speech_norm(cand or "") for cand in (getattr(packet, "topic", ""), getattr(packet, "hook", "")))
 
 
 def is_meta_frame(text: str) -> bool:
@@ -1472,13 +1535,19 @@ def _speech_norm(text: str) -> str:
     return _tidy_vo(re.sub(r"\s+", " ", body)).lower()
 
 
+def _headline_core(text: str) -> str:
+    return _speech_norm(_HEADLINE_SUFFIX.sub("", text or ""))
+
+
 def is_title_read_vo(vo: str, findings: list) -> bool:
     """Article title is not a cite-faithful print/claim/note."""
     body = _speech_norm(vo)
+    core = _headline_core(vo)
     if not body or len(body) < 8:
         return False
     for finding in findings:
         title = _speech_norm(getattr(finding, "title", None) or "")
+        title_core = _headline_core(getattr(finding, "title", None) or "")
         if title in _GENERIC_TITLE:
             continue
         printed = _speech_norm(getattr(finding, "print", None) or "")
@@ -1486,7 +1555,14 @@ def is_title_read_vo(vo: str, findings: list) -> bool:
         note = _speech_norm(getattr(finding, "note", None) or "")
         if title in {printed, claim} or (note and title == note):
             continue
-        if body == title or (len(title) >= 16 and title in body):
+        title_hit = (
+            body == title
+            or core == title
+            or (title_core and core == title_core)
+            or (len(title) >= 16 and title in body)
+            or (len(title_core) >= 16 and title_core in core)
+        )
+        if title_hit:
             if printed and printed not in title and printed in body:
                 continue
             if claim and claim not in title and claim in body:
@@ -1713,9 +1789,14 @@ def drop_thin_title_read_beats(packet) -> list[str]:
     for i, beat in enumerate(beats):
         cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
         vo = _vo_lines(beat.vo)
-        if i and is_thin_title_read_vo(vo, cited, prior_prints=seen):
-            drop.append(beat.id)
-            continue
+        if is_thin_title_read_vo(vo, cited, prior_prints=seen):
+            spoken = speak_stamp_fact([f.id for f in cited], list(by_id.values())) if cited else ""
+            if spoken and not is_thin_title_read_vo(spoken, cited, prior_prints=seen):
+                beat.vo = f"NARRATOR\n{spoken}" if (beat.vo or "").startswith("NARRATOR") else spoken
+                vo = spoken
+            else:
+                drop.append(beat.id)
+                continue
         seen.append(_speech_norm(vo))
         for finding in cited:
             seen.extend(
@@ -1739,12 +1820,36 @@ def sanitize_for_ship(packet):
     from onecrew.cite_repair import rebuild_timed_vo
 
     _strip_action_chrome_beats(packet)
+    _strip_meta_hanging_beats(packet)
     _reattach_covering_scope_beats(packet)
     dropped = drop_thin_title_read_beats(packet)
     neutralize_pack_slot_beats(packet)
     if dropped or packet.beats:
         rebuild_timed_vo(packet)
     return packet
+
+
+def _strip_meta_hanging_beats(packet) -> None:
+    receipt = packet.receipt
+    by_id = {f.id: f for f in (receipt.findings if receipt else [])}
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading":
+            continue
+        vo = _vo_lines(beat.vo)
+        cleaned = strip_unverified_meta_vo(vo) if is_unverified_meta_vo(vo) else vo
+        if is_hanging_clause_vo(cleaned):
+            cleaned = strip_hanging_clause_vo(cleaned)
+        cited = [by_id[fid] for fid in beat.finding_ids if fid in by_id]
+        if (is_unverified_meta_vo(vo) or is_hanging_clause_vo(vo)) and not _speech_norm(cleaned):
+            cleaned = speak_stamp_fact(list(beat.finding_ids), list(by_id.values())) or speak_stamps(
+                list(beat.finding_ids), list(by_id.values())
+            )
+            if not cleaned or is_thin_title_read_vo(cleaned, cited):
+                beat.vo = ""
+                beat.finding_ids = []
+                continue
+        if cleaned != vo:
+            beat.vo = f"NARRATOR\n{cleaned}" if (beat.vo or "").startswith("NARRATOR") else cleaned
 
 
 def _strip_action_chrome_beats(packet) -> None:
@@ -2137,11 +2242,21 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
                 eyes = _drop_extra_cite_brackets(eyes, fids)
                 vo = _strip_unsupported_prints(vo, fids, rows) if fids else vo
                 cited = [row for row in rows if row.id in fids]
-                if is_title_read_vo(vo, cited) or is_print_hole(vo):
+                if is_unverified_meta_vo(vo):
+                    vo = strip_unverified_meta_vo(vo)
+                if is_hanging_clause_vo(vo):
+                    vo = strip_hanging_clause_vo(vo)
+                if is_title_read_vo(vo, cited) or is_print_hole(vo) or is_hanging_clause_vo(vo):
                     spoken = speak_stamp_fact(fids, rows)
                     if spoken:
                         vo = spoken
-                elif has_tone_chrome(vo) or is_pack_chrome_vo(vo) or is_action_chrome_vo(vo, eyes) or not _vo_lines(vo).strip():
+                elif (
+                    has_tone_chrome(vo)
+                    or is_unverified_meta_vo(vo)
+                    or is_pack_chrome_vo(vo)
+                    or is_action_chrome_vo(vo, eyes)
+                    or not _vo_lines(vo).strip()
+                ):
                     spoken = speak_stamp_fact(fids, rows) or speak_stamps(fids, rows)
                     if spoken:
                         vo = spoken

@@ -39,8 +39,8 @@ def write_shot_list(packet: Packet) -> list[ShotFrame]:
         shot_no += 1
         key = True if short else (last_scene is None or beat.scene != last_scene or shot_no == 1)
         last_scene = beat.scene
+        on_screen = _mute_on_screen(beat, rows, packet)
         picture = _shot_line(beat, rows, packet)
-        on_screen = _mute_on_screen(beat, rows)
         shots.append(
             ShotFrame(
                 id=f"shot-{shot_no:03d}-{beat.id}",
@@ -71,13 +71,16 @@ def _pack_blob(packet: Packet) -> str:
     return " ".join(parts).lower()
 
 
-def _mute_on_screen(beat: ScriptBeat, rows: list[Finding]) -> str:
+def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None = None) -> str:
     """Stamp print on the frame/on_screen. Shot ACTION chrome is not the mute-test."""
-    from onecrew.script import is_thin_frame, speak_stamp_fact, speak_stamps
+    from onecrew.script import is_thin_frame, is_topic_prompt_frame, speak_stamp_fact, speak_stamps
 
     printed = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(list(beat.finding_ids), rows)
     shown = (beat.frame or "").strip()
-    if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
+    topic_frame = bool(packet is not None and is_topic_prompt_frame(shown, packet))
+    if topic_frame:
+        shown = ""
+    if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows) or topic_frame):
         beat.frame = printed
         return printed
     return shown
@@ -115,7 +118,11 @@ def mute_test_shows_stamp(shot: ShotFrame, findings: list[Finding] | None = None
 
 def _shot_line(beat: ScriptBeat, rows: list[Finding], packet: Packet) -> str:
     """One idea. Eyes from the written beat. Archive or official series first. No leftover Hormuz."""
+    from onecrew.script import is_topic_prompt_frame
+
     eyes = (beat.frame or "").strip()
+    if eyes and is_topic_prompt_frame(eyes, packet):
+        eyes = ""
     if eyes:
         return eyes
     claim = rows[0].claim.rstrip(".") if rows else beat.vo.split("\n")[-1].split("[")[0].strip()

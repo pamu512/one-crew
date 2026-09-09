@@ -38,7 +38,7 @@ from onecrew.foundry import (
     sanitize_stamps,
     is_pack_slot_id,
 )
-from onecrew.cite_repair import run_cite_recheck_loop
+from onecrew.cite_repair import run_cite_recheck_loop, stamp_cite_recheck_attempts
 from onecrew.verify import apply_verify_gate, attach_cites_from_hits, cite_bag_from_rows
 from onecrew.pack import (
     PackInvalidError,
@@ -969,8 +969,10 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
     def _cite_repair() -> bool:
         nonlocal leftover, hit_urls
         if not rails.parallel:
+            stamp_cite_recheck_attempts(fresh)
             return True
         repair = run_cite_recheck_loop(fresh, bag=getattr(fresh, "_cite_bag", None))
+        stamp_cite_recheck_attempts(fresh, repair.attempts)
         if repair.hit_urls:
             hit_urls = list(dict.fromkeys([*(hit_urls or []), *repair.hit_urls]))
         if repair.ok:
@@ -1056,6 +1058,7 @@ def run_live_packet(shift: ShiftRecord) -> Packet:
                             else "room recut other: cite-faithfulness"
                         )
                 fresh.status = "hold"
+                stamp_cite_recheck_attempts(fresh)
                 stamp_collisions(fresh, rails)
                 attach_frames(fresh, [], rails=rails)
                 leftover = _write_closed_pack(fresh, leftover, hit_urls)
