@@ -89,18 +89,20 @@ def _mute_on_screen(beat: ScriptBeat, rows: list[Finding], packet: Packet | None
     topic_frame = bool(packet is not None and is_topic_prompt_frame(shown, packet))
     title_chrome = is_title_chrome_frame(shown, list(beat.finding_ids), rows)
     headline = bool(shown and not is_numeric_print(shown) and _looks_like_headline(shown))
-    if topic_frame or title_chrome or headline:
+    if topic_frame or title_chrome or headline or (screen and shown and not is_numeric_print(shown)):
         shown = ""
     if screen:
-        if not shown:
-            beat.frame = screen
+        beat.frame = screen
         return screen
     printed = speak_stamp_fact(list(beat.finding_ids), rows) or speak_stamps(
         list(beat.finding_ids), rows
     )
-    if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows)):
+    if printed and (not shown or is_thin_frame(shown, list(beat.finding_ids), rows) or not is_numeric_print(shown)):
         beat.frame = printed
         return printed
+    if shown and not is_numeric_print(shown):
+        beat.frame = ""
+        return ""
     return shown
 
 
