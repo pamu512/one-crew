@@ -19,6 +19,8 @@ from onecrew.verify import (
 
 FRED = "https://fred.stlouisfed.org/series/USREC"
 BLS = "https://www.bls.gov/news.release/empsit.nr0.htm"
+FRED_SAHM = "https://fred.stlouisfed.org/series/SAHMREALTIME"
+LEI_URL = "https://www.conference-board.org/topics/us-leading-indicators"
 _JULY_PIPE = "2026-05-01 | 0\n2026-06-01 | 0\n2026-07-01 | 0\n"
 _JULY_CES = (
     "THE EMPLOYMENT SITUATION -- JULY 2026\n"
@@ -747,3 +749,128 @@ def test_live_shift_cite_recheck_on_print_not_in_cite(monkeypatch) -> None:
     assert board_calls["n"] >= 1
     assert packet.script
     assert packet.frames
+
+
+def _lei_sahm_packet() -> Packet:
+    lei = _finding(
+        fid="lei-june-2026",
+        series="LEI",
+        printed="-4.3%",
+        when="June 2026",
+        claim=(
+            "The Conference Board 3Ds recession signal requires a six-month "
+            "LEI growth rate below −4.3%."
+        ),
+        url=FRED_SAHM,
+    )
+    usrec = _finding(
+        fid="usrec-july-2026",
+        series="USREC",
+        printed="0",
+        when="July 2026",
+        claim="USREC=0 (July 2026)",
+        url=FRED,
+    )
+    packet = Packet(
+        id="oc-lei-sahm-cite",
+        topic="Are we near recession?",
+        hook="Are we near recession?",
+        script="placeholder",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="decade",
+        script_lean="centered_independent",
+        tell="Host-only desk read",
+        tone="On the cited print",
+        research_pack=(
+            "USREC July 2026 = 0. June 2026 notes: six-month LEI growth "
+            "rate below −4.3% is the 3Ds signal threshold."
+        ),
+    )
+    packet.receipt = Receipt(
+        packet_id=packet.id,
+        written=False,
+        disposition="HOLD",
+        hold_reason="print not in cite",
+        findings=[usrec, lei],
+    )
+    packet.status = "hold"
+    packet.beats = [
+        _beat("cold-open", ["usrec-july-2026"], "NARRATOR\nUSREC=0. [usrec-july-2026]"),
+        _beat(
+            "turn",
+            ["lei-june-2026"],
+            "NARRATOR\nLEI −4.3%. [lei-june-2026]",
+            start="00:20",
+        ),
+        _beat("close", ["usrec-july-2026"], "NARRATOR\nNear is not a switch. [usrec-july-2026]", start="00:40"),
+    ]
+    packet.script = "\n".join(b.scene + "\n" + b.vo for b in packet.beats) + "\n"
+    packet.frames = [
+        ShotFrame(id=f"shot-{b.id}", shot=b.frame or b.id, beat_id=b.id, duration_s=b.duration_s)
+        for b in packet.beats
+    ]
+    return packet
+
+
+def _lei_sahm_bag() -> CiteBag:
+    return CiteBag(
+        excerpts=[
+            CiteExcerpt(url=FRED, title="USREC", text="USREC July 2026 = 0.\n" + _JULY_PIPE),
+            CiteExcerpt(
+                url=FRED_SAHM,
+                title="SAHMREALTIME",
+                text=(
+                    "Sahm June 2026 = −0.03 vs 0.50 trigger. "
+                    "The Conference Board 3Ds recession signal requires a "
+                    "six-month LEI growth rate below −4.3%."
+                ),
+            ),
+        ],
+        spine=(
+            "June 2026 notes: six-month LEI growth rate below −4.3% is the "
+            "3Ds signal threshold."
+        ),
+        hit_urls=[FRED, FRED_SAHM],
+    )
+
+
+def test_lei_sahm_url_requeries_or_drops_and_counts_attempt() -> None:
+    packet = _lei_sahm_packet()
+    calls = {"n": 0}
+
+    def search(**kwargs):
+        calls["n"] += 1
+        return SimpleNamespace(
+            results=[
+                SimpleNamespace(
+                    url=LEI_URL,
+                    title="Conference Board LEI",
+                    excerpts=["Conference Board LEI increased 0.2% in July 2026."],
+                )
+            ]
+        )
+
+    result = run_cite_recheck_loop(packet, search_fn=search, bag=_lei_sahm_bag())
+    assert result.ok is True
+    assert calls["n"] >= 1
+    assert packet.cite_recheck_attempts >= 1
+    assert packet.cite_recheck_attempts <= MAX_CITE_RECHECKS
+    lei = next(f for f in packet.receipt.findings if f.id == "lei-june-2026")
+    cite = (lei.parallel_url or "").lower()
+    spoken = (packet.script or "") + "\n".join(b.vo for b in packet.beats)
+    if "lei-june-2026" in spoken:
+        assert "sahm" not in cite
+        assert "conference-board.org" in cite
+        assert "4.3" not in (lei.print or "").replace("−", "-")
+    else:
+        assert not any(b.id == "turn" for b in packet.beats)
+        assert "lei-june-2026" not in spoken
+        assert lei.stamp != "grounded"
+    assert packet.beats
+    assert packet.script.strip()
+    assert packet.receipt.disposition == "READY"
+    assert "cite-repair loop exhausted" not in (packet.receipt.hold_reason or "")
+    shots = write_shot_list(packet)
+    assert shots
+    assert any(s.beat_id == "close" for s in shots)

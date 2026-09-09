@@ -284,6 +284,7 @@ _CITE_HOLD_MARKERS = (
     "grounded requires a Parallel URL",
     "grounded claim missing cite_url",
     "cite_url not in hits",
+    "cite_url series mismatch",
     "print not in cite",
     "when not in cite",
     _EXHAUST_REASON,
@@ -333,6 +334,18 @@ def drop_unsupported_beats(packet: Packet, finding_ids: set[str]) -> list[str]:
     packet.beats = [b for b in packet.beats if b.id not in drop_ids]
     rebuild_timed_vo(packet)
     _retire_uncited_grounded(packet)
+    receipt = packet.receipt
+    cited = {fid for beat in packet.beats for fid in beat.finding_ids}
+    if receipt is not None:
+        for finding in receipt.findings:
+            if finding.id not in finding_ids or finding.id in cited:
+                continue
+            if (finding.series or "") != "LEI":
+                continue
+            finding.stamp = "fringe"
+            finding.parallel_status = "miss"
+            finding.parallel_url = None
+            finding.note = "Cite-repair dropped this beat. Never sold as fact."
     return dropped
 
 

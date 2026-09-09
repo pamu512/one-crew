@@ -3633,6 +3633,121 @@ def test_lei_cite_is_conference_board_not_bls_empsit() -> None:
     assert "conference-board.org" in cite
 
 
+# Live oc-are-we-near-recession-72ac44e6: 3Ds "below −4.3%" is a rule
+# criterion, not the LEI observation. Sahm FRED is the wrong series cite.
+_LEI_3DS_THRESHOLD = (
+    "The Conference Board 3Ds recession signal requires a six-month LEI "
+    "growth rate below −4.3%."
+)
+_LEI_JUNE_THRESHOLD = (
+    "June 2026 notes: six-month LEI growth rate below −4.3% is the 3Ds "
+    "signal threshold."
+)
+
+
+def test_lei_threshold_below_4_3_is_not_minted() -> None:
+    from onecrew.foundry import _url_fits_series
+    from onecrew.spend import ledger
+
+    assert _url_fits_series(FRED_SAHM, "LEI", ()) is False
+    assert _url_fits_series(BLS, "LEI", ()) is False
+    assert _url_fits_series(LEI_URL, "LEI", ()) is True
+
+    before = ledger.parallel_calls
+    spine = (
+        "USREC July 2026 = 0. "
+        "July payrolls fell 23,000 and unemployment was 4.1%. "
+        f"{_LEI_3DS_THRESHOLD} "
+        f"{_LEI_JUNE_THRESHOLD} "
+        f"{FRED_USREC} {BLS} {LEI_URL} {FRED_SAHM}"
+    )
+    packet, rows = _mint_notes(spine)
+    assert ledger.parallel_calls == before
+    leis = [f for f in rows if f.series == "LEI"]
+    for lei in leis:
+        printed = (lei.print or "").replace("−", "-")
+        assert "4.3" not in printed
+        assert lei.id != "lei-june-2026"
+        cite = (lei.parallel_url or "").lower()
+        assert "sahm" not in cite
+        assert "sahmrealtime" not in cite
+    assert not leis or all("0.2" in (f.print or "") for f in leis)
+
+
+def test_lei_july_turn_preferred_over_3ds_threshold() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    spine = (
+        "USREC July 2026 = 0. "
+        "July payrolls fell 23,000 and unemployment was 4.1%. "
+        f"{_LEI_3DS_THRESHOLD} "
+        f"{_LEI_JULY_TURN_VS_CONTRACTION} "
+        f"{FRED_USREC} {BLS} {LEI_URL} {FRED_SAHM}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", ["USREC July 2026 = 0."]),
+            _row(BLS, "BLS Employment Situation", [
+                "July payrolls fell 23,000 and unemployment was 4.1%."
+            ]),
+            _row(FRED_SAHM, "SAHMREALTIME", [_LEI_3DS_THRESHOLD]),
+            _row(LEI_URL, "Conference Board LEI", [_LEI_JULY_TURN_VS_CONTRACTION]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    lei = next(f for f in rows if f.series == "LEI")
+    assert "0.2" in (lei.print or "")
+    assert "4.3" not in (lei.print or "").replace("−", "-")
+    assert "1.3" not in (lei.print or "")
+    assert (lei.when or "").lower().startswith("july")
+    assert lei.id == "lei-july-2026"
+    cite = (lei.parallel_url or "").lower()
+    assert "conference-board.org" in cite
+    assert "sahm" not in cite
+    assert "empsit" not in cite
+
+
+def test_lei_cite_rejects_sahmrealtime() -> None:
+    from onecrew.foundry import mint
+    from onecrew.spend import ledger
+
+    spine = (
+        "USREC July 2026 = 0. "
+        f"{_LEI_JUNE_THRESHOLD} "
+        f"{_LEI_JULY_TURN_VS_CONTRACTION} "
+        f"{FRED_USREC} {FRED_SAHM}"
+    )
+    before = ledger.parallel_calls
+    packet = _packet()
+    packet.task_spine = spine
+    rows = mint(
+        packet,
+        [
+            _row(FRED_USREC, "USREC", ["USREC July 2026 = 0."]),
+            _row(FRED_SAHM, "SAHMREALTIME", [spine]),
+        ],
+        _miss_rows(),
+        SimpleNamespace(results=[], errors=[]),
+        spine,
+    )
+    assert ledger.parallel_calls == before
+    leis = [f for f in rows if f.series == "LEI"]
+    for lei in leis:
+        cite = (lei.parallel_url or "").lower()
+        assert "sahm" not in cite
+        assert "sahmrealtime" not in cite
+        assert "4.3" not in (lei.print or "").replace("−", "-")
+    assert not leis
+
+
 def test_consensus_estimate_only_does_not_mint_payrolls_as_ces() -> None:
     from onecrew.foundry import FoundryHold, require_minted
     from onecrew.spend import ledger

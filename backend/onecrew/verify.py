@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
-from onecrew.foundry import leftover_slot_ids, _url_fits_series
+from onecrew.foundry import leftover_slot_ids, _url_fits_series, lei_threshold_claim
 from onecrew.models import MISSING, Finding, Receipt
 
 SeriesName = Literal["USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME"]
@@ -126,6 +126,8 @@ def _cite_candidates(claim: Claim, bag: CiteBag) -> list[str]:
         seen.add(key)
         out.append(raw)
     out.sort(key=lambda u: (0 if _url_fits_series(u, claim.series, ()) else 1))
+    if claim.series == "LEI":
+        return [u for u in out if _url_fits_series(u, claim.series, ())]
     return out
 
 
@@ -436,6 +438,10 @@ def verify_print_in_cite(claim: Claim, bag: CiteBag) -> VerifyResult:
         return VerifyResult(ok=False, reason="grounded claim missing cite_url")
     if not _url_in(claim.cite_url, bag.hit_urls):
         return VerifyResult(ok=False, reason="cite_url not in hits")
+    if claim.series == "LEI" and not _url_fits_series(claim.cite_url, claim.series, ()):
+        return VerifyResult(ok=False, reason="cite_url series mismatch")
+    if claim.series == "LEI" and lei_threshold_claim(claim.claim_span, claim.print):
+        return VerifyResult(ok=False, reason="print not in cite")
     excerpt = _cite_text(claim, bag)
     search = f"{excerpt}\n{bag.spine or ''}"
     bars = _bars(claim.print)
@@ -683,6 +689,7 @@ _SOFT_CITE_REASONS = frozenset(
     {
         "grounded claim missing cite_url",
         "cite_url not in hits",
+        "cite_url series mismatch",
         "print not in cite",
         "when not in cite",
     }
