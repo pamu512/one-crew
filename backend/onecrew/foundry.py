@@ -157,7 +157,7 @@ def leftover_slot_ids() -> frozenset[str]:
 
 
 _EXCERPT_SLOT = re.compile(r"^excerpts\[\d+\]$", re.I)
-_TRILLION_PRINT = re.compile(r"\$?\s*[\d,.]+\s*trillion\b", re.I)
+_TRILLION_PRINT = re.compile(r"\$?\s*[\d,.]+\s*(?:trillion|tn)\b", re.I)
 _FRED_GDP = re.compile(r"(?:fred\.)?stlouisfed\.org/series/gdp", re.I)
 
 

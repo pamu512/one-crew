@@ -96,6 +96,31 @@ _SHORT_IDS = {
 }
 
 
+def _legal_spoken_finding(finding: Finding) -> bool:
+    """Cite-able row: not excerpts[N] / unofficial GDP. Fringe and fiction frames stay."""
+    from onecrew.foundry import complete_print, is_pack_slot_id, official_gdp_url
+
+    if is_pack_slot_id(finding.id):
+        return False
+    if finding.series == "GDP":
+        return official_gdp_url(finding.parallel_url or "") and complete_print(finding.print or "")
+    if finding.stamp == "timeline_event":
+        return bool((finding.parallel_url or "").strip())
+    return True
+
+
+def _gdp_series_usable(finding: Finding) -> bool:
+    """Official GDP cite. Empty print stays visible so write_script can HOLD."""
+    from onecrew.foundry import complete_print, official_gdp_url
+
+    if not official_gdp_url(finding.parallel_url or ""):
+        return False
+    printed = (finding.print or "").strip()
+    if printed and not complete_print(printed):
+        return False
+    return True
+
+
 def _by_series(packet: Packet, *names: str) -> Finding | None:
     receipt = packet.receipt
     if not receipt:
@@ -109,6 +134,9 @@ def _by_series(packet: Packet, *names: str) -> Finding | None:
     for finding in receipt.findings:
         if finding.id in _LEFTOVER_IDS or is_pack_slot_id(finding.id):
             continue
+        if finding.series == "GDP" or finding.id in _SHORT_IDS.get("GDP", frozenset()):
+            if not _gdp_series_usable(finding):
+                continue
         if finding.series in wanted or finding.id in ids:
             return finding
         if "SAHMREALTIME" in wanted and (finding.id or "").startswith("sahm-"):
@@ -129,13 +157,11 @@ def _named_prints(packet: Packet) -> list[Finding]:
     receipt = packet.receipt
     if not receipt:
         return []
-    from onecrew.foundry import is_pack_slot_id
-
     rows = [
         f
         for f in receipt.findings
         if f.id not in _LEFTOVER_IDS
-        and not is_pack_slot_id(f.id)
+        and _legal_spoken_finding(f)
         and f.stamp == "grounded"
         and f.print not in {MISSING, "", None}
     ]
@@ -1066,7 +1092,7 @@ def _strip_vo_chrome(text: str) -> tuple[str, list[str]]:
 
 
 _EXCERPT_TOKEN = re.compile(r"excerpts\[\d+\]", re.I)
-_GDP_EQ_TRILLION = re.compile(r"\bGDP\s*=\s*\$?[\d,.]+\s*(?:trillion|tn)?", re.I)
+_GDP_EQ_TRILLION = re.compile(r"\bGDP\s*=\s*\$?[\d,.]+\s*(?:trillion|tn)\b", re.I)
 
 
 def _sanitize_vo(text: str, known: set[str], pack_blob: str) -> tuple[str, list[str]]:
@@ -1156,12 +1182,10 @@ def _vertex_keeps(
         return False
     if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
-    from onecrew.foundry import is_pack_slot_id
-
     known = {
         f.id
         for f in (packet.receipt.findings if packet.receipt else [])
-        if not is_pack_slot_id(f.id)
+        if _legal_spoken_finding(f)
     }
     cited = any(fid in known for u in units for fid in (u.get("finding_ids") or []))
     if cited or _vo_uses_pack(packet, spoken):
@@ -1278,12 +1302,10 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
     held = packet.receipt is not None and packet.receipt.disposition == "HOLD"
     if not held:
         units = _voice_stamped_marks(packet, units)
-    from onecrew.foundry import is_pack_slot_id
-
     known = {
         f.id
         for f in (packet.receipt.findings if packet.receipt else [])
-        if not is_pack_slot_id(f.id)
+        if _legal_spoken_finding(f)
     }
     spoken_all = _units_spoken(units)
     pack_grounded = _vo_uses_pack(packet, spoken_all) or any(

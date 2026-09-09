@@ -425,6 +425,7 @@ def test_forbidden_wrap_mint_gdp_from_excerpt_slots_or_trillion_without_official
 
     assert complete_print("$126 trillion") is False
     assert complete_print("126 trillion") is False
+    assert complete_print("$126tn") is False
     assert complete_print("0.5 / 2.1 / 1.5") is True
     assert is_pack_slot_id("excerpts[18]")
     assert is_pack_slot_id("excerpts[19]")

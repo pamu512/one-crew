@@ -275,7 +275,7 @@ def _pack_text(packet: Packet) -> str:
     return "\n".join(p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p)
 
 
-_GDP_EQ_TRILLION = re.compile(r"\bGDP\s*=\s*\$?[\d,.]+\s*(?:trillion|tn)?", re.I)
+_GDP_EQ_TRILLION = re.compile(r"\bGDP\s*=\s*\$?[\d,.]+\s*(?:trillion|tn)\b", re.I)
 _EXCERPT_TOKEN = re.compile(r"excerpts\[\d+\]", re.I)
 
 

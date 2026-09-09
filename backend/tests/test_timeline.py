@@ -852,15 +852,26 @@ def test_forbidden_wrap_writer_strips_excerpt_slot_tokens() -> None:
                     parallel_status="hit",
                     note="Parallel URL on this row.",
                 ),
+                Finding(
+                    id="gdp-fantasy",
+                    claim="GDP=$126tn",
+                    stamp="grounded",
+                    series="GDP",
+                    print="$126tn",
+                    when="2025",
+                    parallel_url=NOAH,
+                    parallel_status="hit",
+                    note="Parallel URL on this row.",
+                ),
             ],
         ),
     )
     units = [
         {
             "id": "cold-open",
-            "vo": "GDP=$126 trillion [excerpts[18]] A newspaper put campus capex at $3tn.",
+            "vo": "GDP=$126 trillion [excerpts[18]] [gdp-fantasy] A newspaper put campus capex at $3tn.",
             "eyes": "card",
-            "finding_ids": ["excerpts[18]"],
+            "finding_ids": ["excerpts[18]", "gdp-fantasy"],
         },
         {"id": "promise", "vo": "The title stays a question.", "eyes": "pack", "finding_ids": []},
         {"id": "gdp", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
@@ -873,7 +884,9 @@ def test_forbidden_wrap_writer_strips_excerpt_slot_tokens() -> None:
     written = _assemble(packet, units)
     spoken = written.script + "".join(f"{b.vo} {b.frame}" for b in written.beats)
     assert "excerpts[18]" not in spoken
+    assert "gdp-fantasy" not in spoken
     assert "GDP=$126 trillion" not in spoken
     cold = next(b for b in written.beats if b.id == "cold-open")
     assert "te-newspaper-capex-2026-08" in cold.finding_ids
     assert "excerpts[18]" not in cold.finding_ids
+    assert "gdp-fantasy" not in cold.finding_ids
