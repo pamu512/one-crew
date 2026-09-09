@@ -8,10 +8,12 @@ from typing import Any, Callable
 from pydantic import BaseModel, Field
 
 from onecrew.foundry import (
-    leftover_slot_ids,
     complete_print,
     clean_cite_url,
     _when,
+    is_excerpt_slot_id,
+    is_pack_slot_id,
+    keep_official_gdp,
 )
 from onecrew.models import MISSING, Finding, Packet, Receipt, ScriptBeat
 from onecrew.parallel_client import ParallelCreditError, ParallelDownError, search
@@ -28,7 +30,6 @@ from onecrew.verify import (
 MAX_CITE_RECHECKS = 3
 _EXHAUST_REASON = "cite-repair loop exhausted"
 SearchFn = Callable[..., Any]
-_LEFTOVER = leftover_slot_ids()
 
 
 class CiteRepairResult(BaseModel):
@@ -55,7 +56,7 @@ def _is_hole(beat: ScriptBeat) -> bool:
 
 
 def _grounded_uncited(finding: Finding) -> bool:
-    if finding.id in _LEFTOVER:
+    if is_pack_slot_id(finding.id):
         return False
     if finding.stamp != "grounded":
         return False
@@ -103,7 +104,7 @@ def unsupported_cite_findings(packet: Packet, bag: CiteBag | None = None) -> lis
     }
     out: list[Finding] = []
     for finding in receipt.findings:
-        if finding.id not in spoken or finding.id in _LEFTOVER or finding.stamp != "grounded":
+        if finding.id not in spoken or is_pack_slot_id(finding.id) or finding.stamp != "grounded":
             continue
         if _grounded_uncited(finding):
             out.append(finding)
@@ -167,7 +168,7 @@ def empty_cite_beats(packet: Packet) -> list[ScriptBeat]:
     known = {
         f.id
         for f in (packet.receipt.findings if packet.receipt else [])
-        if f.id not in _LEFTOVER
+        if not is_pack_slot_id(f.id)
     }
     named = _named_empty_cite_ids(packet)
     vo_beats = [
@@ -221,12 +222,25 @@ def _print_in_text(printed: str, text: str) -> bool:
     return want in re.sub(r"[^\d.]+", " ", blob)
 
 
-def _finding_from_beat(beat: ScriptBeat, bag: CiteBag, used: set[str]) -> Finding | None:
+def _finding_from_beat(
+    beat: ScriptBeat,
+    bag: CiteBag,
+    used: set[str],
+    chain_urls: set[str] | None = None,
+) -> Finding | None:
     from onecrew.script import pack_numbers
 
     vo = _vo_body(beat)
     nums = [n for n in pack_numbers(vo) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
-    for excerpt in bag.excerpts:
+    excerpts = list(bag.excerpts or [])
+    prefer = {u for u in (chain_urls or set()) if u}
+    if prefer:
+        ranked = [e for e in excerpts if clean_cite_url(e.url or "") in prefer]
+        if ranked:
+            excerpts = ranked
+        else:
+            return None
+    for excerpt in excerpts:
         url = clean_cite_url(excerpt.url or "")
         if not url:
             continue
@@ -261,6 +275,50 @@ def _pack_text(packet: Packet) -> str:
     return "\n".join(p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p)
 
 
+_GDP_EQ_TRILLION = re.compile(r"\bGDP\s*=\s*\$?[\d,.]+\s*(?:trillion|tn)\b", re.I)
+_EXCERPT_TOKEN = re.compile(r"excerpts\[\d+\]", re.I)
+
+
+def _chain_urls(packet: Packet) -> set[str]:
+    receipt = packet.receipt
+    if receipt is None:
+        return set()
+    return {(row.url or "").strip() for row in receipt.timeline_map if (row.url or "").strip()}
+
+
+def _strip_excerpt_vo(text: str) -> str:
+    cleaned = _EXCERPT_TOKEN.sub("", text or "")
+    cleaned = re.sub(r"\[(?:\s*)\]", "", cleaned)
+    cleaned = _GDP_EQ_TRILLION.sub("", cleaned)
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
+
+
+def drop_excerpt_slot_findings(packet: Packet) -> list[str]:
+    """Drop pack excerpts[N] chrome and unofficial/fantasy GDP. Not a closed-series balloon."""
+    receipt = packet.receipt
+    if receipt is None:
+        return []
+    drop: set[str] = set()
+    kept: list[Finding] = []
+    for finding in receipt.findings:
+        junk = is_excerpt_slot_id(finding.id)
+        if finding.series == "GDP" and finding.stamp == "grounded":
+            junk = junk or not keep_official_gdp(finding)
+        if junk:
+            drop.add(finding.id)
+            continue
+        kept.append(finding)
+    if not drop:
+        return []
+    receipt.findings = kept
+    for beat in packet.beats:
+        beat.finding_ids = [fid for fid in beat.finding_ids if fid not in drop]
+        beat.vo = _strip_excerpt_vo(beat.vo)
+        if beat.frame:
+            beat.frame = _strip_excerpt_vo(beat.frame)
+    return list(drop)
+
+
 def _stamp_pack_timeline(packet: Packet) -> list[str]:
     from onecrew.timeline import apply_timeline, plan_timeline
 
@@ -291,6 +349,8 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
         for f in receipt.findings
         if f.stamp == "timeline_event" and (f.parallel_url or "").strip()
     ]
+    chain = _chain_urls(packet)
+    tls.sort(key=lambda f: 0 if (f.parallel_url or "").strip() in chain else 1)
     attached: list[str] = []
     for beat in list(empty_cite_beats(packet)):
         vo = _vo_body(beat)
@@ -315,8 +375,9 @@ def _attach_empty_cite_beats(packet: Packet, bag: CiteBag | None) -> list[str]:
         packet.receipt = receipt
     used = {f.id for f in receipt.findings}
     attached: list[str] = []
+    chain = _chain_urls(packet)
     for beat in list(empty_cite_beats(packet)):
-        finding = _finding_from_beat(beat, bag, used)
+        finding = _finding_from_beat(beat, bag, used, chain_urls=chain)
         if finding is None:
             continue
         receipt.findings.append(finding)
@@ -506,7 +567,7 @@ def _retire_incomplete_grounded(packet: Packet) -> None:
     if receipt is None:
         return
     for finding in receipt.findings:
-        if finding.id in _LEFTOVER or finding.stamp != "grounded":
+        if is_pack_slot_id(finding.id) or finding.stamp != "grounded":
             continue
         printed = finding.print or ""
         official = finding.series in {
@@ -519,7 +580,9 @@ def _retire_incomplete_grounded(packet: Packet) -> None:
             "ISM",
         }
         incomplete = printed.endswith(",")
-        if official:
+        if finding.series == "GDP":
+            incomplete = incomplete or not keep_official_gdp(finding)
+        elif official:
             incomplete = incomplete or (
                 not complete_print(printed) or not (finding.parallel_url or "").strip()
             )
@@ -548,6 +611,43 @@ def _retire_uncited_grounded(packet: Packet) -> None:
         finding.note = "Parallel miss. Included and tagged fringe. Never sold as fact."
 
 
+_RECEIPT_INVALID = re.compile(r"^receiptinvaliderror:\s*", re.I)
+
+
+def _hold_clauses(reason: str) -> list[str]:
+    return [p.strip() for p in (reason or "").replace("\n", ";").split(";") if p.strip()]
+
+
+_BEAT_CITE_NOTHING = re.compile(
+    r"^(?:beat\d+|[a-z][a-z0-9-]*)\s+cites nothing in the pack$",
+    re.I,
+)
+
+
+def _clause_is_cite_marker(
+    part: str, markers: tuple[str, ...], *, extra: tuple[str, ...] = ()
+) -> bool:
+    """Cite markers are whole clauses. Extra (gone GDP/dupes) may prefix a mashed clause."""
+    raw = (part or "").strip()
+    core = _RECEIPT_INVALID.sub("", raw).strip().lower()
+    if not core:
+        return False
+    prefixed = bool(_RECEIPT_INVALID.match(raw))
+    for marker in markers:
+        ml = marker.lower()
+        if core == ml:
+            return True
+        if ml == "cites nothing in the pack" and _BEAT_CITE_NOTHING.fullmatch(core):
+            return True
+        if prefixed and (core.startswith(ml + " ") or core.startswith(ml + ":") or core.startswith(ml)):
+            return True
+    for marker in extra:
+        ml = marker.lower()
+        if core == ml or core.startswith(ml + " ") or core.startswith(ml + ":"):
+            return True
+    return False
+
+
 _CITE_HOLD_MARKERS = (
     "grounded requires a Parallel URL",
     "grounded claim missing cite_url",
@@ -556,6 +656,7 @@ _CITE_HOLD_MARKERS = (
     "print not in cite",
     "when not in cite",
     "cites nothing in the pack",
+    "uncited claim",
     _EXHAUST_REASON,
 )
 _EIGHT_IDS = (
@@ -600,15 +701,34 @@ def _clear_cite_only_hold(packet: Packet, bag: CiteBag | None = None) -> None:
     markers = _CITE_HOLD_MARKERS if bag is not None else tuple(
         m for m in _CITE_HOLD_MARKERS if m not in {"print not in cite", "when not in cite"}
     )
+    remaining_gdp = [
+        f
+        for f in receipt.findings
+        if f.series == "GDP" and f.stamp == "grounded" and keep_official_gdp(f)
+    ]
+    series_counts: dict[str, int] = {}
+    for finding in receipt.findings:
+        if finding.stamp != "grounded" or is_pack_slot_id(finding.id):
+            continue
+        series = (finding.series or "").strip()
+        if series in {"USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME"}:
+            series_counts[series] = series_counts.get(series, 0) + 1
+    extra: list[str] = []
+    if not remaining_gdp:
+        extra.append("gdp bars mismatch")
+    if not any(n > 1 for n in series_counts.values()):
+        extra.append("duplicate series")
+    extra_t = tuple(extra)
     reason = (receipt.hold_reason or "").strip()
     if receipt.disposition == "HOLD" and reason:
         kept = [
-            part.strip()
-            for part in reason.replace("\n", ";").split(";")
-            if part.strip() and not any(m.lower() in part.lower() for m in markers)
+            part
+            for part in _hold_clauses(reason)
+            if not _clause_is_cite_marker(part, markers, extra=extra_t)
         ]
-        # ReceiptInvalidError prefixes a cite-only reason as one clause.
-        if not kept and any(m.lower() in reason.lower() for m in markers):
+        if not kept and any(
+            _clause_is_cite_marker(p, markers, extra=extra_t) for p in _hold_clauses(reason)
+        ):
             receipt.hold_reason = None
             receipt.disposition = "READY"
         elif kept:
@@ -662,7 +782,7 @@ def _hold_exhausted(packet: Packet, attempts: int) -> CiteRepairResult:
         receipt.disposition = "HOLD"
         prior = (receipt.hold_reason or "").strip()
         if _EXHAUST_REASON not in prior:
-            receipt.hold_reason = f"{prior} {_EXHAUST_REASON}".strip() if prior else _EXHAUST_REASON
+            receipt.hold_reason = f"{prior}; {_EXHAUST_REASON}".strip() if prior else _EXHAUST_REASON
     packet.status = "hold"
     return CiteRepairResult(
         ok=False,
@@ -698,10 +818,12 @@ def run_cite_recheck_loop(
             attempts=attempts,
             hold_reason=(packet.receipt.hold_reason if packet.receipt else None),
         )
+    dropped_all.extend(drop_excerpt_slot_findings(packet))
     entered_empty = bool(empty_cite_beats(packet))
     stamped = _stamp_pack_timeline(packet)
     attached_all.extend(stamped)
     attached_all.extend(_attach_timeline_beats(packet))
+    dropped_all.extend(drop_excerpt_slot_findings(packet))
     if entered_empty:
         attempts = max(attempts, 1)
         packet.cite_recheck_attempts = attempts

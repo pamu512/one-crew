@@ -22,6 +22,8 @@ from onecrew.foundry import (
     _url_fits_series,
     align_sahm_pair,
     latest_sahm_cell,
+    is_pack_slot_id,
+    official_gdp_url,
 )
 from onecrew.models import MISSING, Finding, Packet
 from onecrew.verify import (
@@ -66,6 +68,17 @@ _ID_ALIAS = {
 }
 
 Proposer = Callable[[CiteBag, Packet | None], list[Claim]]
+
+
+def _keep_closed_claim(claim: Claim) -> bool:
+    """Closed-series only. Drop excerpt-slot ids and unofficial/fantasy GDP."""
+    if is_pack_slot_id(claim.id or ""):
+        return False
+    if not complete_print(claim.print or ""):
+        return False
+    if claim.series == "GDP" and not official_gdp_url(claim.cite_url or ""):
+        return False
+    return True
 
 
 def _slug(series: str, when: str) -> str:
@@ -177,14 +190,15 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
             (
                 e.url
                 for e in bag.excerpts
-                if all(
+                if official_gdp_url(e.url or "")
+                and all(
                     re.sub(r"[^\d.]+", "", part) in (e.text or "").replace(",", "")
                     for part in gdp_printed.split("/")
                     if part.strip()
                 )
             ),
             "",
-        ) or next((e.url for e in bag.excerpts if "gdp" in (e.text + e.title).lower()), "")
+        ) or next((e.url for e in bag.excerpts if official_gdp_url(e.url or "")), "")
         if gdp_url and q:
             y2, q2 = int(q.group(2)), int(q.group(1))
             claims.append(
@@ -284,7 +298,7 @@ def _vertex_propose(bag: CiteBag, packet: Packet | None) -> list[Claim]:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        if (row.get("id") or "") in _LEFTOVER:
+        if is_pack_slot_id(str(row.get("id") or "")):
             continue
         try:
             claim = Claim(
@@ -300,6 +314,8 @@ def _vertex_propose(bag: CiteBag, packet: Packet | None) -> list[Claim]:
         if claim.series == "BLS payrolls" and not verify_payrolls_realized_ces(claim, bag).ok:
             continue
         if claim.series == "U-3" and not verify_u3_ces(claim, bag).ok:
+            continue
+        if not _keep_closed_claim(claim):
             continue
         out.append(claim)
     return out
@@ -377,6 +393,7 @@ def propose_claims(
         rows = _align_usrec_smash(_align_sahm_when(rows, bag), bag)
         rows = [c for c in rows if c.series != "SAHMREALTIME" or verify_sahm_cell(c, bag).ok]
         rows = _fill_missing_series(rows, bag)
+    rows = [c for c in rows if _keep_closed_claim(c)]
     return _align_usrec_smash(_align_sahm_when(rows, bag), bag)
 
 
@@ -385,7 +402,9 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
     out: list[Finding] = []
     used: set[str] = set()
     for claim in claims or []:
-        if (claim.id or "") in _LEFTOVER:
+        if is_pack_slot_id(claim.id or ""):
+            continue
+        if not _keep_closed_claim(claim):
             continue
         if claim.series == "BLS payrolls" and bag is not None:
             if not verify_payrolls_realized_ces(claim, bag).ok:

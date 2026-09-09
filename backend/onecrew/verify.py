@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
-from onecrew.foundry import leftover_slot_ids, _url_fits_series, lei_threshold_claim, clean_cite_url
+from onecrew.foundry import leftover_slot_ids, _url_fits_series, lei_threshold_claim, clean_cite_url, is_excerpt_slot_id, is_pack_slot_id
 from onecrew.models import MISSING, Finding, Receipt
 
 SeriesName = Literal["USREC", "BLS payrolls", "U-3", "GDP", "LEI", "SAHMREALTIME"]
@@ -350,7 +350,7 @@ def cite_bag_from_rows(rows: list[Any], *, spine: str, hit_urls: list[str]) -> C
 
 
 def _series_of(finding: Finding) -> str | None:
-    if finding.id in _LEFTOVER:
+    if is_pack_slot_id(finding.id):
         return "leftover"
     stamped = (finding.series or "").strip()
     if getattr(finding, "stamp", "") == "timeline_event" or stamped == "timeline_event":
@@ -427,6 +427,8 @@ def claims_from_findings(findings: list[Finding]) -> list[Claim]:
     out: list[Claim] = []
     for finding in findings or []:
         if finding.stamp == "fringe" and finding.id not in _LEFTOVER:
+            continue
+        if is_excerpt_slot_id(finding.id):
             continue
         if finding.stamp == "timeline_event":
             continue
