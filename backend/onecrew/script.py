@@ -2329,15 +2329,18 @@ _AXIS_STOP = frozenset(
 
 
 def is_numeric_print(text: str) -> bool:
-    """Magnitude token ($ / % / /t / unit). Not an article title."""
+    """Magnitude token ($ / % / /t / unit). Not an article title or a 0/1 series flag."""
     if _NUMERIC_PRINT.search(text or ""):
+        return True
+    body = text or ""
+    if re.search(r"\d(?:[\d,.]*)\s*[A-Za-z]{1,8}\b", body):
         return True
     nums = [
         n
-        for n in pack_numbers(text or "")
+        for n in pack_numbers(body)
         if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
     ]
-    return bool(nums)
+    return any("." in n or len(re.sub(r"[^\d]", "", n)) >= 2 for n in nums)
 
 
 def speak_stamp_print(fids: list[str], findings: list[Finding]) -> str:
