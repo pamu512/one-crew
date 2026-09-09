@@ -1005,6 +1005,7 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         strip_unverified_meta_vo,
         prefer_covering_print,
         prefer_covering_scope,
+        _recover_print_vo,
         speak_stamp_fact,
         speak_stamp_print,
         speak_stamps,
@@ -1022,6 +1023,23 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         if not beat.finding_ids and _attachable_claim(beat):
             continue
         orig_vo = _vo_lines(beat.vo)
+        cited0 = [
+            f
+            for f in receipt.findings
+            if f.id in beat.finding_ids and not is_placeholder_finding_id(f.id)
+        ]
+        if is_title_read_vo(orig_vo, cited0) or is_thin_title_read_vo(orig_vo, cited0):
+            recovered = _recover_print_vo(cited0)
+            if recovered:
+                beat.vo = f"NARRATOR\n{recovered}" if (beat.vo or "").startswith("NARRATOR") else recovered
+                for fid in beat.finding_ids:
+                    if f"[{fid}]" not in beat.vo:
+                        beat.vo = f"{beat.vo} [{fid}]"
+                screen = speak_stamp_print(list(beat.finding_ids), list(receipt.findings))
+                if screen:
+                    beat.frame = screen
+                orig_vo = recovered
+                changed = True
         vo = strip_action_chrome_vo(orig_vo, beat.frame or "")
         keep, _ = prefer_covering_scope(
             vo,
@@ -1046,9 +1064,10 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
             new_vo = strip_unverified_meta_vo(new_vo)
         if is_topic_question_vo(new_vo, packet) and not is_numeric_print(_bare_vo(new_vo)):
             new_vo = ""
+        cited = [f for f in receipt.findings if f.id in keep]
         if was_meta and not is_numeric_print(_bare_vo(new_vo)):
-            spoken = speak_stamp_fact(keep, list(receipt.findings))
-            if spoken and not is_thin_title_read_vo(spoken, [f for f in receipt.findings if f.id in keep]):
+            spoken = _recover_print_vo(cited) or speak_stamp_fact(keep, list(receipt.findings))
+            if spoken and not is_thin_title_read_vo(spoken, cited):
                 new_vo = spoken
             else:
                 new_vo = spoken or ""
@@ -1059,12 +1078,18 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
         cited = [f for f in receipt.findings if f.id in keep]
         prior = [_vo_lines(p.vo) for p in packet.beats[: packet.beats.index(beat)] if (p.kind or "vo") != "heading"]
         if is_title_read_vo(new_vo, cited) or is_print_hole(new_vo) or is_incomplete_vo(new_vo):
-            spoken = speak_stamp_fact(keep, list(receipt.findings))
+            spoken = _recover_print_vo(cited, prior_prints=prior) or speak_stamp_fact(
+                keep, list(receipt.findings)
+            )
             if spoken and not is_thin_title_read_vo(spoken, cited, prior_prints=prior):
                 new_vo = spoken
             elif is_thin_title_read_vo(new_vo, cited, prior_prints=prior):
-                new_vo = ""
-                keep = []
+                recovered = _recover_print_vo(cited, prior_prints=prior)
+                if recovered:
+                    new_vo = recovered
+                else:
+                    new_vo = ""
+                    keep = []
         elif (
             has_tone_chrome(new_vo)
             or is_unverified_meta_vo(new_vo)
@@ -1073,20 +1098,35 @@ def _repair_faithless_beats(packet: Packet) -> list[str]:
             or is_pack_chrome_vo(new_vo)
             or is_action_chrome_vo(new_vo, beat.frame or "")
         ):
-            new_vo = speak_stamps(keep, list(receipt.findings))
+            recovered = _recover_print_vo(cited, prior_prints=prior)
+            new_vo = recovered or speak_stamps(keep, list(receipt.findings))
         elif not (new_vo or "").strip():
-            new_vo = speak_stamps(keep, list(receipt.findings))
+            new_vo = _recover_print_vo(cited, prior_prints=prior) or speak_stamps(
+                keep, list(receipt.findings)
+            )
         elif is_thin_title_read_vo(new_vo, cited, prior_prints=prior):
-            spoken = speak_stamp_fact(keep, list(receipt.findings))
+            spoken = _recover_print_vo(cited, prior_prints=prior) or speak_stamp_fact(
+                keep, list(receipt.findings)
+            )
             if spoken and not is_thin_title_read_vo(spoken, cited, prior_prints=prior):
                 new_vo = spoken
             else:
-                new_vo = ""
-                keep = []
+                recovered = _recover_print_vo(cited, prior_prints=prior)
+                if recovered:
+                    new_vo = recovered
+                else:
+                    new_vo = ""
+                    keep = []
         if keep and not _speech_norm(new_vo):
-            new_vo = speak_stamp_fact(keep, list(receipt.findings)) or speak_stamps(
-                keep, list(receipt.findings)
+            new_vo = (
+                _recover_print_vo(cited, prior_prints=prior)
+                or speak_stamp_fact(keep, list(receipt.findings))
+                or speak_stamps(keep, list(receipt.findings))
             )
+        if keep and new_vo:
+            screen = speak_stamp_print(keep, list(receipt.findings))
+            if screen:
+                new_frame = screen
         if is_pack_chrome_vo(new_frame) or is_thin_frame(new_frame, keep, list(receipt.findings)):
             screen = speak_stamp_print(keep, list(receipt.findings))
             spoken = speak_stamp_fact(keep, list(receipt.findings)) or ""
