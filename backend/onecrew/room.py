@@ -216,6 +216,8 @@ def _false_invent_recut(grade: RoomGrade, artifact: GradeArtifact) -> bool:
     """Invent = not in Parallel cites. Coerce recut→ship when every spoken print maps."""
     if grade.vote != "recut":
         return False
+    if _cite_host_mismatch(artifact):
+        return False
     if not _prints_pack_faithful(artifact):
         return False
     if _unsupported_topic_recut(grade, artifact):
@@ -225,6 +227,43 @@ def _false_invent_recut(grade: RoomGrade, artifact: GradeArtifact) -> bool:
         return True
     if _INVENT_LANG.search(detail):
         return True
+    return False
+
+
+def _cite_windows(script: str) -> list[str]:
+    parts = re.split(r"(?=^BEAT\s+\d+)", script or "", flags=re.M)
+    return [p for p in parts if p.strip()] or [script or ""]
+
+
+def _cited_ids(text: str) -> list[str]:
+    return re.findall(r"\[([^\[\]]+)\]", text or "")
+
+
+def _cite_host_mismatch(artifact: GradeArtifact) -> bool:
+    """Fail-closed: named-host / chain-basis VO must not cite a different survey host."""
+    from onecrew.timeline import chain_pairs, cite_host_ok, named_basis_urls, spoken_basis_url, url_host
+
+    pairs = chain_pairs(artifact.research_pack or "", artifact.timeline_map)
+    if not pairs:
+        return False
+    by_id = {row.id: row for row in artifact.stamped_findings}
+    map_ids = {row.finding_id for row in artifact.timeline_map}
+    for window in _cite_windows(artifact.script):
+        for fid in _cited_ids(window):
+            row = by_id.get(fid)
+            if row is None or not (row.url or "").strip():
+                continue
+            if not (fid.startswith("te-") or row.series == "timeline_event" or fid in map_ids):
+                continue
+            url = row.url
+            if cite_host_ok(window, url, pairs):
+                continue
+            named = named_basis_urls(window, pairs)
+            want = spoken_basis_url(window, pairs)
+            if named and url_host(url) not in {url_host(u) for u in named}:
+                return True
+            if want and url_host(url) != url_host(want):
+                return True
     return False
 
 
@@ -238,6 +277,8 @@ def grade_room(artifact: GradeArtifact, *, grader: GraderFn | None = None) -> Ro
         raise ValueError("recut requires why: not_enough_information | other")
     if grade.vote == "recut" and grade.recut_reason == "other" and not (grade.recut_detail or "").strip():
         raise ValueError("recut other requires a short reason")
+    if _cite_host_mismatch(artifact):
+        return RoomGrade(vote="recut", recut_reason="other", recut_detail="cite-faithfulness")
     if _beat1_trigger_nit(grade, artifact):
         return RoomGrade(vote="ship")
     if _false_invent_recut(grade, artifact):

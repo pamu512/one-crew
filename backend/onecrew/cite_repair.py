@@ -227,14 +227,23 @@ def _finding_from_beat(
     bag: CiteBag,
     used: set[str],
     chain_urls: set[str] | None = None,
+    pairs: list[tuple[str, str]] | None = None,
 ) -> Finding | None:
     from onecrew.script import pack_numbers
+    from onecrew.timeline import cite_host_ok, spoken_basis_url, url_host
 
     vo = _vo_body(beat)
     nums = [n for n in pack_numbers(vo) if not _YEAR_TOK.fullmatch(n.replace("−", "-"))]
     excerpts = list(bag.excerpts or [])
     prefer = {u for u in (chain_urls or set()) if u}
-    if prefer:
+    rows = list(pairs or [])
+    want = spoken_basis_url(vo, rows) if rows else None
+    if want:
+        ranked = [e for e in excerpts if url_host(e.url or "") == url_host(want)]
+        if not ranked:
+            return None
+        excerpts = ranked
+    elif prefer:
         ranked = [e for e in excerpts if clean_cite_url(e.url or "") in prefer]
         if ranked:
             excerpts = ranked
@@ -255,6 +264,8 @@ def _finding_from_beat(
             continue
         from onecrew.timeline import _tl_id
 
+        if rows and not cite_host_ok(vo, url, rows):
+            continue
         fid = _tl_id(blob or vo, url, used)
         return Finding(
             id=fid,
@@ -280,10 +291,14 @@ _EXCERPT_TOKEN = re.compile(r"excerpts\[\d+\]", re.I)
 
 
 def _chain_urls(packet: Packet) -> set[str]:
-    receipt = packet.receipt
-    if receipt is None:
-        return set()
-    return {(row.url or "").strip() for row in receipt.timeline_map if (row.url or "").strip()}
+    return {u for _t, u in _chain_pairs(packet) if u}
+
+
+def _chain_pairs(packet: Packet) -> list[tuple[str, str]]:
+    from onecrew.timeline import chain_pairs
+
+    mapping = (packet.receipt.timeline_map if packet.receipt else None) or []
+    return chain_pairs(_pack_text(packet), mapping)
 
 
 def _strip_excerpt_vo(text: str) -> str:
@@ -320,16 +335,19 @@ def drop_excerpt_slot_findings(packet: Packet) -> list[str]:
 
 
 def _stamp_pack_timeline(packet: Packet) -> list[str]:
-    from onecrew.timeline import apply_timeline, plan_timeline
+    from onecrew.timeline import apply_timeline, cap_url_reuse, chain_pairs, plan_timeline
 
     receipt = packet.receipt
     if receipt is None:
         receipt = Receipt(packet_id=packet.id, written=False, findings=[], disposition="READY")
         packet.receipt = receipt
+    pairs = chain_pairs(_pack_text(packet), receipt.timeline_map)
+    receipt.findings = cap_url_reuse(list(receipt.findings), pairs)
     used = {f.id for f in receipt.findings}
     seen = {(f.parallel_url or "").strip() for f in receipt.findings if (f.parallel_url or "").strip()}
     planned = plan_timeline(_pack_text(packet), used=used, seen_urls=seen)
     apply_timeline(receipt.findings, planned)
+    receipt.findings = cap_url_reuse(list(receipt.findings), pairs or [(r.thesis, r.url) for r in planned.mapping])
     if planned.mapping:
         have = {(row.thesis, row.url, row.finding_id) for row in receipt.timeline_map}
         receipt.timeline_map = list(receipt.timeline_map) + [
@@ -339,7 +357,7 @@ def _stamp_pack_timeline(packet: Packet) -> list[str]:
 
 
 def _attach_timeline_beats(packet: Packet) -> list[str]:
-    from onecrew.timeline import spoken_match
+    from onecrew.timeline import best_timeline_finding, cite_host_ok
 
     receipt = packet.receipt
     if receipt is None:
@@ -349,20 +367,31 @@ def _attach_timeline_beats(packet: Packet) -> list[str]:
         for f in receipt.findings
         if f.stamp == "timeline_event" and (f.parallel_url or "").strip()
     ]
-    chain = _chain_urls(packet)
-    tls.sort(key=lambda f: 0 if (f.parallel_url or "").strip() in chain else 1)
+    pairs = _chain_pairs(packet)
+    by_id = {f.id: f for f in receipt.findings}
     attached: list[str] = []
-    for beat in list(empty_cite_beats(packet)):
+    for beat in packet.beats:
+        if (beat.kind or "vo") == "heading" or _is_hole(beat):
+            continue
         vo = _vo_body(beat)
-        for finding in tls:
-            if not spoken_match(vo, finding):
+        keep: list[str] = []
+        for fid in beat.finding_ids:
+            finding = by_id.get(fid)
+            if finding is None or finding.stamp != "timeline_event":
+                keep.append(fid)
                 continue
-            if finding.id not in beat.finding_ids:
-                beat.finding_ids.append(finding.id)
+            if pairs and not cite_host_ok(vo, finding.parallel_url or "", pairs):
+                beat.vo = re.sub(rf"\s*\[{re.escape(fid)}\]", "", beat.vo).strip()
+                continue
+            keep.append(fid)
+        finding = best_timeline_finding(vo, tls, pairs)
+        if finding is not None and cite_host_ok(vo, finding.parallel_url or "", pairs):
+            if finding.id not in keep:
+                keep.append(finding.id)
             if f"[{finding.id}]" not in beat.vo:
                 beat.vo = f"{beat.vo} [{finding.id}]"
             attached.append(finding.id)
-            break
+        beat.finding_ids = keep
     return attached
 
 
@@ -375,9 +404,10 @@ def _attach_empty_cite_beats(packet: Packet, bag: CiteBag | None) -> list[str]:
         packet.receipt = receipt
     used = {f.id for f in receipt.findings}
     attached: list[str] = []
-    chain = _chain_urls(packet)
+    pairs = _chain_pairs(packet)
+    chain = {u for _t, u in pairs if u}
     for beat in list(empty_cite_beats(packet)):
-        finding = _finding_from_beat(beat, bag, used, chain_urls=chain)
+        finding = _finding_from_beat(beat, bag, used, chain_urls=chain, pairs=pairs)
         if finding is None:
             continue
         receipt.findings.append(finding)

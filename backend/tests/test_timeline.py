@@ -12,7 +12,7 @@ from onecrew.agent.adk_agents import CLAIMER_INSTRUCTION
 from onecrew.claimer import claims_from_cites, findings_from_claims
 from onecrew.cite_repair import MAX_CITE_RECHECKS, run_cite_recheck_loop
 from onecrew.cut import size_findings
-from onecrew.models import Finding, Packet, Receipt, ScriptBeat
+from onecrew.models import Finding, Packet, Receipt, RoomGrade, ScriptBeat, TimelineMapRow
 from onecrew.receipt import ReceiptInvalidError, validate_finding
 from onecrew.verify import CLOSED_SERIES, CiteBag, CiteExcerpt, claims_from_findings
 
@@ -890,3 +890,243 @@ def test_forbidden_wrap_writer_strips_excerpt_slot_tokens() -> None:
     assert "te-newspaper-capex-2026-08" in cold.finding_ids
     assert "excerpts[18]" not in cold.finding_ids
     assert "gdp-fantasy" not in cold.finding_ids
+
+
+# Live packet oc-data-centers-are-going-to-cause-the--27f3ee37 after #48:
+# pipeline READY, Room HOLD cite-faithfulness — 5× coface.com covering
+# Reuters-lease / Guardian / OpenAI+Oracle spoken beats.
+COFACE_SURVEY = "https://www.coface.com/news-economy-and-insights/data-centers-2022-11"
+REUTERS_MSFT = "https://www.reuters.com/technology/cloud-vendor-cancelled-leases-2026"
+GUARDIAN_FIN = "https://www.theguardian.com/technology/2026/aug/1-5t-financing-boom-bubble"
+OPENAI_ORACLE = "https://openai.com/index/compute-campus-4-5gw-oracle"
+CNBC_DEAL = "https://www.cnbc.com/2026/08/cloud-campus-dealmaking.html"
+FED_WATCH = "https://www.reuters.com/markets/fed-watch-campus-print-2026"
+
+_CHAIN_FIVE_BASIS = (
+    "## Argument\n"
+    "chronological_event_chain:\n"
+    f"- A cloud vendor cancelled leases in August 2026. High-confidence basis: {REUTERS_MSFT}\n"
+    f"- A newspaper asked whether $1.5T financing is already a bubble. High-confidence basis: {GUARDIAN_FIN}\n"
+    f"- A lab and a cloud vendor announced 4.5GW. High-confidence basis: {OPENAI_ORACLE}\n"
+    f"- Dealmaking stayed loud into the autumn. High-confidence basis: {CNBC_DEAL}\n"
+    f"- Policymakers watched the same print. High-confidence basis: {FED_WATCH}\n"
+    "\n"
+    "## Sources\n"
+    f"- Data centers survey scrape title. source: {COFACE_SURVEY}\n"
+)
+
+_NAMED_HOST_VOS = {
+    "cold-open": "NARRATOR\nReuters reported a cloud vendor cancelled leases in August 2026.",
+    "promise": "NARRATOR\nThe title stays a question.",
+    "gdp": "NARRATOR\nThe Guardian asked whether $1.5T financing is already a bubble.",
+    "labor": "NARRATOR\nOpenAI and a cloud vendor announced 4.5GW.",
+    "turn": "NARRATOR\nCNBC said dealmaking stayed loud.",
+    "complication": "NARRATOR\nLease cancellations are not the same object as a boom.",
+    "receipt": "NARRATOR\nReceipt: August 2026 cancellations and the $1.5T print.",
+    "close": "NARRATOR\nNear is not a switch.",
+}
+
+
+def _coface_survey_finding(*, fid: str = "te-go-to-content-coface-2022-11") -> Finding:
+    return Finding(
+        id=fid,
+        claim=(
+            "Go to content. Data centers, cloud vendor leases, 4.5GW campuses, "
+            "$1.5T financing, dealmaking, policymakers watching the print."
+        ),
+        stamp="timeline_event",
+        title="timeline_event",
+        series="timeline_event",
+        print="Data centers and cloud vendor leases in August 2026 plus 4.5GW and $1.5T financing.",
+        when="November 2022",
+        parallel_url=COFACE_SURVEY,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+
+
+def test_forbidden_wrap_named_host_vo_does_not_attach_survey_url_when_basis_exists() -> None:
+    """Forbidden wrap: attaching a generic survey URL to a named-host VO beat when that event's chain basis exists."""
+    packet = _packet(_CHAIN_FIVE_BASIS)
+    coface = _coface_survey_finding()
+    packet.receipt.findings = [coface]
+    packet.receipt.timeline_map = [
+        TimelineMapRow(thesis="Data centers survey covering leases and campuses.", url=COFACE_SURVEY, finding_id=coface.id)
+    ]
+    for beat in packet.beats:
+        beat.vo = _NAMED_HOST_VOS[beat.id]
+        beat.finding_ids = []
+
+    def _no_search(**_k):
+        raise AssertionError("pack already has High-confidence basis URLs")
+
+    run_cite_recheck_loop(packet, search_fn=_no_search)
+    lease = next(b for b in packet.beats if b.id == "cold-open")
+    cited = [f for f in packet.receipt.findings if f.id in lease.finding_ids]
+    assert cited, "lease VO must cite the chain basis, not stay empty"
+    assert all((f.parallel_url or "") == REUTERS_MSFT for f in cited)
+    assert coface.id not in lease.finding_ids
+    guardian = next(b for b in packet.beats if b.id == "gdp")
+    g_cited = [f for f in packet.receipt.findings if f.id in guardian.finding_ids]
+    assert g_cited
+    assert all((f.parallel_url or "") == GUARDIAN_FIN for f in g_cited)
+    gw = next(b for b in packet.beats if b.id == "labor")
+    gw_cited = [f for f in packet.receipt.findings if f.id in gw.finding_ids]
+    assert gw_cited
+    assert all((f.parallel_url or "") == OPENAI_ORACLE for f in gw_cited)
+
+
+def test_forbidden_wrap_five_findings_do_not_share_one_url_when_chain_has_five_basis() -> None:
+    """Forbidden wrap: five timeline_event findings sharing one URL when the chain has five distinct basis URLs."""
+    from collections import Counter
+
+    packet = _packet(_CHAIN_FIVE_BASIS)
+    packet.receipt.findings = [_coface_survey_finding(fid=f"te-survey-reuse-{i}") for i in range(5)]
+    for beat in packet.beats:
+        beat.vo = _NAMED_HOST_VOS[beat.id]
+        beat.finding_ids = []
+
+    def _no_search(**_k):
+        raise AssertionError("pack already has High-confidence basis URLs")
+
+    run_cite_recheck_loop(packet, search_fn=_no_search)
+    tls = [f for f in packet.receipt.findings if f.stamp == "timeline_event"]
+    counts = Counter((f.parallel_url or "").strip() for f in tls if (f.parallel_url or "").strip())
+    assert counts.get(COFACE_SURVEY, 0) <= 2
+    have = {u for u in counts if u}
+    assert {REUTERS_MSFT, GUARDIAN_FIN, OPENAI_ORACLE, CNBC_DEAL, FED_WATCH} <= have
+    chain_only = _CHAIN_FIVE_BASIS.split("## Sources")[0]
+    for url, n in counts.items():
+        chain_hits = chain_only.count(url)
+        if chain_hits:
+            assert n <= chain_hits
+        else:
+            assert n <= 2
+
+
+def test_forbidden_wrap_room_does_not_pass_host_soft_mismatch() -> None:
+    """Forbidden wrap: inventing PASS/ship when a named-host VO cites a different survey host."""
+    from onecrew.room import grade_room, make_grade_artifact, run_room_loop
+
+    coface = _coface_survey_finding()
+    packet = _packet(_CHAIN_FIVE_BASIS)
+    packet.script = (
+        "Timed VO · youtube · one_time_short_episode\n\n"
+        "BEAT 2 — gdp\n"
+        "00:20–00:40\n"
+        "NARRATOR\n"
+        f"Reuters reported a cloud vendor cancelled leases in August 2026. [{coface.id}]\n"
+    )
+    packet.receipt.findings = [coface]
+    packet.receipt.disposition = "READY"
+    packet.receipt.hold_reason = None
+    packet.receipt.timeline_map = [
+        TimelineMapRow(
+            thesis="A cloud vendor cancelled leases in August 2026.",
+            url=REUTERS_MSFT,
+            finding_id="te-cloud-vendor-cancelled-2026-08",
+        ),
+        TimelineMapRow(
+            thesis="Data centers survey covering leases and campuses.",
+            url=COFACE_SURVEY,
+            finding_id=coface.id,
+        ),
+    ]
+    for beat in packet.beats:
+        beat.vo = _NAMED_HOST_VOS[beat.id]
+        beat.finding_ids = [coface.id] if beat.id == "cold-open" else []
+    packet.beats[0].vo = (
+        "NARRATOR\nReuters reported a cloud vendor cancelled leases in August 2026. "
+        f"[{coface.id}]"
+    )
+    artifact = make_grade_artifact(packet)
+    grade = grade_room(artifact, grader=lambda _a: RoomGrade(vote="ship"))
+    assert grade.vote == "recut"
+    assert "cite-faithfulness" in (grade.recut_detail or "").lower()
+    invent = grade_room(
+        artifact,
+        grader=lambda _a: RoomGrade(
+            vote="recut",
+            recut_reason="other",
+            recut_detail="script invents a print absent from research_pack_summary",
+        ),
+    )
+    assert invent.vote == "recut"
+    assert "cite-faithfulness" in (invent.recut_detail or "").lower()
+    loop = run_room_loop(
+        packet,
+        research=lambda _ask=None: None,
+        rewrite=lambda: None,
+        grader=lambda _a: RoomGrade(vote="ship"),
+        parallel_already=1,
+    )
+    assert loop.disposition == "HOLD"
+    assert "cite-faithfulness" in (loop.hold_reason or "").lower()
+
+
+def test_forbidden_wrap_writer_does_not_link_survey_url_to_named_host_vo() -> None:
+    from onecrew.script import _assemble
+
+    coface = _coface_survey_finding()
+    reuters = Finding(
+        id="te-cloud-vendor-cancelled-2026-08",
+        claim="A cloud vendor cancelled leases in August 2026.",
+        stamp="timeline_event",
+        title="timeline_event",
+        series="timeline_event",
+        print="A cloud vendor cancelled leases in August 2026.",
+        when="August 2026",
+        parallel_url=REUTERS_MSFT,
+        parallel_status="hit",
+        note="Timeline event. Parallel URL on this row.",
+    )
+    packet = Packet(
+        id="oc-tl-host-align",
+        topic="Compute campuses are going to cause the next economic bubble",
+        hook="Compute campuses are going to cause the next economic bubble",
+        script="",
+        platform="youtube",
+        cut="one_time_short_episode",
+        depth="2-3y",
+        script_lean="centered_independent",
+        tell="Host-only desk read of the cited campus prints",
+        tone="On the cited print",
+        research_pack=_CHAIN_FIVE_BASIS,
+        receipt=Receipt(
+            packet_id="oc-tl-host-align",
+            written=False,
+            disposition="READY",
+            findings=[coface, reuters],
+            timeline_map=[
+                TimelineMapRow(
+                    thesis="A cloud vendor cancelled leases in August 2026.",
+                    url=REUTERS_MSFT,
+                    finding_id=reuters.id,
+                ),
+                TimelineMapRow(
+                    thesis="Data centers survey covering leases and campuses.",
+                    url=COFACE_SURVEY,
+                    finding_id=coface.id,
+                ),
+            ],
+        ),
+    )
+    units = [
+        {
+            "id": "cold-open",
+            "vo": "Reuters reported a cloud vendor cancelled leases in August 2026.",
+            "eyes": "card",
+            "finding_ids": [],
+        },
+        {"id": "promise", "vo": "The title stays a question.", "eyes": "pack", "finding_ids": []},
+        {"id": "gdp", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "labor", "vo": "The named print stays on the card.", "eyes": "card", "finding_ids": []},
+        {"id": "turn", "vo": "Hold on the cited print.", "eyes": "hold", "finding_ids": []},
+        {"id": "complication", "vo": "Those are not the same object.", "eyes": "gap", "finding_ids": []},
+        {"id": "receipt", "vo": "Receipt board: named series from the pack.", "eyes": "board", "finding_ids": []},
+        {"id": "close", "vo": "Near is not a switch.", "eyes": "close", "finding_ids": []},
+    ]
+    written = _assemble(packet, units)
+    cold = next(b for b in written.beats if b.id == "cold-open")
+    assert reuters.id in cold.finding_ids
+    assert coface.id not in cold.finding_ids

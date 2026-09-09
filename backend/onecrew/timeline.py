@@ -7,7 +7,9 @@ import hashlib
 import json
 import logging
 import re
+from collections import Counter
 from typing import Iterable
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
@@ -90,9 +92,11 @@ _BIBLIO_ID = re.compile(
 )
 _PACK_CHROME = re.compile(
     r"official series cards only|three pack objects|leftover map|"
-    r"bibliography|executive_summary|scrape title",
+    r"bibliography|executive_summary|scrape title|"
+    r"go to content|skip to (?:main )?content",
     re.I,
 )
+_URL_REUSE_CAP = 2
 _SOURCES_HEAD = re.compile(r"(?im)^#{0,3}\s*sources\b")
 _EMPTY_MINT = "foundry minted nothing"
 
@@ -104,6 +108,23 @@ class TimelinePlan(BaseModel):
 
 def _clean_url(raw: str) -> str:
     return clean_cite_url((raw or "").rstrip(").,;\"'")) or ""
+
+
+def url_host(url: str) -> str:
+    host = (urlsplit(url or "").hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def host_labels(url: str) -> set[str]:
+    """Registrable labels a VO may speak. Derived from the URL, not a topic list."""
+    host = url_host(url)
+    if not host:
+        return set()
+    sld = host.split(".")[0]
+    labels = {host, sld}
+    if sld.startswith("the") and len(sld) > 5:
+        labels.add(sld[3:])
+    return {lab for lab in labels if len(lab) >= 3}
 
 
 def _urls_in(text: str) -> list[str]:
@@ -331,30 +352,156 @@ def apply_timeline(findings: list[Finding], planned: TimelinePlan) -> None:
             have.add(url)
 
 
-def spoken_match(vo: str, finding: Finding) -> bool:
-    """Generic VO↔event overlap. No topic names."""
+def chain_pairs(text: str, mapping: Iterable[TimelineMapRow] | None = None) -> list[tuple[str, str]]:
+    """Prefer each chain bullet's own High-confidence basis over a leftover map row."""
+    pairs = parse_chronological_events(text or "")
+    if pairs:
+        return pairs
+    out: list[tuple[str, str]] = []
+    for row in mapping or []:
+        thesis = (getattr(row, "thesis", None) or "").strip()
+        url = _clean_url(getattr(row, "url", None) or "")
+        if thesis and url:
+            out.append((thesis, url))
+    return out
+
+
+def _vo_mentions_label(vo: str, label: str) -> bool:
+    if not vo or not label:
+        return False
+    return bool(re.search(rf"\b{re.escape(label)}\b", vo, re.I))
+
+
+def named_basis_urls(vo: str, pairs: Iterable[tuple[str, str]]) -> list[str]:
+    """Chain basis URLs whose host label is spoken. No topic names."""
+    out: list[str] = []
+    for _thesis, url in pairs or []:
+        if any(_vo_mentions_label(vo, lab) for lab in host_labels(url)):
+            out.append(url)
+    return list(dict.fromkeys(out))
+
+
+def _event_nums(text: str) -> set[str]:
     from onecrew.script import pack_numbers
 
-    blob = f"{finding.print or ''} {finding.claim or ''}"
-    vo_nums = {
+    return {
         re.sub(r"[^\d.]+", "", n.replace("−", "-"))
-        for n in pack_numbers(vo or "")
+        for n in pack_numbers(text or "")
         if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
     }
-    ev_nums = {
-        re.sub(r"[^\d.]+", "", n.replace("−", "-"))
-        for n in pack_numbers(blob)
-        if not _YEAR_TOK.fullmatch(n.replace("−", "-"))
-    }
-    if vo_nums and ev_nums and vo_nums & ev_nums:
+
+
+def event_score(vo: str, blob: str) -> int:
+    if not (vo or "").strip() or not (blob or "").strip():
+        return 0
+    score = len(_event_nums(vo) & _event_nums(blob)) * 10
+    vo_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(vo or "")}
+    ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob or "")}
+    score += len(vo_months & ev_months) * 8
+    vo_toks = {w.lower() for w in _WORD.findall(vo or "")}
+    ev_toks = {w.lower() for w in _WORD.findall(blob or "")}
+    return score + len(vo_toks & ev_toks)
+
+
+def spoken_overlap(vo: str, blob: str) -> bool:
+    """Generic VO↔text overlap. No topic names."""
+    if _event_nums(vo) and _event_nums(vo) & _event_nums(blob):
         return True
     vo_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(vo or "")}
-    ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob)}
+    ev_months = {m.group(0).lower() for m in _MONTH_YEAR.finditer(blob or "")}
     if vo_months and ev_months and vo_months & ev_months:
         return True
     vo_toks = {w.lower() for w in _WORD.findall(vo or "")}
-    ev_toks = {w.lower() for w in _WORD.findall(blob)}
+    ev_toks = {w.lower() for w in _WORD.findall(blob or "")}
     return len(vo_toks & ev_toks) >= 2
+
+
+def spoken_match(vo: str, finding: Finding) -> bool:
+    """Generic VO↔event overlap. No topic names."""
+    return spoken_overlap(vo, f"{finding.print or ''} {finding.claim or ''}")
+
+
+def spoken_basis_url(vo: str, pairs: Iterable[tuple[str, str]]) -> str | None:
+    """High-confidence basis URL for this spoken beat. Named host wins over soft overlap."""
+    rows = [(t, u) for t, u in (pairs or []) if t and u]
+    if not rows:
+        return None
+    named = named_basis_urls(vo, rows)
+    pool = [(t, u) for t, u in rows if u in named] if named else rows
+    best_url: str | None = None
+    best = -1
+    for thesis, url in pool:
+        score = event_score(vo, thesis)
+        if score > best:
+            best = score
+            best_url = url
+    if named:
+        return best_url
+    if best_url and (best > 0 or spoken_overlap(vo, next(t for t, u in pool if u == best_url))):
+        return best_url
+    return None
+
+
+def cite_host_ok(vo: str, url: str, pairs: Iterable[tuple[str, str]]) -> bool:
+    """Refuse a survey host when the spoken beat names (or maps to) another chain basis."""
+    raw = (url or "").strip()
+    if not raw:
+        return False
+    want = spoken_basis_url(vo, pairs)
+    if want:
+        return url_host(raw) == url_host(want)
+    named = named_basis_urls(vo, pairs)
+    if named:
+        return url_host(raw) in {url_host(u) for u in named}
+    return False
+
+
+def best_timeline_finding(
+    vo: str,
+    findings: Iterable[Finding],
+    pairs: Iterable[tuple[str, str]],
+) -> Finding | None:
+    """Attach the chain-basis finding for this VO. Do not soft-match a survey cover."""
+    want = spoken_basis_url(vo, pairs)
+    if not want:
+        return None
+    tls = [
+        f
+        for f in findings or []
+        if getattr(f, "stamp", "") == TIMELINE_STAMP and (f.parallel_url or "").strip()
+    ]
+    exact = [f for f in tls if (f.parallel_url or "").strip() == want]
+    if exact:
+        return exact[0]
+    host = url_host(want)
+    same = [f for f in tls if url_host(f.parallel_url or "") == host]
+    if not same:
+        return None
+    return max(same, key=lambda f: event_score(vo, f"{f.print or ''} {f.claim or ''}"))
+
+
+def cap_url_reuse(
+    findings: list[Finding],
+    pairs: Iterable[tuple[str, str]],
+) -> list[Finding]:
+    """Same parallel_url on >2 timeline_event rows is a smell unless the chain repeats that basis."""
+    basis_n = Counter(u for _t, u in (pairs or []) if u)
+    used: Counter[str] = Counter()
+    kept: list[Finding] = []
+    for finding in findings:
+        if getattr(finding, "stamp", "") != TIMELINE_STAMP:
+            kept.append(finding)
+            continue
+        url = (finding.parallel_url or "").strip()
+        if not url:
+            kept.append(finding)
+            continue
+        cap = basis_n[url] if basis_n[url] else _URL_REUSE_CAP
+        if used[url] >= cap:
+            continue
+        used[url] += 1
+        kept.append(finding)
+    return kept
 
 
 def has_timeline_url(findings: Iterable[Finding]) -> bool:
