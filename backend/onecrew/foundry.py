@@ -1136,6 +1136,8 @@ def _url_fits_series(url: str, series: str, url_keys: tuple[str, ...]) -> bool:
     if series == "LEI":
         if "empsit" in low or "bls.gov" in low:
             return False
+        if "sahmrealtime" in low or "/series/sahm" in low:
+            return False
         return "conference-board.org" in low or "leading" in low
     return any(key in low for key in url_keys)
 
@@ -1219,8 +1221,34 @@ def _pick_gdp_cite(table: list[_Cite], when: str, printed: str = "") -> _Cite | 
     return None
 
 
+def _lei_criteria_window(left: str, around: str) -> bool:
+    """True when the percent is a 3Ds / below-N% rule criterion, not an observation."""
+    if re.search(r"\bbelow\s*$", left or "", re.I):
+        return True
+    if re.search(r"requires|threshold|criteri|3[\s-]*d'?s", around or "", re.I):
+        return not re.search(
+            r"increased|rose|grew|fell|declined|dropped|printed",
+            left or "",
+            re.I,
+        )
+    return False
+
+
+def lei_threshold_claim(text: str) -> bool:
+    """3Ds / growth-rate-below sentence. Never a realized LEI print."""
+    blob = text or ""
+    return bool(
+        re.search(r"\bbelow\s+[+\-−]?\d", blob, re.I)
+        and re.search(r"requires|threshold|criteri|3[\s-]*d'?s|growth rate below", blob, re.I)
+    )
+
+
 def _lei_url_ok(url: str, when: str) -> bool:
     raw = (url or "").lower()
+    if "empsit" in raw or "bls.gov" in raw:
+        return False
+    if "sahmrealtime" in raw or "/series/sahm" in raw:
+        return False
     if "declined-in-june" in raw or "declined in june" in raw.replace("-", " "):
         return False
     stamp = _MONTH.search(when or "")
@@ -1435,6 +1463,8 @@ def _legal_print(series: str, text: str) -> str | None:
                 around,
                 re.I,
             ):
+                continue
+            if _lei_criteria_window(left, around):
                 continue
             scored.append((raw, _stamp_near_print(around, match.group(0))))
         dated = [row for row in scored if row[1]]

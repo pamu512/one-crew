@@ -1063,3 +1063,68 @@ def test_gdp_sole_q4_half_comparison_is_not_a_bar() -> None:
     assert got.reason == "gdp bars mismatch"
 
 
+FRED_SAHM = "https://fred.stlouisfed.org/series/SAHMREALTIME"
+LEI_URL = "https://www.conference-board.org/topics/us-leading-indicators"
+
+
+def test_lei_sahm_url_is_wrong_series_even_if_spine_has_print() -> None:
+    from onecrew.foundry import _url_fits_series
+
+    assert _url_fits_series(FRED_SAHM, "LEI", ()) is False
+    assert _url_fits_series(BLS, "LEI", ()) is False
+    assert _url_fits_series(LEI_URL, "LEI", ()) is True
+    claim = Claim(
+        series="LEI",
+        print="-4.3%",
+        when="June 2026",
+        id="lei-june-2026",
+        cite_url=FRED_SAHM,
+        claim_span=(
+            "The Conference Board 3Ds recession signal requires a six-month "
+            "LEI growth rate below −4.3%."
+        ),
+    )
+    bag = _bag(
+        excerpts=[
+            (
+                FRED_SAHM,
+                "SAHMREALTIME",
+                "Sahm June 2026 = −0.03 vs 0.50 trigger. "
+                "The Conference Board 3Ds recession signal requires a "
+                "six-month LEI growth rate below −4.3%.",
+            )
+        ],
+        spine=(
+            "June 2026 notes: six-month LEI growth rate below −4.3% is the "
+            "3Ds signal threshold."
+        ),
+        hit_urls=[FRED_SAHM],
+    )
+    got = verify_print_in_cite(claim, bag)
+    assert got.ok is False
+    assert got.reason in {"cite_url series mismatch", "print not in cite", "cite_url not in hits"}
+
+
+def test_lei_conference_board_july_turn_still_prints_in_cite() -> None:
+    claim = Claim(
+        series="LEI",
+        print="0.2%",
+        when="July 2026",
+        id="lei-july-2026",
+        cite_url=LEI_URL,
+        claim_span="Conference Board LEI increased 0.2% in July 2026.",
+    )
+    bag = _bag(
+        excerpts=[
+            (
+                LEI_URL,
+                "Conference Board LEI",
+                "Conference Board LEI increased 0.2% in July 2026.",
+            )
+        ],
+        hit_urls=[LEI_URL],
+    )
+    got = verify_print_in_cite(claim, bag)
+    assert got.ok is True, got.reason
+
+
