@@ -671,6 +671,11 @@ def _hold_exhausted(packet: Packet, attempts: int) -> CiteRepairResult:
     )
 
 
+def _credit_hold(packet: Packet) -> bool:
+    reason = (packet.receipt.hold_reason or "") if packet.receipt else ""
+    return "credit" in reason.lower() or "402" in reason
+
+
 def run_cite_recheck_loop(
     packet: Packet,
     *,
@@ -701,6 +706,15 @@ def run_cite_recheck_loop(
             notes="\n".join(
                 p for p in ((packet.research_pack or ""), (packet.task_spine or "")) if p
             ),
+        )
+    if _credit_hold(packet):
+        packet.cite_recheck_attempts = attempts
+        return CiteRepairResult(
+            ok=True,
+            attempts=attempts,
+            attached_ids=attached_all,
+            dropped_beat_ids=dropped_all,
+            hit_urls=hit_urls,
         )
     while True:
         if current_bag and (current_bag.hit_urls or current_bag.excerpts):
