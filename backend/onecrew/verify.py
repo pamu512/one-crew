@@ -615,6 +615,43 @@ def verify_gdp_bars(claim: Claim, bag: CiteBag) -> VerifyResult:
     return VerifyResult(ok=True, reason=None, matched_in=blob or None)
 
 
+_U3_HEDGE = re.compile(
+    r"\bcould\b|\bforecast|\basked whether\b|\bprojects?\b|\boutlook\b|\bexpected\b",
+    re.I,
+)
+_U3_RATE = re.compile(
+    r"(?<![\d.])(\d+(?:\.\d+)?)\s*(?:%|percent)\b",
+    re.I,
+)
+
+
+def _u3_hedge(text: str) -> bool:
+    return bool(_U3_HEDGE.search(text or "")) or _bad_window(text or "")
+
+
+def _u3_lock_text(bag: CiteBag) -> str:
+    """Realized CES unemployment + header. Drop hedges. Do not use the full bag."""
+    chunks = _ces_chunks(bag)
+    sources = chunks or [*(e.text for e in bag.excerpts), bag.spine or ""]
+    kept: list[str] = []
+    for chunk in sources:
+        for sent in re.split(r"(?<=[.!?])\s+", chunk or ""):
+            if not sent.strip() or _u3_hedge(sent):
+                continue
+            if _SAHM.search(sent) and _UNEMP.search(sent):
+                continue
+            if _UNEMP.search(sent) or _CES.search(sent):
+                kept.append(sent)
+    return " ".join(kept)
+
+
+def _u3_rate_in(printed: str, text: str) -> bool:
+    raw = re.sub(r"[^\d.]", "", (printed or "").replace("−", "-"))
+    if not raw:
+        return False
+    return bool(re.search(rf"(?<![\d.]){re.escape(raw)}\s*(?:%|percent)\b", text or "", re.I))
+
+
 def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
     if claim.series != "U-3":
         return VerifyResult(ok=True, reason=None)
@@ -629,19 +666,22 @@ def verify_u3_ces(claim: Claim, bag: CiteBag) -> VerifyResult:
         unemp = [s for s in sents if _UNEMP.search(s)]
         if unemp and all(_SAHM.search(s) for s in unemp):
             return VerifyResult(ok=False, reason="sahm-trigger window")
+    ces = _u3_lock_text(bag)
     parsed = _parse_when(claim.when)
     if parsed and parsed[0] == "month":
-        if not any(_year_adjacent_month(s, parsed[1], parsed[2]) for s in unemp):
-            ces = "\n".join(_ces_chunks(bag)) or blob
-            if not _year_adjacent_month(ces, parsed[1], parsed[2]):
-                return VerifyResult(ok=False, reason="u3 year absent from ces")
+        if not ces or not _year_adjacent_month(ces, parsed[1], parsed[2]):
+            return VerifyResult(ok=False, reason="u3 year absent from ces")
+        if claim.print and not _u3_rate_in(claim.print, ces):
+            return VerifyResult(ok=False, reason="u3 year absent from ces")
     elif parsed:
         year = str(parsed[1])
-        if year and not any(year in s for s in unemp):
-            ces = "\n".join(_ces_chunks(bag)) or blob
-            if year not in ces:
-                return VerifyResult(ok=False, reason="u3 year absent from ces")
-    return VerifyResult(ok=True, reason=None, matched_in=" ".join(unemp) or None)
+        if not ces or year not in ces:
+            return VerifyResult(ok=False, reason="u3 year absent from ces")
+        if claim.print and not _u3_rate_in(claim.print, ces):
+            return VerifyResult(ok=False, reason="u3 year absent from ces")
+    elif claim.print and ces and not _u3_rate_in(claim.print, ces):
+        return VerifyResult(ok=False, reason="u3 year absent from ces")
+    return VerifyResult(ok=True, reason=None, matched_in=ces or " ".join(unemp) or None)
 
 
 def verify_claim_set(claims: list[Claim], bag: CiteBag) -> ClaimSetResult:
@@ -703,7 +743,10 @@ _SOFT_CITE_REASONS = frozenset(
 
 def apply_verify_gate(receipt: Receipt, bag: CiteBag) -> Receipt:
     """READY if hard verify passes. Print/when/missing cite are soft — the cite-repair loop handles them."""
-    findings = attach_cites_from_hits(list(receipt.findings or []), bag)
+    from onecrew.foundry import align_sahm_findings
+
+    blob = "\n".join([*(e.text for e in bag.excerpts), bag.spine or ""])
+    findings = align_sahm_findings(attach_cites_from_hits(list(receipt.findings or []), bag), blob)
     claims = claims_from_findings(findings)
     named = [c for c in claims if c.series in CLOSED_SERIES]
     leftover = [c for c in claims if c.id in _LEFTOVER]

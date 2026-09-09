@@ -30,6 +30,7 @@ from onecrew.verify import (
     _year_adjacent_month,
     resolve_missing_cite,
     verify_payrolls_realized_ces,
+    verify_u3_ces,
 )
 from onecrew.vertex_client import VertexDownError, generate_script
 
@@ -198,16 +199,17 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
         month = _MONTH_YEAR.search(excerpt.text)
         if u3 and month and excerpt.url and "U-3" not in seen:
             when = f"{month.group(1).title()} {month.group(2)}"
-            claims.append(
-                Claim(
-                    series="U-3",
-                    print=f"{u3.group(1)}%",
-                    when=when,
-                    id=_slug("U-3", when),
-                    cite_url=excerpt.url,
-                    claim_span=excerpt.text[:400],
-                )
+            claim = Claim(
+                series="U-3",
+                print=f"{u3.group(1)}%",
+                when=when,
+                id=_slug("U-3", when),
+                cite_url=excerpt.url,
+                claim_span=excerpt.text[:400],
             )
+            if not verify_u3_ces(claim, bag).ok:
+                continue
+            claims.append(claim)
             seen.add("U-3")
         sahm = _SAHM.search(excerpt.text)
         if sahm and excerpt.url and "SAHMREALTIME" not in seen:
@@ -285,6 +287,8 @@ def _vertex_propose(bag: CiteBag, packet: Packet | None) -> list[Claim]:
             continue
         if claim.series == "BLS payrolls" and not verify_payrolls_realized_ces(claim, bag).ok:
             continue
+        if claim.series == "U-3" and not verify_u3_ces(claim, bag).ok:
+            continue
         out.append(claim)
     return out
 
@@ -353,6 +357,7 @@ def propose_claims(
     if not rows:
         rows = claims_from_cites(bag)
     else:
+        rows = [c for c in rows if c.series != "U-3" or verify_u3_ces(c, bag).ok]
         rows = _fill_missing_series(rows, bag)
     return _align_usrec_smash(_align_sahm_when(rows, bag), bag)
 
@@ -366,6 +371,9 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
             continue
         if claim.series == "BLS payrolls" and bag is not None:
             if not verify_payrolls_realized_ces(claim, bag).ok:
+                continue
+        if claim.series == "U-3" and bag is not None:
+            if not verify_u3_ces(claim, bag).ok:
                 continue
         fid = claim.id or _slug(claim.series, claim.when)
         if fid in _LEFTOVER:

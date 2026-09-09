@@ -337,6 +337,26 @@ def _units_sahm_month_off(packet: Packet, units: list[dict] | None) -> bool:
     return any(_beat_sahm_month_off(packet, u.get("vo") or "") for u in (units or []))
 
 
+def _units_sahm_id_off(packet: Packet, units: list[dict] | None) -> bool:
+    """True if VO cites a different Sahm id than the stamp while speaking the print."""
+    sahm = _by_series(packet, "SAHMREALTIME")
+    if not sahm or not (sahm.id or "").strip():
+        return False
+    want = f"[{sahm.id}]"
+    printed = _print_of(sahm, "")
+    p_n = (printed or "").replace("−", "-")
+    for unit in units or []:
+        vo = unit.get("vo") or ""
+        if not re.search(r"\[sahm-[^\]]+\]", vo):
+            continue
+        if want in vo:
+            continue
+        vo_n = vo.replace("−", "-")
+        if p_n and (p_n in vo_n or p_n.lstrip("+-") in vo_n):
+            return True
+    return False
+
+
 def _print_has_minus(printed: str) -> bool:
     return bool(re.search(r"[\-−]\s*\d", printed or ""))
 
@@ -441,6 +461,8 @@ def _accept_units(
     if _vo_mixed_smash(packet, spoken):
         return False
     if _units_sahm_month_off(packet, units):
+        return False
+    if _units_sahm_id_off(packet, units):
         return False
     # HOLD/mint-hole packets must not require speaking broken minted prints.
     if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
@@ -1002,6 +1024,8 @@ def _vertex_keeps(
         return False
     if _units_sahm_month_off(packet, units):
         return False
+    if _units_sahm_id_off(packet, units):
+        return False
     if _missing_pack_marks(packet, spoken) and not _mint_held(packet, mint_holes):
         return False
     known = {f.id for f in (packet.receipt.findings if packet.receipt else [])}
@@ -1320,6 +1344,13 @@ def _hormuz_on_foreign(packet: Packet, vo: str) -> bool:
 def write_script(packet: Packet, writer=None) -> Packet:
     """8-beat timed VO from the pack. Mint/verify HOLD does not blank before Vertex."""
     receipt = packet.receipt
+    if receipt is not None and receipt.findings:
+        from onecrew.foundry import align_sahm_findings
+
+        receipt.findings = align_sahm_findings(
+            list(receipt.findings),
+            "\n".join([_pack_text(packet), *(f.claim or "" for f in receipt.findings)]),
+        )
     emit = writer or generate_script
     if not _pack_source(packet):
         holes = ["empty pack"]

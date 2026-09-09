@@ -233,6 +233,61 @@ def test_u3_4_3_june_2028_fails_when_year_absent_from_cite() -> None:
     assert got.reason == "u3 year absent from ces"
 
 
+def test_u3_20_percent_december_fails_when_ces_has_other_month() -> None:
+    """Non-CES / future / absurd U-3 is not a CES observation. No topic literals in verify."""
+    ces = (
+        "THE EMPLOYMENT SITUATION -- AUGUST 2026. "
+        "Total nonfarm payroll employment fell by 11,000 in August 2026. "
+        "The unemployment rate was 4.1 percent in August 2026."
+    )
+    noise = (
+        "A blog asked whether unemployment could reach 20 percent by December 2026. "
+        "Some forecasts put the jobless rate at 20% in December 2026."
+    )
+    bag = _bag(
+        excerpts=[
+            (BLS, "CES", ces),
+            ("https://example.com/forecast", "forecast", noise),
+        ],
+        spine=f"{ces} {noise}",
+        hit_urls=[BLS, "https://example.com/forecast"],
+    )
+    claim = Claim(
+        series="U-3",
+        print="20%",
+        when="December 2026",
+        id="unemployment-december-2026",
+        cite_url=BLS,
+        claim_span=noise,
+    )
+    got = verify_u3_ces(claim, bag)
+    assert got.ok is False
+    assert got.reason == "u3 year absent from ces"
+    gated = apply_verify_gate(
+        Receipt(
+            packet_id="oc-u3-future",
+            written=False,
+            disposition="READY",
+            findings=[
+                Finding(
+                    id="unemployment-december-2026",
+                    claim="Unemployment is 20% in December 2026.",
+                    stamp="grounded",
+                    series="U-3",
+                    print="20%",
+                    when="December 2026",
+                    parallel_url=BLS,
+                    parallel_status="hit",
+                    note="Parallel URL on this row.",
+                )
+            ],
+        ),
+        bag,
+    )
+    assert gated.disposition == "HOLD"
+    assert "u3 year absent from ces" in (gated.hold_reason or "")
+
+
 def test_u3_ces_header_year_is_not_absent() -> None:
     bag = _bag(
         excerpts=[
