@@ -17,6 +17,8 @@ from onecrew.foundry import (
     _gdp_print_from_bars,
     _legal_print,
     _when,
+    clean_cite_url,
+    when_matching_print,
 )
 from onecrew.models import MISSING, Finding, Packet
 from onecrew.verify import (
@@ -209,15 +211,20 @@ def claims_from_cites(bag: CiteBag) -> list[Claim]:
             seen.add("U-3")
         sahm = _SAHM.search(excerpt.text)
         if sahm and excerpt.url and "SAHMREALTIME" not in seen:
+            printed = re.sub(r"\s+", "", sahm.group(1))
             month = _MONTH_YEAR.search(excerpt.text)
             when = f"{month.group(1).title()} {month.group(2)}" if month else ""
+            when = when_matching_print(f"{excerpt.text}\n{bag_blob}", printed, when) or when
+            cite = clean_cite_url(excerpt.url)
+            if not cite:
+                continue
             claims.append(
                 Claim(
                     series="SAHMREALTIME",
-                    print=re.sub(r"\s+", "", sahm.group(1)),
+                    print=printed,
                     when=when,
                     id=_slug("SAHMREALTIME", when),
-                    cite_url=excerpt.url,
+                    cite_url=cite,
                     claim_span=excerpt.text[:400],
                 )
             )
@@ -282,6 +289,32 @@ def _vertex_propose(bag: CiteBag, packet: Packet | None) -> list[Claim]:
     return out
 
 
+def _fill_missing_series(claims: list[Claim], bag: CiteBag) -> list[Claim]:
+    """Cite-scan series Vertex omitted. Not a second Vertex/Parallel call."""
+    have = {claim.series for claim in claims}
+    extra: list[Claim] = []
+    for claim in claims_from_cites(bag):
+        if claim.series in have:
+            continue
+        extra.append(claim)
+        have.add(claim.series)
+    return list(claims) + extra
+
+
+def _align_sahm_when(claims: list[Claim], bag: CiteBag) -> list[Claim]:
+    """when+print must be one FRED/prose row. Remap. Do not invent a minus."""
+    blob = "\n".join([*(e.text for e in bag.excerpts), bag.spine or ""])
+    out: list[Claim] = []
+    for claim in claims:
+        if claim.series == "SAHMREALTIME":
+            aligned = when_matching_print(blob, claim.print, claim.when)
+            if aligned and aligned != claim.when:
+                claim.when = aligned
+                claim.id = _slug("SAHMREALTIME", aligned)
+        out.append(claim)
+    return out
+
+
 def _align_usrec_smash(claims: list[Claim], bag: CiteBag) -> list[Claim]:
     """USREC when = payrolls month when that month is 0/1 on the FRED pipe. No invent."""
     pay = next((c for c in claims if c.series == "BLS payrolls"), None)
@@ -319,7 +352,9 @@ def propose_claims(
             rows = []
     if not rows:
         rows = claims_from_cites(bag)
-    return _align_usrec_smash(rows, bag)
+    else:
+        rows = _fill_missing_series(rows, bag)
+    return _align_usrec_smash(_align_sahm_when(rows, bag), bag)
 
 
 def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> list[Finding]:
@@ -342,9 +377,11 @@ def findings_from_claims(claims: list[Claim], bag: CiteBag | None = None) -> lis
             n += 1
         used.add(fid)
         span = (claim.claim_span or "").strip() or f"{claim.series}={claim.print} ({claim.when})".strip()
-        cite = (claim.cite_url or "").strip()
+        cite = clean_cite_url(claim.cite_url or "")
         if not cite and bag is not None:
-            cite = (resolve_missing_cite(claim, bag).cite_url or "").strip()
+            cite = clean_cite_url((resolve_missing_cite(claim, bag).cite_url or ""))
+        if not cite and claim.series == "LEI":
+            continue
         out.append(
             Finding(
                 id=fid,
