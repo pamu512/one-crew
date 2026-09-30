@@ -592,6 +592,20 @@ def _units_sahm_month_off(packet: Packet, units: list[dict] | None) -> bool:
     return any(_beat_sahm_month_off(packet, u.get("vo") or "") for u in (units or []))
 
 
+def _drop_off_month_sahm_cite(packet: Packet, vo: str, fids: list[str]) -> tuple[str, list[str]]:
+    """Sahm cite cannot sit on VO that names a different month than finding.when."""
+    sahm = _by_series(packet, "SAHMREALTIME")
+    if not sahm or not (sahm.id or "").strip():
+        return vo, fids
+    if sahm.id not in fids and f"[{sahm.id}]" not in (vo or ""):
+        return vo, fids
+    trial = vo if f"[{sahm.id}]" in (vo or "") else f"{(vo or '').rstrip()} [{sahm.id}]"
+    if not _beat_sahm_month_off(packet, trial):
+        return vo, fids
+    cleaned = re.sub(rf"\s*\[{re.escape(sahm.id)}\]", "", vo or "").strip()
+    return cleaned, [fid for fid in fids if fid != sahm.id]
+
+
 def _units_sahm_id_off(packet: Packet, units: list[dict] | None) -> bool:
     """True if VO cites a different Sahm id than the stamp while speaking the print."""
     sahm = _by_series(packet, "SAHMREALTIME")
@@ -4202,6 +4216,7 @@ def _assemble(packet: Packet, units: list[dict]) -> Packet:
             sourced = bool(spoken_nums) or bool(_MONTH_YEAR.search(_vo_lines(vo)))
             if sourced and not (held and (pack_grounded or _vo_uses_pack(packet, vo))):
                 slot_nits.append(f"beat{i + 1} cites nothing in the pack")
+        vo, fids = _drop_off_month_sahm_cite(packet, vo, fids)
         for fid in fids:
             if f"[{fid}]" not in vo:
                 vo = f"{vo} [{fid}]"

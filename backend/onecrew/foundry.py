@@ -1190,6 +1190,23 @@ def when_matching_print(text: str, printed: str, when: str = "") -> str:
     return max(matched, key=_month_key)
 
 
+def _sync_sahm_claim(finding: Finding) -> None:
+    """Claim month must match stamped when. Do not speak June for a July cell."""
+    stamp = (finding.when or "").strip()
+    match = _MONTH.search(stamp)
+    if not match:
+        return
+    canon = _month_stamp(match)
+    spoken = {_month_stamp(m).lower() for m in _MONTH.finditer(finding.claim or "")}
+    if not spoken or spoken == {canon.lower()}:
+        return
+    printed = (finding.print or "").strip()
+    if printed:
+        finding.claim = f"Sahm {canon} = {printed} vs the 0.50 trigger."
+        return
+    finding.claim = _MONTH.sub(canon, finding.claim or "", count=1)
+
+
 def align_sahm_finding(finding: Finding, blob: str) -> Finding:
     """Stamp when+print+id from one FRED cell. Mixed June/−0.03 cannot stay."""
     if (finding.series or "") != "SAHMREALTIME":
@@ -1202,6 +1219,7 @@ def align_sahm_finding(finding: Finding, blob: str) -> Finding:
         finding.print = printed
     if when and finding.id != _slug("SAHMREALTIME", when):
         finding.id = _slug("SAHMREALTIME", when)
+    _sync_sahm_claim(finding)
     return finding
 
 
